@@ -723,29 +723,77 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     finally{setDbBusy(v=>v-1);}
   };
   // ─── 로고 관리 ───
+  // ── 연맹 로고: DB 저장/로드 (global, event_master와 동일 패턴) ──
+  const loadFedLogoDB=async()=>{
+    if(!sb) return;
+    try{
+      const{data}=await sb.from("tournament_ops_data").select("json_data").eq("data_type","fed_logo").limit(1).maybeSingle();
+      if(data?.json_data?.base64){setFedLogo(data.json_data.base64);try{localStorage.setItem("ksfd_fed_logo",data.json_data.base64);}catch(e){}}
+    }catch(e){console.warn("연맹 로고 DB 로드 실패",e);}
+  };
+  const saveFedLogoDB=async(base64)=>{
+    if(!sb) return;
+    try{
+      const{data:existing}=await sb.from("tournament_ops_data").select("id").eq("data_type","fed_logo").limit(1).maybeSingle();
+      if(existing){
+        if(base64) await sb.from("tournament_ops_data").update({json_data:{base64}}).eq("id",existing.id);
+        else await sb.from("tournament_ops_data").delete().eq("id",existing.id);
+      } else if(base64){
+        const{data:anyT}=await sb.from("tournaments").select("id").limit(1).maybeSingle();
+        const tid=anyT?.id||1;
+        await sb.from("tournament_ops_data").insert({tournament_id:tid,data_type:"fed_logo",json_data:{base64}});
+      }
+    }catch(e){console.warn("연맹 로고 DB 저장 실패",e);}
+  };
+  useEffect(()=>{if(sb)loadFedLogoDB();},[sb]);
   const handleFedLogoUpload=(e)=>{
     const file=e.target.files[0]; if(!file) return;
     const reader=new FileReader();
     reader.onload=(ev)=>{
       const data=ev.target.result;
       setFedLogo(data);
-      try{localStorage.setItem("ksfd_fed_logo",data);}catch(err){flash("로고 저장 실패 (용량 초과)","error");}
-      flash("연맹 로고 등록 완료");
+      try{localStorage.setItem("ksfd_fed_logo",data);}catch(err){}
+      saveFedLogoDB(data);
+      flash("연맹 로고 등록 완료 (DB 저장)");
     };
     reader.readAsDataURL(file);
   };
-  const removeFedLogo=()=>{setFedLogo(null);try{localStorage.removeItem("ksfd_fed_logo");}catch(e){}flash("연맹 로고 삭제 완료");};
+  const removeFedLogo=()=>{setFedLogo(null);try{localStorage.removeItem("ksfd_fed_logo");}catch(e){}saveFedLogoDB(null);flash("연맹 로고 삭제 완료");};
+  // ── 후원사 로고: 대회별 DB 저장 ──
   const getSponsorLogo=(tid)=>sponsorLogos[tid]||null;
-  const setSponsorLogo=(tid,data)=>{
+  const setSponsorLogo=async(tid,data)=>{
     const next={...sponsorLogos,[tid]:data};
     if(!data) delete next[tid];
     setSponsorLogos(next);
-    try{localStorage.setItem("ksfd_sponsor_logos",JSON.stringify(next));}catch(err){flash("후원사 로고 저장 실패","error");}
+    try{localStorage.setItem("ksfd_sponsor_logos",JSON.stringify(next));}catch(err){}
+    // DB 동기화
+    if(sb&&tid){
+      try{
+        const{data:existing}=await sb.from("tournament_ops_data").select("id").eq("tournament_id",tid).eq("data_type","sponsor_logo").maybeSingle();
+        if(existing){
+          if(data) await sb.from("tournament_ops_data").update({json_data:{base64:data}}).eq("id",existing.id);
+          else await sb.from("tournament_ops_data").delete().eq("id",existing.id);
+        } else if(data){
+          await sb.from("tournament_ops_data").insert({tournament_id:tid,data_type:"sponsor_logo",json_data:{base64:data}});
+        }
+      }catch(e){console.warn("후원사 로고 DB 저장 실패",e);}
+    }
+  };
+  const loadSponsorLogoDB=async(tid)=>{
+    if(!sb||!tid) return;
+    try{
+      const{data}=await sb.from("tournament_ops_data").select("json_data").eq("tournament_id",tid).eq("data_type","sponsor_logo").maybeSingle();
+      if(data?.json_data?.base64){
+        const next={...sponsorLogos,[tid]:data.json_data.base64};
+        setSponsorLogos(next);
+        try{localStorage.setItem("ksfd_sponsor_logos",JSON.stringify(next));}catch(e){}
+      }
+    }catch(e){console.warn("후원사 로고 DB 로드 실패",e);}
   };
   const handleSponsorLogoUpload=(tid,e)=>{
     const file=e.target.files[0]; if(!file) return;
     const reader=new FileReader();
-    reader.onload=(ev)=>{setSponsorLogo(tid,ev.target.result);flash("후원사 로고 등록 완료");};
+    reader.onload=(ev)=>{setSponsorLogo(tid,ev.target.result);flash("후원사 로고 등록 완료 (DB 저장)");};
     reader.readAsDataURL(file);
   };
   const saveEvPData=async()=>{
@@ -817,6 +865,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const ss=await dbLoad("session_status",tid);if(ss)setSessionStatuses(ss); else setSessionStatuses({});
     const ah=await dbLoad("absent_history",tid);if(ah)setAbsentHistory(ah); else setAbsentHistory([]);
     const ono=await dbLoad("orgnum_overrides",tid);if(ono)setOrgNumOverrides(ono); else setOrgNumOverrides({});
+    // 후원사 로고 DB 로드
+    await loadSponsorLogoDB(tid);
   };
 
   // ─── 시간표 관리 ───
