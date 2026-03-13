@@ -367,6 +367,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [slSavedKeys, setSlSavedKeys]=useState(new Set()); // 저장 완료된 세션 키
   const [slDrag, setSlDrag]=useState(null); // {evCode, fromIdx}
   const [slPrint, setSlPrint]=useState(null); // null 또는 evCode
+  // ── 단체번호 수동 오버라이드 ──
+  const [orgNumOverrides, setOrgNumOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
+  const [teamDropdown, setTeamDropdown]=useState(null); // {memberId, evCode, rect:{top,left}, currentNum}
   // 불참 관리
   const [absentModal, setAbsentModal]=useState(null); // {idx, name, evCode, sessionKey} or null
   const [absentReason, setAbsentReason]=useState("");
@@ -387,6 +390,29 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     dbSave("startlists",newSL);
     syncStartlistSessions(newSL,[m.evCode]);
     setAbsentModal(null); setAbsentReason("");
+  };
+  // ── 단체번호 변경 핸들러 (컴포넌트 레벨) ──
+  const changeOrgNum=async(memberId,newNum)=>{
+    const evCode=teamDropdown?.evCode;
+    if(!evCode) return;
+    const newOv={...orgNumOverrides};
+    if(!newOv[evCode]) newOv[evCode]={};
+    newOv[evCode][String(memberId)]=newNum;
+    setOrgNumOverrides(newOv);
+    await dbSave("orgnum_overrides",newOv);
+    // 스타트리스트에도 반영
+    const slKey=selectedEvCode;
+    if(slKey&&startLists[slKey]){
+      const updatedSL={...startLists};
+      updatedSL[slKey]=updatedSL[slKey].map(p=>
+        p.memberId===memberId?{...p,_orgNum:newNum}:p
+      );
+      setStartLists(updatedSL);
+      dbSave("startlists",updatedSL);
+      syncStartlistSessions(updatedSL,[slKey]);
+    }
+    setTeamDropdown(null);
+    flash("단체"+newNum+" 배정 완료");
   };
   // 경기 결과 관리
   const [resEvCode, setResEvCode]=useState(null);
@@ -752,6 +778,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const ep=await dbLoad("evpdata",tid);if(ep)setEvPData(ep);
     const ss=await dbLoad("session_status",tid);if(ss)setSessionStatuses(ss); else setSessionStatuses({});
     const ah=await dbLoad("absent_history",tid);if(ah)setAbsentHistory(ah); else setAbsentHistory([]);
+    const ono=await dbLoad("orgnum_overrides",tid);if(ono)setOrgNumOverrides(ono); else setOrgNumOverrides({});
   };
 
   // ─── 시간표 관리 ───
@@ -3570,6 +3597,72 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         </div>
       </div>
     </div>}
+    {/* ── 단체번호 드롭다운 오버레이 ── */}
+    {teamDropdown&&<div style={{position:"fixed",inset:0,zIndex:10001}} onClick={()=>setTeamDropdown(null)}>
+      <div style={{position:"absolute",top:teamDropdown.rect.top,left:teamDropdown.rect.left,background:"#1a2332",border:"1px solid #3a506b",borderRadius:8,padding:6,minWidth:180,maxHeight:300,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.7)",animation:"fadeIn .15s ease"}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:10,color:"#6b7d94",fontWeight:700,padding:"4px 8px",borderBottom:"1px solid #2a3a5c",marginBottom:4}}>단체번호 배정 (최대 4명/단체)</div>
+        {(()=>{
+          const evCode=teamDropdown.evCode;
+          const ov=(orgNumOverrides[evCode])||{};
+          // 현재 종목 참가자의 모든 단체번호 카운트 (현재 드롭다운 대상 포함)
+          const ep=evPData||{allMembers:[],allEntries:[],allTeamEntries:[],appMap:{}};
+          const memberMap2={}; ep.allMembers.forEach(m=>{memberMap2[m.id]=m;});
+          const memberAppMap2={}; ep.allMembers.forEach(m=>{memberAppMap2[m.id]=ep.appMap[m.application_id];});
+          const selEvObj2=events.find(e=>e.code===evCode);
+          const isMixed2=selEvObj2&&selEvObj2.type==="mixed";
+          let allParts=[];
+          if(isMixed2){
+            const te=ep.allTeamEntries.filter(t=>t.event_code===evCode);
+            const grp=groupMixedTeams(te,memberMap2,memberAppMap2);
+            allParts=grp.flatMap((p,i)=>(p._team||[p]).map(m=>({...m,_autoNum:i+1})));
+          } else {
+            const entries=ep.allEntries.filter(e=>e.event_code===evCode);
+            const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+            const parts=entries.map(e=>{const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];return m?{memberId:m.id,orgName:app?.org_name||"-",regionName:app?.region_name||"-"}:null;}).filter(Boolean);
+            parts.sort((a,b)=>{const ai=regionOrd.indexOf(a.regionName),bi=regionOrd.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi);});
+            const orgOrd=[];parts.forEach(p=>{if(!orgOrd.includes(p.orgName))orgOrd.push(p.orgName);});
+            const autoMap={};orgOrd.forEach((o,i)=>{autoMap[o]=i+1;});
+            allParts=parts.map(p=>({...p,_autoNum:autoMap[p.orgName]||1}));
+          }
+          // 각 참가자의 effective 단체번호
+          const counts={};
+          allParts.forEach(p=>{
+            const mid=String(p.memberId);
+            const num=ov[mid]!==undefined?ov[mid]:p._autoNum;
+            counts[num]=(counts[num]||0)+1;
+          });
+          // 현재 선택된 선수의 기존 단체번호
+          const curMid=String(teamDropdown.memberId);
+          const curNum=teamDropdown.currentNum;
+          // 옵션 목록: 기존 단체들 + 새 단체
+          const maxN=Math.max(...Object.keys(counts).map(Number),0);
+          const options=[];
+          for(let n=1;n<=maxN;n++){
+            const cnt=counts[n]||0;
+            const cntExcluding=n===curNum?cnt-1:cnt;
+            options.push({num:n,count:cnt,full:cntExcluding>=4,isCurrent:n===curNum});
+          }
+          // 새 단체 번호
+          const newNum=maxN+1;
+          return <div>
+            {options.map(o=><div key={o.num}
+              onClick={()=>{if(!o.full||o.isCurrent) changeOrgNum(teamDropdown.memberId,o.num);}}
+              style={{padding:"6px 10px",borderRadius:5,cursor:o.full&&!o.isCurrent?"not-allowed":"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",
+                background:o.isCurrent?"#c9a84c22":"transparent",color:o.full&&!o.isCurrent?"#555":"#c8d6e5",
+                opacity:o.full&&!o.isCurrent?0.5:1,fontSize:12,marginBottom:2,
+                ...(o.isCurrent?{border:"1px solid #c9a84c55"}:{border:"1px solid transparent"})}}>
+              <span style={{fontWeight:o.isCurrent?700:400}}>단체{o.num} {o.isCurrent?"✓":""}</span>
+              <span style={{fontSize:10,color:o.full&&!o.isCurrent?"#ef4444":"#6b7d94"}}>{o.count}/4{o.full&&!o.isCurrent?" (만석)":""}</span>
+            </div>)}
+            <div onClick={()=>changeOrgNum(teamDropdown.memberId,newNum)}
+              style={{padding:"6px 10px",borderRadius:5,cursor:"pointer",display:"flex",alignItems:"center",gap:6,
+                color:"#3b82f6",fontSize:12,marginTop:4,borderTop:"1px solid #2a3a5c",paddingTop:8}}>
+              <span>＋ 새 단체 추가 (단체{newNum})</span>
+            </div>
+          </div>;
+        })()}
+      </div>
+    </div>}
     <div style={{display:"flex",height:"100vh"}}>
       <div style={{width:220,minWidth:220,background:C.sidebar,borderRight:"1px solid "+C.border,display:"flex",flexDirection:"column",padding:"16px 0"}}>
         <div style={{padding:"8px 20px 16px",borderBottom:"1px solid "+C.border,marginBottom:8}}>
@@ -3746,20 +3839,56 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             const sorted=[...participants].sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return (ai===-1?99:ai)-(bi===-1?99:bi);});
             // orgNumMap: 혼성팀은 팀별 단체번호 (같은 단체라도 팀이 다르면 다른 번호)
             const orgNumMap={};
+            const evOverrides=(selEvCode&&orgNumOverrides[selEvCode])||{};
             let flatParticipants=sorted; // 기본: sorted 그대로
             if(selIsMixed){
               // 팀별 단체번호를 sorted 순서대로 할당하고 팀 proxy 객체에 저장
               sorted.forEach((p,i)=>{
-                p._orgNum=i+1; // 팀 proxy에 단체번호 심기
-                if(p._team) p._team.forEach(m=>{m._orgNum=i+1;}); // 팀원에도 적용
-                orgNumMap["__team_"+i]=i+1;
+                const ov=evOverrides[String(p.memberId)];
+                const num=ov||i+1;
+                p._orgNum=num;
+                if(p._team) p._team.forEach(m=>{m._orgNum=num;});
+                orgNumMap["__team_"+i]=num;
               });
-              sorted.forEach((p,i)=>{if(!orgNumMap[p.orgName])orgNumMap[p.orgName]=i+1;});
+              sorted.forEach((p,i)=>{if(!orgNumMap[p.orgName])orgNumMap[p.orgName]=p._orgNum||i+1;});
               flatParticipants=sorted.flatMap((p,ti)=>(p._team||[p]).map(m=>({...m,_teamIdx:ti,_orgNum:p._orgNum})));
             } else {
               const orgOrder=[]; sorted.forEach(p=>{if(!orgOrder.includes(p.orgName))orgOrder.push(p.orgName);});
               orgOrder.forEach((org,i)=>{orgNumMap[org]=i+1;});
+              // 개별 오버라이드 적용
+              sorted.forEach(p=>{
+                const ov=evOverrides[String(p.memberId)];
+                if(ov!==undefined) p._orgNum=ov;
+              });
             }
+
+            // ── 단체번호 헬퍼 ──
+            const getEffectiveOrgNum=(p)=>{
+              const ov=evOverrides[String(p.memberId)];
+              if(ov!==undefined) return ov;
+              return p._orgNum||orgNumMap[p.orgName]||1;
+            };
+            // 현재 종목의 모든 단체번호와 인원수 계산
+            const getTeamCounts=()=>{
+              const counts={};
+              const allP=selIsMixed?flatParticipants:sorted;
+              allP.forEach(p=>{
+                const num=getEffectiveOrgNum(p);
+                counts[num]=(counts[num]||0)+1;
+              });
+              return counts;
+            };
+            const teamCounts=selEvCode?getTeamCounts():{};
+            const maxTeamNum=Object.keys(teamCounts).length>0?Math.max(...Object.keys(teamCounts).map(Number)):0;
+            // 드롭다운 렌더
+            const renderTeamBadge=(p,orgNum,extraStyle)=>{
+              const mid=p.memberId;
+              return <span
+                onClick={(e)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setTeamDropdown(td=>td&&td.memberId===mid?null:{memberId:mid,evCode:selEvCode,rect:{top:r.bottom+window.scrollY,left:r.left+window.scrollX},currentNum:orgNum});}}
+                style={{...S.badge(C.gold),fontWeight:700,cursor:"pointer",userSelect:"none",position:"relative",...(extraStyle||{})}}>
+                단체{orgNum} ▾
+              </span>;
+            };
 
             // ── 같은 종목의 모든 세션 (릴레이 순) ──
             const sibSessions=selEvCode?sessions.filter(s=>s.evCode===selEvCode).sort((a,b)=>a.relay-b.relay):[];
@@ -3907,13 +4036,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const si=getEvSchedInfo(selEvCode);
               const header="#\t사대\t이름\t소속\t단체번호\t비고";
               const active=list.filter(p=>!p.absent);
-              const rows=active.map((p,i)=>`${i+1}\t${p.lane||"-"}\t${p.name}\t${p.subOrg||"-"}\t단체${p._orgNum||orgNumMap[p.orgName]}\t${p.remark||""}`);
+              const rows=active.map((p,i)=>`${i+1}\t${p.lane||"-"}\t${p.name}\t${p.subOrg||"-"}\t단체${getEffectiveOrgNum(p)}\t${p.remark||""}`);
               navigator.clipboard.writeText(evName+" "+selRelay+"조 "+label+" ("+si.dateStr+" "+si.time+")\n"+header+"\n"+rows.join("\n")).then(()=>flash("클립보드에 복사됨"));
             }}>📋 복사</button>);
             const csvBtn=(list,suffix)=>(<button style={{...S.btn(C.green,"#fff"),fontSize:11,padding:"5px 12px"}} onClick={()=>{
               let csv="\uFEFF#,사대,이름,소속,단체번호,비고\n";
               const active=list.filter(p=>!p.absent);
-              active.forEach((p,i)=>{csv+=`${i+1},${p.lane||"-"},${p.name},${p.subOrg||"-"},단체${p._orgNum||orgNumMap[p.orgName]},${p.remark||""}\n`;});
+              active.forEach((p,i)=>{csv+=`${i+1},${p.lane||"-"},${p.name},${p.subOrg||"-"},단체${getEffectiveOrgNum(p)},${p.remark||""}\n`;});
               const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
               const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${selectedEvCode}_${suffix}.csv`; a.click();
             }}>📥 CSV</button>);
@@ -3931,7 +4060,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     {selIsMixed&&<td style={{...S.td,color:C.gold,fontWeight:700,fontSize:10}}>{isNewTeam?"팀"+(p._teamIdx+1):""}</td>}
                     <td style={{...S.td,fontWeight:600}}>{p.name}</td>
                     <td style={S.td}>{p.subOrg||"-"}</td>
-                    <td style={S.td}><span style={{...S.badge(C.gold),fontWeight:700}}>단체{orgNum}</span></td>
+                    <td style={S.td}>{renderTeamBadge(p,getEffectiveOrgNum(p))}</td>
                   </tr>;
                 })}
               </tbody></table>
@@ -3960,7 +4089,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       <td style={{...S.td,fontWeight:700,color:p.lane?"#ddd":"#555",textAlign:"center"}}>{p.lane||"-"}</td>
                       <td style={{...S.td,fontWeight:600,textDecoration:isAbsent?"line-through":"none"}}>{p.name}</td>
                       <td style={S.td}>{p.subOrg||"-"}</td>
-                      <td style={S.td}><span style={{...S.badge(C.gold),fontWeight:700}}>단체{p._orgNum||orgNumMap[p.orgName]||"?"}</span></td>
+                      <td style={S.td}>{renderTeamBadge(p,p._orgNum||getEffectiveOrgNum(p))}</td>
                       <td style={S.td}>{p.remark||""}</td>
                       <td style={{...S.td,padding:"2px 4px"}} className="no-print">
                         <button onClick={()=>toggleAbsent(i)} title={isAbsent?"참가 복원":"불참 처리"}
@@ -3996,9 +4125,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 }
                 if(evParticipants.length===0) return;
                 const evSorted=[...evParticipants].sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return (ai===-1?99:ai)-(bi===-1?99:bi);});
-                if(isMx) evSorted.forEach((p,i)=>{p._orgNum=i+1;if(p._team)p._team.forEach(m=>{m._orgNum=i+1;});});
+                if(isMx) evSorted.forEach((p,i)=>{const ov2=(orgNumOverrides[evCode]||{})[String(p.memberId)];p._orgNum=ov2||i+1;if(p._team)p._team.forEach(m=>{m._orgNum=p._orgNum;});});
                 const evOrgOrder=[]; evSorted.forEach(p=>{if(!evOrgOrder.includes(p.orgName))evOrgOrder.push(p.orgName);});
                 const evOrgNumMap={}; evOrgOrder.forEach((org,i)=>{evOrgNumMap[org]=i+1;});
+                if(!isMx) evSorted.forEach(p=>{const ov2=(orgNumOverrides[evCode]||{})[String(p.memberId)];if(ov2!==undefined)p._orgNum=ov2;else if(!p._orgNum)p._orgNum=evOrgNumMap[p.orgName];});
                 const shuffled=buildStartList(evSorted,evOrgNumMap);
                 let offset=0;
                 if(isMx){
@@ -4065,9 +4195,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           }
                           if(evParts.length===0) return;
                           const evS=[...evParts].sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi);});
-                          if(isMx) evS.forEach((p,i)=>{p._orgNum=i+1;if(p._team)p._team.forEach(m=>{m._orgNum=i+1;});});
+                          if(isMx) evS.forEach((p,i)=>{const ov3=(orgNumOverrides[evCode]||{})[String(p.memberId)];p._orgNum=ov3||i+1;if(p._team)p._team.forEach(m=>{m._orgNum=p._orgNum;});});
                           const oo=[];evS.forEach(p=>{if(!oo.includes(p.orgName))oo.push(p.orgName);});
                           const om={};oo.forEach((o,i)=>{om[o]=i+1;});
+                          if(!isMx) evS.forEach(p=>{const ov3=(orgNumOverrides[evCode]||{})[String(p.memberId)];if(ov3!==undefined)p._orgNum=ov3;else if(!p._orgNum)p._orgNum=om[p.orgName];});
                           const sh=buildStartList(evS,om);let off=0;
                           if(isMx){
                             evSessions.forEach(ss=>{const ln=getSessionLanes(ss.key);const ts=Math.floor(ln.length/2);const ch=sh.slice(off,off+ts);const rows=[];ch.forEach((tp,ti)=>{const tn=tp._orgNum||(off+ti+1);(tp._team||[tp]).forEach((m,mi)=>{rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:ln[ti*2+mi]?ss.relay+"-"+ln[ti*2+mi]:null,absent:false,remark:"",_teamIdx:ti,_orgNum:tn});});});newSL[ss.key]=rows;off+=ts;totalS++;});
