@@ -2649,7 +2649,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         const nameLabel="이름";
         const hdr=["순위",nameLabel,"소속",...sHeaders,"합계","비고"];
         const colWidths=hdr.map(h=>{
-          if(h==="소속"||h==="비고") return null;
+          if(h==="소속") return null;
+          if(h==="비고") return "48px";
           if(h==="순위") return "28px";
           if(h===nameLabel) return isMixed?"80px":"48px";
           if(h==="합계") return cfg.xcount?"68px":"54px";
@@ -2708,7 +2709,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             return <tr key={(r.id||i)+"_"+pi}>
               <td style={{...tdS,borderLeft:"1px solid #333",fontWeight:isFirst?800:400,fontSize:isFirst?"10pt":"8.5pt"}}>{isFirst?(r.rank||""):""}</td>
               <td style={{...tdS,textAlign:"left",paddingLeft:"4px",fontWeight:isFirst?700:400,fontSize:isFirst?"9pt":"8.5pt",...(isFirst&&r.is_team?{textDecoration:"underline"}:{})}}>{isFirst?r.name:""}</td>
-              <td style={{...tdS,borderRight:dotBdr}}>{isFirst?(isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)):""}</td>
+              <td style={{...tdS,borderRight:dotBdr,fontSize:isFirst?"6.5pt":"8.5pt"}}>{isFirst?(isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)):""}</td>
               <td style={{...tdS,fontWeight:600,fontSize:"7.5pt",color:"#555"}}>{p.name}</td>
               <td style={tdS}>{r["s"+p.s1]||""}</td>
               <td style={{...tdS,borderRight:dotBdr}}>{r["s"+p.s2]||""}</td>
@@ -2723,7 +2724,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           ?["순위","이름","소속","자세","1","2","소계","합계","비고"]
           :hdr;
         const colWidthsFinal=(seriesLabels?hdrForWidth:hdr).map(h=>{
-          if(h==="소속"||h==="비고") return null;
+          if(h==="소속") return null;
+          if(h==="비고") return "48px";
           if(h==="순위") return "28px";
           if(h==="이름") return "48px";
           if(h==="합계") return cfg.xcount?"74px":"60px";
@@ -2771,7 +2773,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   const mc=[];
                   mc.push(<td key="rank" style={mk({borderLeft:"1px solid #333"})}></td>);
                   mc.push(<td key="name" style={mk({paddingLeft:"10px",fontSize:"8pt",textAlign:"left"})}>{m.name}</td>);
-                  mc.push(<td key="region" style={mk({borderRight:dotBdr})}>{isNatGames()?m.region:(m._sub_org||m.sub_org||m.region)}</td>);
+                  mc.push(<td key="region" style={mk({borderRight:dotBdr,fontSize:"6.5pt"})}>{isNatGames()?m.region:(m._sub_org||m.sub_org||m.region)}</td>);
                   sCols.forEach(s=>mc.push(<td key={"s"+s} style={mk({whiteSpace:"nowrap",padding:sPad,...(isDotAfterSeries(s)?{borderRight:dotBdr}:{})})}>{m["s"+s]||""}</td>));
                   mc.push(<td key="total" style={mk({fontWeight:600,textAlign:"left",paddingLeft:"8px",whiteSpace:"nowrap"})}>{fmtTotal(m)}</td>);
                   mc.push(<td key="rem" style={mk({borderRight:"1px solid #333"})}></td>);
@@ -2783,7 +2785,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const cells=[];
                 cells.push(<td key="rank" style={pTdBL}>{r.rank}</td>);
                 cells.push(<td key="name" style={pTdB}>{r.name}</td>);
-                cells.push(<td key="region" style={{...pTdB,borderRight:dotBdr}}>{isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)}</td>);
+                cells.push(<td key="region" style={{...pTdB,borderRight:dotBdr,fontSize:"6.5pt"}}>{isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)}</td>);
                 sCols.forEach(s=>cells.push(<td key={"s"+s} style={{...pTdB,...(isDotAfterSeries(s)?{borderRight:dotBdr}:{})}}>{r["s"+s]||""}</td>));
                 cells.push(<td key="total" style={{...pTdB,fontWeight:700,textAlign:"left",paddingLeft:"8px"}}>{fmtTotal(r)}</td>);
                 cells.push(<td key="rem" style={pTdBR}>{fmtRemarks(r.remarks)||""}</td>);
@@ -2798,7 +2800,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           const cells=[];
           cells.push(<td key="rank" style={pTdBL}>{r.rank}</td>);
           cells.push(<td key="name" style={{...pTdB,...(isMixed?{fontSize:"7pt",lineHeight:1.3,textAlign:"left",paddingLeft:"2px"}:{})}}>{isMixed?r.name.replace(" / ","\n"):r.name}</td>);
-          cells.push(<td key="region" style={{...pTdB,...(!isMixed&&r.is_team?{textDecoration:"underline"}:{}),borderRight:dotBdr}}>{isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)}</td>);
+          cells.push(<td key="region" style={{...pTdB,...(!isMixed&&r.is_team?{textDecoration:"underline"}:{}),borderRight:dotBdr,fontSize:"6.5pt"}}>{isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)}</td>);
           sCols.forEach(s=>cells.push(<td key={"s"+s} style={{...pTdB,...(isDotAfterSeries(s)?{borderRight:dotBdr}:{})}}>{r["s"+s]||""}</td>));
           cells.push(<td key="total" style={{...pTdB,fontWeight:700,textAlign:"left",paddingLeft:"8px"}}>{fmtTotal(r)}</td>);
           cells.push(<td key="rem" style={pTdBR}>{fmtRemarks(r.remarks)||""}</td>);
