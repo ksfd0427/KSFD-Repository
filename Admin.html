@@ -63,6 +63,31 @@ const STATUS_COLORS = { 1:"#2a7d4f", 2:"#c9a84c", 3:"#3388cc", 4:"#666" };
 const APP_STATUS_COLORS = { pending:"#c9a84c", approved:"#2a7d4f", rejected:"#cc5555" };
 const APP_STATUS_LABELS = { pending:"대기", approved:"승인", rejected:"반려" };
 
+// ── 단체별 구분 색상 (20색, 밝고 변별력 높은 톤) ──
+const TEAM_COLORS = [
+  "#e8b84b", // 1  금색
+  "#4fc3f7", // 2  하늘
+  "#ef5350", // 3  빨강
+  "#66bb6a", // 4  녹색
+  "#ab47bc", // 5  보라
+  "#ff7043", // 6  주황
+  "#26c6da", // 7  청록
+  "#ec407a", // 8  핑크
+  "#9ccc65", // 9  연두
+  "#ffa726", // 10 호박
+  "#42a5f5", // 11 파랑
+  "#d4e157", // 12 라임
+  "#7e57c2", // 13 남보라
+  "#29b6f6", // 14 밝은파랑
+  "#ef9a9a", // 15 연분홍
+  "#80cbc4", // 16 민트
+  "#fff176", // 17 노랑
+  "#f48fb1", // 18 로즈
+  "#a1887f", // 19 갈색
+  "#90a4ae", // 20 청회
+];
+const getTeamColor=(num)=>TEAM_COLORS[((num||1)-1)%TEAM_COLORS.length];
+
 const TABLES = [
   { key:"tournaments", label:"🏆 대회" }, { key:"tournament_events", label:"🎯 종목" },
   { key:"applications", label:"📋 신청" }, { key:"members", label:"👤 선수단" },
@@ -2175,10 +2200,47 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       .order("rank",{ascending:true});
     if(!prelim||prelim.length===0){setTeamData([]); return;}
     const cfg=getEventCfg(ec,getEvFmt(ec));
-    // is_team=true인 선수만 필터 → 소속별 그룹
-    const teamPlayers=prelim.filter(r=>r.is_team===true);
-    // sub_org: DB 컬럼 우선, 없으면 members에서 조회
-    const needSubOrg=teamPlayers.some(r=>!r.sub_org);
+
+    // ── 단체번호 매핑: 스타트리스트/참가자 데이터에서 이름 → memberId → 단체번호 ──
+    const evOv=orgNumOverrides[ec]||{};
+    // 스타트리스트에서 이 종목 참가자 수집
+    const slEntries=[];
+    Object.keys(startLists).forEach(sk=>{
+      const parts=sk.match(/^(.+?)_(\d+)$/);
+      const evCode=parts?parts[1]:sk;
+      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId)slEntries.push(p);});
+    });
+    // evPData fallback
+    if(slEntries.length===0&&evPData){
+      const{allMembers,allEntries,appMap}=evPData;
+      const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
+      const memberAppMap2={};allMembers.forEach(m=>{memberAppMap2[m.id]=appMap[m.application_id];});
+      const evEntries=allEntries.filter(e=>e.event_code===ec);
+      const regionOrder=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+      const parts=evEntries.map(e=>{const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];return m?{memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"}:null;}).filter(Boolean);
+      parts.sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi);});
+      const orgOrd=[];parts.forEach(p=>{if(!orgOrd.includes(p.orgName))orgOrd.push(p.orgName);});
+      const autoMap={};orgOrd.forEach((o,i)=>{autoMap[o]=i+1;});
+      parts.forEach(p=>slEntries.push({...p,_orgNum:autoMap[p.orgName]||1}));
+    }
+    // 이름 → 참가자 매핑
+    const nameToSL={};
+    slEntries.forEach(p=>{nameToSL[p.name]=p;});
+    // 자동 orgNumMap
+    const slOrgOrd=[];slEntries.forEach(p=>{if(!slOrgOrd.includes(p.orgName))slOrgOrd.push(p.orgName);});
+    const slOrgMap={};slOrgOrd.forEach((o,i)=>{slOrgMap[o]=i+1;});
+    const getTeamNum=(r)=>{
+      const slP=nameToSL[r.name];
+      if(!slP) return null;
+      const mid=String(slP.memberId);
+      if(evOv[mid]!==undefined) return evOv[mid];
+      return slP._orgNum||slOrgMap[slP.orgName]||null;
+    };
+
+    // 모든 본선 선수 (bib=team/sub 제외) → 단체번호로 그룹핑
+    const allPlayers=prelim.filter(r=>r.bib!=="team"&&r.bib!=="sub");
+    // sub_org 보충
+    const needSubOrg=allPlayers.some(r=>!r.sub_org);
     if(needSubOrg){
       const subOrgMap={};
       try{
@@ -2186,18 +2248,21 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         if(mems) mems.forEach(m=>{if(m.sub_org&&m.sub_org.trim())subOrgMap[m.name]=m.sub_org;});
       }catch(e){}
       if(evPData&&evPData.allMembers) evPData.allMembers.forEach(m=>{if(m.sub_org&&m.sub_org.trim()&&!subOrgMap[m.name])subOrgMap[m.name]=m.sub_org;});
-      teamPlayers.forEach(r=>{if(!r.sub_org)r.sub_org=subOrgMap[r.name]||"";});
+      allPlayers.forEach(r=>{if(!r.sub_org)r.sub_org=subOrgMap[r.name]||"";});
     }
-    teamPlayers.forEach(r=>{r._sub_org=r.sub_org||"";});
+    allPlayers.forEach(r=>{r._sub_org=r.sub_org||"";});
+
     const groups={};
-    teamPlayers.forEach(r=>{
-      if(!r.region) return;
-      if(!groups[r.region]) groups[r.region]=[];
-      groups[r.region].push(r);
+    allPlayers.forEach(r=>{
+      const tn=getTeamNum(r);
+      if(tn===null) return;
+      if(!groups[tn]) groups[tn]=[];
+      groups[tn].push(r);
     });
+
     // 3인 이상 팀만
-    const teams=Object.entries(groups).filter(([,members])=>members.length>=3).map(([region,members])=>{
-      // 총점 기준 정렬 후 상위 3명 합산, 4위는 미반영
+    const regionOrder=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+    const teams=Object.entries(groups).filter(([,members])=>members.length>=3).map(([teamNum,members])=>{
       members.sort((a,b)=>parseFloat(b.total||0)-parseFloat(a.total||0));
       const top3=members.slice(0,3);
       const extra=members[3]||null;
@@ -2208,13 +2273,16 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         const lastS="s"+cfg.series;
         return s+parseFloat(m[lastS]||0);
       },0);
-      return {region,top3,extra,teamTotal,teamXCount,lastSeriesSum,memberCount:members.length};
+      // 팀 시도 목록 (행정순 정렬)
+      const allRegions=[...new Set(members.map(m=>m.region).filter(Boolean))];
+      allRegions.sort((a,b)=>{const ai=regionOrder.indexOf(a),bi=regionOrder.indexOf(b);return(ai===-1?99:ai)-(bi===-1?99:bi);});
+      const region=allRegions.length<=1?(allRegions[0]||""):allRegions.join("/");
+      return {teamNum:Number(teamNum),region,_allRegions:allRegions,top3,extra,teamTotal,teamXCount,lastSeriesSum,memberCount:members.length};
     });
     // 정렬: 총점 → 동점처리
     teams.sort((a,b)=>{
       const diff=b.teamTotal-a.teamTotal;
       if(Math.abs(diff)>0.01) return diff;
-      // 동점: 권총은 X카운트 우선, 소총은 마지막 시리즈
       if(cfg.xcount){
         const xDiff=b.teamXCount-a.teamXCount;
         if(xDiff!==0) return xDiff;
@@ -2241,14 +2309,43 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     }
     setTeamData(teams);
   };
-  // 단체전 팀명 결정: 전국대회→시도, 일반→세부소속 일치 시 세부소속, 불일치 시 시도
+  // 단체전 팀명 결정: 시도 기준 — 같은 시도→시도명, 다른 시도→시도A/시도B (행정순)
   const teamDisplayName=(t)=>{
-    if(isNatGames()) return t.region;
-    const subs=t.top3.map(m=>m._sub_org||m.sub_org||"").filter(Boolean);
-    if(subs.length===t.top3.length&&subs.every(s=>s===subs[0])) return subs[0];
-    return t.region;
+    const regions=t._allRegions||[t.region];
+    if(regions.length<=1) return regions[0]||t.region||"";
+    return regions.join("/");
   };
   // ── 단체전 DB 저장 ──
+  // ── 결과 행의 단체번호 조회 (스타트리스트/참가자 매칭) ──
+  const getResultTeamNum=(ec,playerName)=>{
+    if(!ec||!playerName) return null;
+    const evOv=orgNumOverrides[ec]||{};
+    // 스타트리스트에서 매칭
+    let slP=null;
+    Object.keys(startLists).forEach(sk=>{
+      if(slP) return;
+      const parts=sk.match(/^(.+?)_(\d+)$/);
+      const evCode=parts?parts[1]:sk;
+      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(!slP&&p.name===playerName&&p.memberId)slP=p;});
+    });
+    // evPData fallback
+    if(!slP&&evPData){
+      const{allMembers,allEntries,appMap}=evPData;
+      const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
+      const evEntries=allEntries.filter(e=>e.event_code===ec);
+      const regionOrder=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+      const ps=evEntries.map(e=>{const m=memberMap2[e.member_id];const app=appMap[m?.application_id];return m?{memberId:m.id,name:m.name,orgName:app?.org_name||"-",regionName:app?.region_name||"-"}:null;}).filter(Boolean);
+      ps.sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi);});
+      const orgOrd=[];ps.forEach(p=>{if(!orgOrd.includes(p.orgName))orgOrd.push(p.orgName);});
+      const autoMap={};orgOrd.forEach((o,i)=>{autoMap[o]=i+1;});
+      const match=ps.find(p=>p.name===playerName);
+      if(match) slP={...match,_orgNum:autoMap[match.orgName]||1};
+    }
+    if(!slP) return null;
+    const mid=String(slP.memberId);
+    if(evOv[mid]!==undefined) return evOv[mid];
+    return slP._orgNum||null;
+  };
   const teamSaveToDB=async()=>{
     if(!sb||!selectedT||!resEvCode||teamData.length===0) return;
     setDbBusy(v=>v+1);
@@ -2317,7 +2414,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       return base;
     }
     base.push({k:"name",l:isMixed?"팀원":"이름",w:isMixed?140:80},{k:"region",l:"시도",w:65},{k:"_sub_org",l:"세부소속",w:85});
-    if(type==="prelim"&&!isMixed) base.push({k:"is_team",l:"단체",w:40,t:"check"});
+    if(type==="prelim"&&!isMixed) base.push({k:"_teamNum",l:"단체",w:50,t:"teamBadge"});
     for(let i=0;i<cfg.series;i++) base.push({k:"s"+(i+1),l:cfg.seriesLabels?cfg.seriesLabels[i]:"S"+(i+1),w:cfg.seriesLabels?52:55});
     base.push({k:"total",l:"합계",w:65});
     if(cfg.xcount) base.push({k:"x_count",l:"X카운트",w:60});
@@ -2360,6 +2457,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const fields=resGetFields(resEvCode,resType);
     let csv="\uFEFF"+fields.map(f=>f.l).join(",")+"\n";
     visible.forEach(r=>{csv+=fields.map(f=>{
+      if(f.t==="teamBadge") return getResultTeamNum(resEvCode,r.name)||"";
       if(f.t==="check") return r[f.k]?"O":"";
       if(f.t==="shot") return resShotRead(r,f._s,f._si);
       if(f.t==="computed") return r.total||"";
@@ -2929,7 +3027,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             const isFirst=pi===0, isLast=pi===2;
             const bdrBot=isLast?"1px dashed #888":"1px solid transparent";
             const tdS={padding:isLast?"2px 4px":"1px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,borderBottom:bdrBot,verticalAlign:isFirst?"bottom":isLast?"top":"middle"};
-            rows.push(<tr key={t.region+"_t"+pi} style={{background:"#f0f0f0"}}>
+            rows.push(<tr key={(t.teamNum||t.region)+"_t"+pi} style={{background:"#f0f0f0"}}>
               <td style={{...tdS,borderLeft:"1px solid #333",fontWeight:isFirst?800:400,fontSize:isFirst?"10pt":"8.5pt"}}>{isFirst?t.rank:""}</td>
               <td style={{...tdS,textAlign:"left",paddingLeft:"4px",fontWeight:isFirst?700:400,fontSize:isFirst?"9pt":"8.5pt",borderRight:dotBdr,whiteSpace:"nowrap"}}>{isFirst?teamDisplayName(t):""}</td>
               <td style={{...tdS,fontWeight:600,fontSize:"7.5pt",color:"#555"}}>{p.name}</td>
@@ -2949,7 +3047,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const isFirst=pi===0, isLast=pi===2;
               const bdrBot=isLast?(isLastMember?"2px solid #333":"1px dashed #888"):"1px solid transparent";
               const tdS={padding:isLast?"2px 4px":"1px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,borderBottom:bdrBot,verticalAlign:isFirst?"bottom":isLast?"top":"middle"};
-              rows.push(<tr key={t.region+"_m"+mi+"_"+pi}>
+              rows.push(<tr key={(t.teamNum||t.region)+"_m"+mi+"_"+pi}>
                 <td style={{...tdS,borderLeft:"1px solid #333"}}></td>
                 <td style={{...tdS,textAlign:"left",paddingLeft:"10px",fontSize:"8pt",borderRight:dotBdr,whiteSpace:"nowrap"}}>
                   {isFirst?<>{m.name}{(m._sub_org||"")?<span style={{marginLeft:3,fontSize:"7pt"}}>[{m._sub_org}]</span>:null}</>:""}
@@ -2995,7 +3093,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         sCols.forEach(s=>tc.push(<td key={"ts"+s} style={teamCell({fontWeight:700,whiteSpace:"nowrap",padding:sPad,...(isDotAfterS(s)?{borderRight:dotBdr}:{})})}>{teamSeriesSum(t,s)}</td>));
         tc.push(<td key="total" style={teamCell({fontWeight:800,fontSize:"10pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"})}>{fmtTeamTotal(t)}</td>);
         tc.push(<td key="rem" style={teamCell({borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px",lineHeight:1.2})}>{fmtRemarks(t._remarks)}</td>);
-        rows.push(<tr key={t.region+"_team"} style={{background:"#f0f0f0"}}>{tc}</tr>);
+        rows.push(<tr key={(t.teamNum||t.region)+"_team"} style={{background:"#f0f0f0"}}>{tc}</tr>);
         // ── 개인 행 (top3 + extra) ──
         const allM=[...t.top3];
         if(t.extra) allM.push(t.extra);
@@ -3010,7 +3108,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           sCols.forEach(s=>mc.push(<td key={"ms"+s} style={mk({whiteSpace:"nowrap",padding:sPad,...(isDotAfterS(s)?{borderRight:dotBdr}:{})})}>{m["s"+s]||""}</td>));
           mc.push(<td key="total" style={mk({fontWeight:600,textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"})}>{fmtMemberTotal(m)}</td>);
           mc.push(<td key="rem" style={mk({borderRight:"1px solid #333"})}></td>);
-          rows.push(<tr key={t.region+"_m"+mi}>{mc}</tr>);
+          rows.push(<tr key={(t.teamNum||t.region)+"_m"+mi}>{mc}</tr>);
         });
         return rows;
       }).flat()}</tbody></table>;
@@ -3566,7 +3664,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 <td style={{...tdSt,textAlign:"center",fontWeight:700,color:"#000"}}>{p.lane||"-"}</td>
                 <td style={{...tdSt,fontWeight:600,color:"#000"}}>{p.name}</td>
                 <td style={{...tdSt,color:"#000"}}>{p.subOrg||"-"}</td>
-                <td style={{...tdSt,textAlign:"center",color:"#000"}}>단체{p._orgNum||orgNumMap[p.orgName]||"?"}</td>
+                <td style={{...tdSt,textAlign:"center",color:"#000"}}><span style={{display:"inline-block",padding:"1px 6px",borderRadius:4,background:getTeamColor(p._orgNum||orgNumMap[p.orgName]||1)+"33",color:getTeamColor(p._orgNum||orgNumMap[p.orgName]||1),fontWeight:700,border:"1px solid "+getTeamColor(p._orgNum||orgNumMap[p.orgName]||1)}}>단체{p._orgNum||orgNumMap[p.orgName]||"?"}</span></td>
                 <td style={{...tdSt,color:"#000"}}>{p.remark||""}</td>
               </tr>;
             })}
@@ -3644,19 +3742,24 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           }
           // 새 단체 번호
           const newNum=maxN+1;
+          const newTC=getTeamColor(newNum);
           return <div>
-            {options.map(o=><div key={o.num}
+            {options.map(o=>{const tc=getTeamColor(o.num);return <div key={o.num}
               onClick={()=>{if(!o.full||o.isCurrent) changeOrgNum(teamDropdown.memberId,o.num);}}
               style={{padding:"6px 10px",borderRadius:5,cursor:o.full&&!o.isCurrent?"not-allowed":"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",
-                background:o.isCurrent?"#c9a84c22":"transparent",color:o.full&&!o.isCurrent?"#555":"#c8d6e5",
+                background:o.isCurrent?tc+"22":"transparent",color:o.full&&!o.isCurrent?"#555":"#c8d6e5",
                 opacity:o.full&&!o.isCurrent?0.5:1,fontSize:12,marginBottom:2,
-                ...(o.isCurrent?{border:"1px solid #c9a84c55"}:{border:"1px solid transparent"})}}>
-              <span style={{fontWeight:o.isCurrent?700:400}}>단체{o.num} {o.isCurrent?"✓":""}</span>
+                ...(o.isCurrent?{border:"1px solid "+tc+"77"}:{border:"1px solid transparent"})}}>
+              <span style={{display:"flex",alignItems:"center",gap:6,fontWeight:o.isCurrent?700:400}}>
+                <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:tc,flexShrink:0}}/>
+                단체{o.num} {o.isCurrent?"✓":""}
+              </span>
               <span style={{fontSize:10,color:o.full&&!o.isCurrent?"#ef4444":"#6b7d94"}}>{o.count}/4{o.full&&!o.isCurrent?" (만석)":""}</span>
-            </div>)}
+            </div>;})}
             <div onClick={()=>changeOrgNum(teamDropdown.memberId,newNum)}
               style={{padding:"6px 10px",borderRadius:5,cursor:"pointer",display:"flex",alignItems:"center",gap:6,
-                color:"#3b82f6",fontSize:12,marginTop:4,borderTop:"1px solid #2a3a5c",paddingTop:8}}>
+                color:newTC,fontSize:12,marginTop:4,borderTop:"1px solid #2a3a5c",paddingTop:8}}>
+              <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:newTC,flexShrink:0}}/>
               <span>＋ 새 단체 추가 (단체{newNum})</span>
             </div>
           </div>;
@@ -3883,9 +3986,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // 드롭다운 렌더
             const renderTeamBadge=(p,orgNum,extraStyle)=>{
               const mid=p.memberId;
+              const tc=getTeamColor(orgNum);
               return <span
                 onClick={(e)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setTeamDropdown(td=>td&&td.memberId===mid?null:{memberId:mid,evCode:selEvCode,rect:{top:r.bottom+window.scrollY,left:r.left+window.scrollX},currentNum:orgNum});}}
-                style={{...S.badge(C.gold),fontWeight:700,cursor:"pointer",userSelect:"none",position:"relative",...(extraStyle||{})}}>
+                style={{...S.badge(tc),fontWeight:700,cursor:"pointer",userSelect:"none",position:"relative",color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.5)",...(extraStyle||{})}}>
                 단체{orgNum} ▾
               </span>;
             };
@@ -4612,7 +4716,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             <td style={tdS}>{isFirst?<input type="text" value={r.name??""} onChange={e=>resUpdateRow(origIdx,"name",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
                             <td style={tdS}>{isFirst?<input type="text" value={r.region??""} onChange={e=>resUpdateRow(origIdx,"region",e.target.value)} style={{...resInp,width:57}}/>:null}</td>
                             <td style={tdS}>{isFirst?<input type="text" value={r._sub_org??""} onChange={e=>resUpdateRow(origIdx,"_sub_org",e.target.value)} style={{...resInp,width:77}}/>:null}</td>
-                            <td style={{...tdS,textAlign:"center"}}>{isFirst?<input type="checkbox" checked={!!r.is_team} onChange={e=>resUpdateRow(origIdx,"is_team",e.target.checked)} style={{accentColor:C.gold,cursor:"pointer"}}/>:null}</td>
+                            <td style={{...tdS,textAlign:"center"}}>{isFirst?(()=>{const tn=getResultTeamNum(resEvCode,r.name);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})():null}</td>
                             <td style={{...tdS,textAlign:"center"}}><span style={{fontSize:10,fontWeight:600,color:pi===0?"#6ee7b7":pi===1?"#7dd3fc":"#c4b5fd"}}>{p.name}</span></td>
                             <td style={tdS}><input type="text" value={r[p.s1]??""} onChange={e=>resUpdateRow(origIdx,p.s1,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
                             <td style={tdS}><input type="text" value={r[p.s2]??""} onChange={e=>resUpdateRow(origIdx,p.s2,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
@@ -4637,8 +4741,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             if(isMedalSub&&f.k==="name")
                               return <td key={f.k} style={{padding:"2px 2px",borderBottom:"1px solid "+C.border+"44"}}>
                                 <span style={{display:"block",fontSize:11,color:"#94a3b8",paddingLeft:14}}>└ {r.name||""} <span style={{color:"#64748b",fontSize:10}}>{r._sub_org||r.sub_org?("("+( r._sub_org||r.sub_org)+")"):""}</span></span></td>;
-                            return <td key={f.k} style={{padding:"2px 2px",borderBottom:"1px solid "+C.border+"44",textAlign:f.t==="check"?"center":undefined,...(isSubRow&&f.k==="rank"?{color:"transparent"}:{})}}>
-                            {f.t==="check"
+                            return <td key={f.k} style={{padding:"2px 2px",borderBottom:"1px solid "+C.border+"44",textAlign:(f.t==="check"||f.t==="teamBadge")?"center":undefined,...(isSubRow&&f.k==="rank"?{color:"transparent"}:{})}}>
+                            {f.t==="teamBadge"
+                              ?(()=>{const tn=getResultTeamNum(resEvCode,r.name);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})()
+                              :f.t==="check"
                               ?<input type="checkbox" checked={!!r[f.k]} onChange={e=>resUpdateRow(origIdx,f.k,e.target.checked)} style={{accentColor:C.gold,cursor:"pointer"}}/>
                               :f.t==="shot"
                               ?<input type="text" value={resShotRead(r,f._s,f._si)} onChange={e=>resShotWrite(origIdx,f._s,f._si,e.target.value)} style={{...resInp,width:f.w-6,textAlign:"center",fontSize:11,...(isTeamRow?{fontWeight:700,background:"#1a2a3a"}:{})}}/>
@@ -4720,9 +4826,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 {teamData.length>0&&<button onClick={teamSaveToDB} style={{...S.btn(C.gold,C.bg),fontSize:12,padding:"6px 16px",fontWeight:700}}>💾 단체전 DB 저장</button>}
               </div>
               <div style={{marginBottom:12,padding:"8px 12px",background:"#1a2a1a",borderRadius:6,border:"1px solid #2a5a3a",fontSize:11,color:"#88cc88",lineHeight:1.7}}>
-                ℹ️ 본선 결과의 <b style={{color:"#e8dcc8"}}>단체 ☑</b> 표시된 선수만 참조합니다. 같은 소속 3~4인 → 상위 3인 합산 → 동점 시 {cfg.xcount?"X카운트 → ":""}마지막 시리즈 합산으로 순위 결정
+                ℹ️ 종목별 현황에서 배정된 <b style={{color:"#e8dcc8"}}>단체번호</b> 기준으로 그룹핑합니다. 같은 단체 3~4인 → 상위 3인 합산 → 동점 시 {cfg.xcount?"X카운트 → ":""}마지막 시리즈 합산으로 순위 결정
               </div>
-              {teamData.length===0?<div style={{textAlign:"center",padding:40,color:C.dimmer,fontSize:13}}>본선 데이터가 없거나 단체 ☑ 표시된 선수가 같은 소속 3인 이상인 팀이 없습니다.</div>
+              {teamData.length===0?<div style={{textAlign:"center",padding:40,color:C.dimmer,fontSize:13}}>본선 데이터가 없거나 같은 단체번호 3인 이상인 팀이 없습니다.</div>
               :<div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr>
@@ -4732,7 +4838,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   </tr></thead>
                   <tbody>
                     {teamData.map((t,i)=>(
-                      <tr key={t.region} style={{background:i%2===0?"transparent":"#0d152044"}}>
+                      <tr key={t.teamNum||t.region} style={{background:i%2===0?"transparent":"#0d152044"}}>
                         <td style={{...S.td,textAlign:"center",fontWeight:700,color:t.rank<=3?C.gold:"#e8dcc8"}}>{t.rank}</td>
                         <td style={{...S.td,fontWeight:600}}>{teamDisplayName(t)}</td>
                         <td style={{...S.td,textAlign:"center"}}>{t.memberCount}</td>
