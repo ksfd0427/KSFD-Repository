@@ -2652,8 +2652,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           if(h==="소속"||h==="비고") return null;
           if(h==="순위") return "28px";
           if(h===nameLabel) return isMixed?"80px":"48px";
-          if(h==="합계") return cfg.xcount?"74px":"60px";
-          return "44px";
+          if(h==="합계") return cfg.xcount?"68px":"54px";
+          return "34px";
         });
         // 3자세 점선 위치: 슬사2(s2), 복사2(s4) 뒤에 점선
         const isDotAfterSeries=(sIdx)=>{
@@ -2728,8 +2728,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           if(h==="이름") return "48px";
           if(h==="합계") return cfg.xcount?"74px":"60px";
           if(h==="자세") return "32px";
-          if(h==="소계") return "52px";
-          return "44px";
+          if(h==="소계") return "46px";
+          return "34px";
         });
         return <table style={{tableLayout:"fixed"}}><colgroup>{colWidthsFinal.map((w,i)=>
           <col key={i} style={w?{width:w}:{}}/>
@@ -3026,7 +3026,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         // ── 3자세 단체전: 3행 레이아웃 ──
         const poses=[{name:"슬사",s1:1,s2:2},{name:"복사",s1:3,s2:4},{name:"입사",s1:5,s2:6}];
         const hdr3=["순위","소속 / 이름","자세","1","2","소계","합계","비고"];
-        const colW3=hdr3.map(h=>({순위:"24px","소속 / 이름":"1%",자세:"30px","1":"42px","2":"42px",소계:"50px",합계:"90px",비고:null}[h]));
+        const colW3=hdr3.map(h=>({순위:"24px","소속 / 이름":"1%",자세:"30px","1":"34px","2":"34px",소계:"44px",합계:"84px",비고:null}[h]));
         return <table style={{tableLayout:"auto",width:"100%"}}><colgroup>
           {colW3.map((w,i)=><col key={i} style={w?{width:w}:{}}/>)}
         </colgroup>
