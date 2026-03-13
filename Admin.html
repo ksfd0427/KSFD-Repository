@@ -24,18 +24,18 @@
     @media print { .db-bar { display:none; } }
     /* 인쇄 미리보기 */
     .print-overlay { position:fixed; inset:0; z-index:9999; background:#f0f0f0; overflow-y:auto; }
-    .print-page { width:210mm; min-height:297mm; margin:20px auto; background:#fff; color:#000; padding:10mm 12mm 20mm; box-shadow:0 2px 8px rgba(0,0,0,.2); font-family:'Noto Sans KR',sans-serif; font-size:10pt; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .print-page { width:210mm; min-height:297mm; margin:20px auto; background:#fff; color:#000; padding:10mm 12mm 20mm; box-shadow:0 2px 8px rgba(0,0,0,.2); font-family:'Malgun Gothic','맑은 고딕',sans-serif; font-size:10pt; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .print-page h2 { font-size:14pt; text-align:center; margin-bottom:4mm; font-weight:800; }
     .print-page h3 { font-size:11pt; text-align:center; margin-bottom:3mm; font-weight:700; color:#333; }
     .print-page .meta { display:flex; justify-content:space-between; font-size:9pt; color:#555; margin-bottom:4mm; }
     .print-page table { width:100%; border-collapse:collapse; font-size:8.5pt; }
     .print-page th, .print-page td { border:1px solid #333; padding:2px 4px; text-align:center; }
     .print-page th { background:#e8e8e8; font-weight:700; font-size:8pt; }
-    .print-page td { font-family:'JetBrains Mono','Noto Sans KR',monospace; }
+    .print-page td { font-family:'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif; }
     .print-page .sign-area { margin-top:10mm; display:flex; justify-content:flex-end; gap:15mm; font-size:9pt; }
     .print-page .sign-box { border:1px solid #333; width:25mm; height:12mm; text-align:center; padding-top:1mm; font-size:8pt; color:#999; }
     .print-bar { position:sticky; bottom:0; background:#1e293b; padding:12px 24px; display:flex; justify-content:center; gap:12px; z-index:10000; border-top:2px solid #334155; }
-    .print-bar button { padding:10px 28px; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:'Noto Sans KR',sans-serif; }
+    .print-bar button { padding:10px 28px; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:'Malgun Gothic','맑은 고딕',sans-serif; }
     .print-page-header { display:none; }
     @media print {
       @page { margin:0; }
@@ -450,34 +450,47 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [printZoom, setPrintZoom]=useState(1);
   const [printPages, setPrintPages]=useState(1);
   const printContentRef=React.useRef(null);
-  // ── 인쇄 페이지 자동 맞춤 (zoom) ──
+  const printHeaderRef=React.useRef(null);
+  const printFooterRef=React.useRef(null);
+  const printTableRef=React.useRef(null);
+  // ── 인쇄 페이지 자동 맞춤 (표만 zoom) ──
   React.useEffect(()=>{
     if(!resPrintMode) return;
     setPrintZoom(1); setPrintPages(1);
     const timer=setTimeout(()=>{
-      const el=printContentRef.current;
-      if(!el) return;
-      const contentH=el.scrollHeight;
-      const contentW=el.offsetWidth;
-      if(!contentH||!contentW) return;
-      // mm→px 비율 계산: 화면에서 contentW = (210 - 12*2)mm = 186mm
-      const pxPerMm=contentW/186;
-      // 페이지 가용 높이: 297mm - padding(top 10 + bottom 20) = 267mm (화면 기준)
-      const usableH=267*pxPerMm;
-      const MIN_ZOOM=0.62; // 가독성 하한
-      if(contentH<=usableH){
-        // 1페이지 안에 들어감 → 확대하여 꽉 채움
-        const z=usableH/contentH;
-        setPrintZoom(Math.min(z,1.35)); setPrintPages(1);
+      const headerEl=printHeaderRef.current;
+      const footerEl=printFooterRef.current;
+      const tableEl=printTableRef.current;
+      const pageEl=printContentRef.current;
+      if(!headerEl||!footerEl||!tableEl||!pageEl) return;
+      const pageW=pageEl.offsetWidth;
+      if(!pageW) return;
+      // mm→px 비율: pageW = (210 - 12*2)mm = 186mm
+      const pxPerMm=pageW/186;
+      // 페이지 가용 높이: 297mm - padding(top 10 + bottom 20) = 267mm
+      const totalUsableH=267*pxPerMm;
+      // 헤더/푸터 고정 높이 차감 → 표에 사용 가능한 높이
+      const headerH=headerEl.offsetHeight;
+      const footerH=footerEl.offsetHeight;
+      const tableAvailH=totalUsableH-headerH-footerH;
+      const tableH=tableEl.scrollHeight;
+      if(!tableH||tableAvailH<=0) return;
+      const MIN_ZOOM=0.62;
+      const MAX_ZOOM=1.35;
+      if(tableH<=tableAvailH){
+        // 표가 남은 공간에 들어감 → 확대하여 꽉 채움
+        const z=tableAvailH/tableH;
+        setPrintZoom(Math.min(z,MAX_ZOOM)); setPrintPages(1);
       } else {
-        // 1페이지 초과 → 축소 시도
-        const z1=usableH/contentH;
+        // 표가 넘침 → 축소 시도
+        const z1=tableAvailH/tableH;
         if(z1>=MIN_ZOOM){
           setPrintZoom(z1); setPrintPages(1);
         } else {
-          // 2페이지로 확장 → 2페이지 꽉 채움
-          const z2=(usableH*2)/contentH;
-          setPrintZoom(Math.min(z2,1.35)); setPrintPages(2);
+          // 2페이지: 가용 = totalUsableH*2 - header - footer
+          const twoPageAvail=totalUsableH*2-headerH-footerH;
+          const z2=twoPageAvail/tableH;
+          setPrintZoom(Math.min(z2,MAX_ZOOM)); setPrintPages(2);
         }
       }
     },200);
@@ -2540,7 +2553,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       return selectedT?.start_date||"";
     })();
     const pTh={border:"1px solid #333",background:"#e8e8e8",fontWeight:700,fontSize:"8pt",padding:"3px 4px",textAlign:"center"};
-    const pTd={border:"1px solid #333",padding:"2px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:"'JetBrains Mono','Noto Sans KR',monospace"};
+    const pTd={border:"1px solid #333",padding:"2px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:"'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif"};
     // 데이터 행: 세로 테두리 없음 (첫/끝 셀만 외곽)
     const pTdB={...pTd,borderLeft:"none",borderRight:"none"};
     const pTdBL={...pTdB,borderLeft:"1px solid #333"}; // 행 첫 셀
@@ -2691,7 +2704,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             const bdrBot=isLast?"2px solid #333":"1px solid transparent";
             const vAlign=isFirst?"bottom":isLast?"top":"middle";
             const vPad=isLast?"3px 4px":"1px 4px";
-            const tdS={padding:vPad,textAlign:"center",fontSize:"8.5pt",fontFamily:"'JetBrains Mono','Noto Sans KR',monospace",borderBottom:bdrBot,verticalAlign:vAlign};
+            const tdS={padding:vPad,textAlign:"center",fontSize:"8.5pt",fontFamily:"'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif",borderBottom:bdrBot,verticalAlign:vAlign};
             return <tr key={(r.id||i)+"_"+pi}>
               <td style={{...tdS,borderLeft:"1px solid #333",fontWeight:isFirst?800:400,fontSize:isFirst?"10pt":"8.5pt"}}>{isFirst?(r.rank||""):""}</td>
               <td style={{...tdS,textAlign:"left",paddingLeft:"4px",fontWeight:isFirst?700:400,fontSize:isFirst?"9pt":"8.5pt",...(isFirst&&r.is_team?{textDecoration:"underline"}:{})}}>{isFirst?r.name:""}</td>
@@ -2726,7 +2739,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         <tbody>{(()=>{
           if(isMixed){
             // 혼성팀: team/sub 그룹 렌더링 (팀요약 + 개인 2행)
-            const F="'JetBrains Mono','Noto Sans KR',monospace";
+            const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
             const sPad="1px 2px";
             const teamCell=(extra={})=>({padding:"2px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,
               borderTop:"2px solid #333",borderBottom:"1px dashed #888",borderLeft:"none",borderRight:"none",...extra});
@@ -2800,7 +2813,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const SERIES=9;
       const shotsIn=s=>s<=2?5:2;
       const MAX_ROWS=6; // row0=누계, row1-5=격발
-      const F="'JetBrains Mono','Noto Sans KR',monospace";
+      const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
       const SZ="7.5pt"; // 통일 폰트 크기
       const parseShots=str=>{
         if(!str) return [];
@@ -2894,7 +2907,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const SERIES=8;
       const shotsIn=s=>s<=2?3:s===3?2:1; // S1,S2=3발, S3=2발(표시), S4~S8=1발
       const MAX_ROWS=4; // row0=누계, row1~3=격발
-      const F="'JetBrains Mono','Noto Sans KR',monospace";
+      const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
       const SZ="7.5pt";
       const parseShots=str=>{
         if(!str) return [];
@@ -3006,7 +3019,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         return sum||"";
       };
 
-      const F="'JetBrains Mono','Noto Sans KR',monospace";
+      const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
       const sPad="1px 2px";
 
       if(is3Pos){
@@ -3126,10 +3139,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const today=new Date().toLocaleDateString("ko-KR");
 
     return <div className="print-overlay">
-      <div className="print-page" style={{minHeight:printPages>1?(297*printPages)+"mm":"297mm"}}>
-        <div ref={printContentRef} style={{zoom:printZoom}}>
+      <div className="print-page" ref={printContentRef} style={{minHeight:printPages>1?(297*printPages)+"mm":"297mm"}}>
         <div className="print-page-header"><span>대한장애인사격연맹</span><span>대회운영관리시스템</span></div>
-        {/* ═══ 상단 헤더 ═══ */}
+        {/* ═══ 상단 헤더 (고정 크기) ═══ */}
+        <div ref={printHeaderRef}>
         <div style={{display:"flex",alignItems:"flex-start",marginBottom:"2mm"}}>
           {/* 좌상단: 연맹 로고 */}
           <div style={{width:"30mm",display:"flex",alignItems:"flex-start",justifyContent:"center",flexShrink:0,paddingTop:"1mm"}}>
@@ -3154,10 +3167,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           <span>한국기록: <b>{getRecVal("korea")}</b></span>
           <span>체전기록: <b>{getRecVal("national")}</b></span>
         </div>
-        {/* ═══ 본문 테이블 ═══ */}
+        </div>{/* close header ref */}
+        {/* ═══ 본문 테이블 (자동 zoom) ═══ */}
+        <div ref={printTableRef} style={{zoom:printZoom}}>
         {resType==="team"?renderTeam():resType==="final"?(isFinal3Pos(resEvCode)?renderFinal3Pos():renderFinal()):(resType==="bronze"||resType==="gold"||resType==="prelim")?renderPrelimFinal():renderPrelimFinal()}
-        {/* ═══ 하단 ═══ */}
-        <div style={{marginTop:"5mm",display:"flex",alignItems:"flex-end",fontSize:"8pt"}}>
+        </div>{/* close table zoom wrapper */}
+        {/* ═══ 하단 (고정 크기) ═══ */}
+        <div ref={printFooterRef} style={{marginTop:"5mm",display:"flex",alignItems:"flex-end",fontSize:"8pt"}}>
           {/* 좌하단: 최종수정일자 */}
           <div style={{color:"#555"}}>최종수정일자: {today}</div>
           <div style={{flex:1}}/>
@@ -3167,12 +3183,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             <div style={{borderBottom:"1px solid #333",width:"35mm",height:"10mm"}}></div>
           </div>
         </div>
-        </div>{/* close zoom wrapper */}
       </div>
       <div className="print-bar">
         <button style={{background:"#475569",color:"#fff"}} onClick={()=>setResPrintMode(false)}>← 돌아가기</button>
         <button style={{background:"#2563eb",color:"#fff"}} onClick={()=>window.print()}>🖨️ 인쇄하기</button>
-        <span style={{color:"#94a3b8",fontSize:12,alignSelf:"center"}}>배율: {(printZoom*100).toFixed(0)}% ({printPages}p)</span>
+        <span style={{color:"#94a3b8",fontSize:12,alignSelf:"center"}}>표 배율: {(printZoom*100).toFixed(0)}% ({printPages}p)</span>
       </div>
     </div>;
   };
