@@ -4029,9 +4029,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         {catKeys.map(cat=>{
                           const evs=catGrp[cat];const cc=catClrMap[cat]||C.dim;
                           const catTotal=evs.reduce((s,ev)=>s+(evRawMap[ev.code]||0),0);
-                          const isOpen=expandedEvCode?.startsWith("cat_"+cat);
+                          const catKey="cat_"+cat;
+                          const isOpen=expandedEvCode===catKey||evs.some(ev=>expandedEvCode===ev.code);
                           return <div key={cat} style={{position:"relative"}}>
-                            <div onClick={()=>setExpandedEvCode(isOpen?null:"cat_"+cat)}
+                            <div onClick={()=>setExpandedEvCode(isOpen?null:catKey)}
                               style={{padding:"6px 12px",borderRadius:6,cursor:"pointer",textAlign:"center",minWidth:70,
                                 background:isOpen?cc+"22":"transparent",border:"1px solid "+(isOpen?cc+"66":C.border)}}>
                               <div style={{fontSize:12,fontWeight:700,color:cc}}>{cat}</div>
@@ -4044,7 +4045,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                                   {evs.map(ev=>{
                                     const cnt=evRawMap[ev.code]||0;const unit=ev.type==="mixed"?"팀":"명";
                                     const isEvExp=expandedEvCode===ev.code;
-                                    return <span key={ev.code} onClick={(e)=>{e.stopPropagation();setExpandedEvCode(isEvExp?("cat_"+cat):ev.code);}}
+                                    return <span key={ev.code} onClick={(e)=>{e.stopPropagation();setExpandedEvCode(isEvExp?catKey:ev.code);}}
                                       style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:isEvExp?cc+"33":C.border+"44",color:isEvExp?"#fff":"#ccc",cursor:"pointer",border:"1px solid "+(isEvExp?cc+"66":"transparent")}}>
                                       <b style={{color:cc}}>{ev.code}</b> {cnt}{unit}
                                     </span>;
