@@ -43,10 +43,19 @@
     .print-bar button { padding:10px 28px; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:'Malgun Gothic','맑은 고딕',sans-serif; }
     .print-page-header { display:none; }
     @media print {
-      @page { margin:0; }
+      @page { margin:10mm; }
       body * { visibility:hidden; }
+      /* 기존 print-overlay (기록지 등) */
       .print-overlay, .print-overlay * { visibility:visible; }
       .print-overlay { position:absolute; inset:0; background:#fff; overflow:visible; }
+      /* 참가신청 확인서 */
+      .cert-print-view, .cert-print-view * { visibility:visible !important; color:#111 !important; color-adjust:exact; -webkit-print-color-adjust:exact; }
+      .cert-print-view { position:absolute !important; top:0 !important; left:0 !important; width:100% !important; height:auto !important; background:#fff !important; overflow:visible !important; z-index:99999; display:block !important; }
+      .cert-print-view .cert-scroll { overflow:visible !important; display:block !important; padding:0 !important; height:auto !important; flex:none !important; }
+      .cert-print-view .cert-paper { width:100% !important; margin:0 !important; padding:5mm 8mm !important; box-shadow:none !important; transform:none !important; min-height:auto !important; height:auto !important; position:static !important; overflow:visible !important; display:block !important; }
+      .cert-print-view table { page-break-inside:avoid; }
+      .cert-print-view .no-print { display:none !important; }
+      /* 공통 */
       .print-page { width:100%; margin:0; padding:8mm 10mm 12mm; box-shadow:none; page-break-after:always; }
       .print-page:last-of-type { page-break-after:auto; }
       .print-bar { display:none; }
@@ -373,6 +382,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [editT, setEditT]=useState(null);
   const [editTVal, setEditTVal]=useState({});
   const [detailApp, setDetailApp]=useState(null);
+  const [showAppCert, setShowAppCert]=useState(false);
+  const [certZoom, setCertZoom]=useState(0.6);
   const [appMembers, setAppMembers]=useState([]);
   const [appEntries, setAppEntries]=useState([]);
   const [appFirearms, setAppFirearms]=useState([]);
@@ -1234,14 +1245,20 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const openEditApp=(tab)=>{
     // 개인전 종목: memberId → [eventCode,...]
     const ie={}; appEntries.forEach(e=>{if(!ie[e.member_id])ie[e.member_id]=[]; ie[e.member_id].push(e.event_code);}); setEditIndEntries(ie);
-    // 멤버 복사 + _events 파생 (카테고리 목록)
-    const catMap={}; events.filter(e=>e.type==="individual").forEach(e=>{catMap[e.code]=e.category;});
+    // catMap: 모든 종목(individual+team+mixed)의 카테고리 매핑
+    const catMap={}; events.forEach(e=>{catMap[e.code]=e.category;});
+    // 단체전/혼성팀에서 참여한 카테고리도 추출
+    const teamCatByMember={};
+    appTeamEntries.forEach(t=>{if(!teamCatByMember[t.member_id])teamCatByMember[t.member_id]=new Set(); if(catMap[t.event_code])teamCatByMember[t.member_id].add(catMap[t.event_code]);});
+    // 멤버 복사 + _events 파생 (카테고리 목록 - 개인전+단체전 모두 반영)
     setEditMembers(appMembers.map(m=>{
-      // 해당 멤버의 개인전 등록에서 카테고리 추출
       const memberEvCodes=ie[m.id]||[];
-      const cats=[...new Set(memberEvCodes.map(c=>catMap[c]).filter(Boolean))];
-      // class_type이 있으면 그것도 포함
-      if(m.class_type && !cats.includes(m.class_type)) cats.unshift(m.class_type);
+      const catsFromInd=memberEvCodes.map(c=>catMap[c]).filter(Boolean);
+      const catsFromTeam=teamCatByMember[m.id]?[...teamCatByMember[m.id]]:[];
+      const cats=[...new Set([...catsFromInd,...catsFromTeam])];
+      // class_type이 유효한 카테고리명이면 포함
+      const validCats=["소총","소총(SH2)","권총","산탄총","청각"];
+      if(m.class_type && validCats.includes(m.class_type) && !cats.includes(m.class_type)) cats.unshift(m.class_type);
       // DB "녀" → UI "여" 변환
       const uiGender=m.gender==="녀"?"여":m.gender;
       return {...m, gender:uiGender, _events:cats, _orig:true};
@@ -1340,27 +1357,30 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   };
 
   const editUpdateMember=(idx,field,value)=>{
-    setEditMembers(prev=>prev.map((m,i)=>i===idx?{...m,[field]:value}:m));
-    const m=editMembers[idx];
-    if(!m) return;
-    const evCatMap={}; const evGenderMap={}; events.filter(e=>e.type==="individual").forEach(e=>{evCatMap[e.code]=e.category; evGenderMap[e.code]=e.gender;});
-    // _events 변경 시: 해당 카테고리에 속하지 않는 개인전 등록 정리
-    if(field==="_events"){
-      const newCats=value||[];
-      setEditIndEntries(prev=>{
-        const cur=prev[m.id]||[];
-        const filtered=cur.filter(c=>newCats.includes(evCatMap[c]));
-        return {...prev,[m.id]:filtered};
-      });
-    }
-    // 성별 변경 시: 성별 불일치 종목 정리
-    if(field==="gender"){
-      setEditIndEntries(prev=>{
-        const cur=prev[m.id]||[];
-        const filtered=cur.filter(c=>evGenderMap[c]==="혼"||evGenderMap[c]===value);
-        return {...prev,[m.id]:filtered};
-      });
-    }
+    setEditMembers(prev=>{
+      const updated=prev.map((m,i)=>i===idx?{...m,[field]:value}:m);
+      const m=updated[idx];
+      if(!m) return updated;
+      const evCatMap={}; const evGenderMap={}; events.filter(e=>e.type==="individual").forEach(e=>{evCatMap[e.code]=e.category; evGenderMap[e.code]=e.gender;});
+      // _events 변경 시: 해당 카테고리에 속하지 않는 개인전 등록 정리
+      if(field==="_events"){
+        const newCats=value||[];
+        setEditIndEntries(prev2=>{
+          const cur=prev2[m.id]||[];
+          const filtered=cur.filter(c=>newCats.includes(evCatMap[c]));
+          return {...prev2,[m.id]:filtered};
+        });
+      }
+      // 성별 변경 시: 성별 불일치 종목 정리
+      if(field==="gender"){
+        setEditIndEntries(prev2=>{
+          const cur=prev2[m.id]||[];
+          const filtered=cur.filter(c=>evGenderMap[c]==="혼"||evGenderMap[c]===value);
+          return {...prev2,[m.id]:filtered};
+        });
+      }
+      return updated;
+    });
   };
   const editAddMember=()=>setEditMembers(prev=>[...prev,{id:Date.now(),name:"",gender:"남",dob:"",role:"선수",sub_org:"",class_type:"",phone:"",_events:[],_new:true}]);
   const editRemoveMember=(idx)=>{
@@ -6442,7 +6462,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <span style={S.badge(APP_STATUS_COLORS[detailApp.status])}>{APP_STATUS_LABELS[detailApp.status]}</span>
             <button style={{...S.btn("#e67e22","#fff"),fontSize:12,padding:"6px 14px"}} onClick={()=>openEditApp("members")}>✏️ 수정</button>
-            <button style={{...S.btn(C.green,"#fff"),fontSize:12,padding:"6px 14px"}} onClick={()=>downloadAppExcel(detailApp,appMembers,appEntries,appTeamEntries,appFirearms)}>📥 엑셀 다운로드</button>
+            <button style={{...S.btn("#2563eb","#fff"),fontSize:12,padding:"6px 14px"}} onClick={()=>setShowAppCert(true)}>🖨️ 확인서</button>
+            <button style={{...S.btn(C.green,"#fff"),fontSize:12,padding:"6px 14px"}} onClick={()=>downloadAppExcel(detailApp,appMembers,appEntries,appTeamEntries,appFirearms)}>📥 엑셀</button>
             <button style={S.btn(C.border,"#8899aa")} onClick={()=>setDetailApp(null)}>✕</button>
           </div>
         </div>
@@ -6580,6 +6601,167 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       })()}
 
       {/* ══ 신청 수정 모달 ══ */}
+      {/* ── 참가신청 확인서 인쇄 뷰 ── */}
+      {showAppCert&&detailApp&&(()=>{
+        const players=appMembers.filter(m=>m.role==="선수");
+        const staffs=appMembers.filter(m=>m.role!=="선수");
+        const evGrouped={};
+        appEntries.forEach(e=>{if(!evGrouped[e.event_code])evGrouped[e.event_code]=[];evGrouped[e.event_code].push(e);});
+        const teamGrouped={};
+        appTeamEntries.forEach(t=>{const k=t.event_code+"_"+t.team_type+"_"+t.team_number;if(!teamGrouped[k])teamGrouped[k]={code:t.event_code,type:t.team_type,num:t.team_number,members:[],isUnion:t.is_union,unionMemo:t.union_memo};teamGrouped[k].members.push(t);});
+        Object.values(teamGrouped).forEach(g=>g.members.sort((a,b)=>a.slot_order-b.slot_order));
+        const allGuns=players.flatMap(p=>(appFirearms.filter(f=>f.member_id===p.id)).map(g=>({...g,playerName:p.name})));
+        const today=new Date();const dateStr=today.getFullYear()+"년 "+(today.getMonth()+1)+"월 "+today.getDate()+"일";
+        const ds={fontFamily:"'Noto Sans KR','Batang',serif",color:"#111",lineHeight:1.8};
+        const cTh={padding:"6px 10px",border:"1px solid #333",fontSize:12,fontWeight:700,background:"#f0f0f0",color:"#111",textAlign:"center",whiteSpace:"nowrap"};
+        const cTd={padding:"6px 10px",border:"1px solid #555",fontSize:12,color:"#111",textAlign:"center"};
+        const cTdL={...cTd,textAlign:"left"};
+        return <div className="cert-print-view" style={{position:"fixed",top:0,left:0,width:"100vw",height:"100vh",background:"#555",zIndex:9999,display:"flex",flexDirection:"column",fontFamily:"'Noto Sans KR',serif"}}>
+          {/* 컨트롤 바 */}
+          <div className="no-print" style={{background:"#333",padding:"8px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,flexShrink:0}}>
+            <button onClick={()=>setShowAppCert(false)} style={{position:"absolute",left:12,background:"none",border:"1px solid #888",borderRadius:6,padding:"6px 14px",fontSize:13,color:"#ccc",cursor:"pointer"}}>← 돌아가기</button>
+            <button onClick={()=>setCertZoom(z=>Math.max(0.3,z-0.1))} style={{background:"#555",border:"none",borderRadius:4,color:"#fff",width:32,height:32,fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+            <span style={{color:"#fff",fontSize:13,minWidth:50,textAlign:"center"}}>{Math.round(certZoom*100)}%</span>
+            <button onClick={()=>setCertZoom(z=>Math.min(1.5,z+0.1))} style={{background:"#555",border:"none",borderRadius:4,color:"#fff",width:32,height:32,fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+            <button onClick={()=>setCertZoom(0.5)} style={{background:"#555",border:"none",borderRadius:4,color:"#ddd",padding:"4px 10px",fontSize:12,cursor:"pointer"}}>맞춤</button>
+            <button onClick={()=>setCertZoom(1.0)} style={{background:"#555",border:"none",borderRadius:4,color:"#ddd",padding:"4px 10px",fontSize:12,cursor:"pointer"}}>100%</button>
+            <button onClick={()=>window.print()} style={{position:"absolute",right:12,background:"#1a73e8",border:"none",borderRadius:6,padding:"6px 16px",fontSize:13,color:"#fff",cursor:"pointer",fontWeight:600}}>🖨️ 인쇄</button>
+          </div>
+          {/* 문서 영역 */}
+          <div className="cert-scroll" style={{flex:1,overflow:"auto",WebkitOverflowScrolling:"touch",display:"flex",justifyContent:"center",alignItems:"flex-start",padding:"20px 10px"}}>
+          <div className="cert-paper" style={{background:"#fff",width:794,minHeight:1123,padding:"50px 50px 30px",boxShadow:"0 4px 30px #00000044",position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",transform:"scale("+certZoom+")",transformOrigin:"top center",flexShrink:0,color:"#111"}}>
+
+            {/* 본문 */}
+            <div style={{flex:1,position:"relative",zIndex:1}}>
+
+            {/* 제목 */}
+            <h1 style={{...ds,fontSize:26,fontWeight:800,textAlign:"center",letterSpacing:8,marginBottom:40}}>참가신청 확인서</h1>
+
+            {/* 1. 대회 정보 */}
+            <div style={{marginBottom:28}}>
+              <div style={{...ds,fontSize:15,fontWeight:700,marginBottom:8,borderBottom:"2px solid #111",paddingBottom:4}}>1. 대회 정보</div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+                <tr><td style={cTh}>대회명</td><td style={{...cTdL,fontWeight:700}} colSpan={3}>{selectedT?.name||""}</td></tr>
+                <tr><td style={cTh}>소속 시/도</td><td style={cTdL}>{detailApp.region_name}</td><td style={cTh}>신청 단체명</td><td style={{...cTdL,fontWeight:700}}>{detailApp.org_name}</td></tr>
+                <tr><td style={cTh}>신청일시</td><td style={cTdL}>{new Date(detailApp.submitted_at).toLocaleDateString("ko-KR")}</td><td style={cTh}>상태</td><td style={cTdL}>{APP_STATUS_LABELS[detailApp.status]||detailApp.status}</td></tr>
+              </tbody></table>
+            </div>
+
+            {/* 2. 선수단 명단 */}
+            <div style={{marginBottom:28}}>
+              <div style={{...ds,fontSize:15,fontWeight:700,marginBottom:8,borderBottom:"2px solid #111",paddingBottom:4}}>2. 선수단 명단 ({appMembers.length}명)</div>
+              {players.length>0&&<div style={{marginBottom:12}}>
+                <div style={{...ds,fontSize:13,fontWeight:700,marginBottom:4}}>가. 선수 ({players.length}명)</div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+                  {["번호","성명","성별","생년월일","세부소속","참가종별"].map(h=><th key={h} style={cTh}>{h}</th>)}
+                </tr></thead><tbody>
+                  {players.map((p,i)=>{
+                    const pEvCodes=appEntries.filter(e=>e.member_id===p.id).map(e=>e.event_code);
+                    const cats=[...new Set(pEvCodes.map(c=>{const ev=events.find(e=>e.code===c);return ev?.category;}).filter(Boolean))];
+                    return <tr key={p.id}>
+                      <td style={cTd}>{i+1}</td>
+                      <td style={{...cTd,fontWeight:600}}>{p.name}</td>
+                      <td style={cTd}>{p.gender==="녀"?"여":p.gender}</td>
+                      <td style={cTd}>{p.dob}</td>
+                      <td style={cTd}>{p.sub_org||"-"}</td>
+                      <td style={cTdL}>{cats.length>0?cats.join(", "):(p.class_type||"-")}</td>
+                    </tr>;
+                  })}
+                </tbody></table>
+              </div>}
+              {staffs.length>0&&<div>
+                <div style={{...ds,fontSize:13,fontWeight:700,marginBottom:4}}>나. 임원 ({staffs.length}명)</div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+                  {["번호","성명","성별","직책","세부소속"].map(h=><th key={h} style={cTh}>{h}</th>)}
+                </tr></thead><tbody>
+                  {staffs.map((m,i)=><tr key={m.id}>
+                    <td style={cTd}>{i+1}</td>
+                    <td style={{...cTd,fontWeight:600}}>{m.name}</td>
+                    <td style={cTd}>{m.gender==="녀"?"여":m.gender}</td>
+                    <td style={cTd}>{m.role}</td>
+                    <td style={cTd}>{m.sub_org||"-"}</td>
+                  </tr>)}
+                </tbody></table>
+              </div>}
+            </div>
+
+            {/* 3. 종목별 참가 현황 */}
+            <div style={{marginBottom:28}}>
+              <div style={{...ds,fontSize:15,fontWeight:700,marginBottom:8,borderBottom:"2px solid #111",paddingBottom:4}}>3. 종목별 참가 현황</div>
+              {Object.keys(evGrouped).length>0&&<div style={{marginBottom:12}}>
+                <div style={{...ds,fontSize:13,fontWeight:700,marginBottom:4}}>가. 개인전</div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+                  {["종목코드","종목명","참가선수","인원"].map(h=><th key={h} style={cTh}>{h}</th>)}
+                </tr></thead><tbody>
+                  {Object.entries(evGrouped).sort(([a],[b])=>a.localeCompare(b)).map(([code,entries])=>{
+                    const ev=events.find(e=>e.code===code);
+                    const names=entries.map(e=>{const m=appMembers.find(mm=>mm.id===e.member_id);return m?.name;}).filter(Boolean);
+                    return <tr key={code}>
+                      <td style={{...cTd,fontWeight:700}}>{code}</td>
+                      <td style={cTdL}>{ev?ev.name.replace(code+" ",""):code}</td>
+                      <td style={cTdL}>{names.join(", ")}</td>
+                      <td style={cTd}>{names.length}</td>
+                    </tr>;
+                  })}
+                </tbody></table>
+              </div>}
+              {Object.keys(teamGrouped).length>0&&<div>
+                <div style={{...ds,fontSize:13,fontWeight:700,marginBottom:4}}>나. 단체전 · 혼성팀</div>
+                <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+                  {["구분","구성선수","인원","비고"].map(h=><th key={h} style={cTh}>{h}</th>)}
+                </tr></thead><tbody>
+                  {Object.entries(teamGrouped).map(([k,g])=>{
+                    const names=g.members.map(t=>{const m=appMembers.find(mm=>mm.id===t.member_id);return m?.name;}).filter(Boolean);
+                    const label=g.type==="mixed"?g.code+" 혼성팀 "+g.num+"팀":g.code+" 단체전";
+                    return <tr key={k}>
+                      <td style={{...cTd,fontWeight:700}}>{label}</td>
+                      <td style={cTdL}>{names.join(", ")}</td>
+                      <td style={cTd}>{names.length}</td>
+                      <td style={cTdL}>{g.isUnion?"연합: "+(g.unionMemo||"-"):"-"}</td>
+                    </tr>;
+                  })}
+                </tbody></table>
+              </div>}
+            </div>
+
+            {/* 4. 총기 등록 현황 */}
+            {allGuns.length>0&&<div style={{marginBottom:28}}>
+              <div style={{...ds,fontSize:15,fontWeight:700,marginBottom:8,borderBottom:"2px solid #111",paddingBottom:4}}>4. 총기 등록 현황 ({allGuns.length}정)</div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+                {["번호","선수명","총종","제조사","모델명","총기번호","허가증번호"].map(h=><th key={h} style={cTh}>{h}</th>)}
+              </tr></thead><tbody>
+                {allGuns.map((g,i)=><tr key={i}>
+                  <td style={cTd}>{i+1}</td>
+                  <td style={{...cTd,fontWeight:600}}>{g.playerName}</td>
+                  <td style={cTd}>{g.gun_type||"-"}</td>
+                  <td style={cTd}>{g.manufacturer||"-"}</td>
+                  <td style={cTd}>{g.model||"-"}</td>
+                  <td style={cTd}>{g.serial_number||"-"}</td>
+                  <td style={cTd}>{g.permit_number||"-"}</td>
+                </tr>)}
+              </tbody></table>
+            </div>}
+
+            </div>
+
+            {/* 하단 확인란 */}
+            <div style={{position:"relative",zIndex:1}}>
+              <div style={{...ds,fontSize:15,textAlign:"center",marginTop:44,marginBottom:40,lineHeight:2.4}}>
+                <p>본 연맹에서는 상기 단체에서 위와 같이</p>
+                <p><strong style={{fontSize:17,borderBottom:"1px solid #111",paddingBottom:2}}>"{selectedT?.name||""}"</strong> 에</p>
+                <p>참가신청 하였음을 확인합니다.</p>
+              </div>
+              <div style={{...ds,fontSize:16,textAlign:"center",marginBottom:40}}>{dateStr}</div>
+              <div style={{textAlign:"center",position:"relative",marginBottom:20}}>
+                <div style={{...ds,fontSize:24,fontWeight:800,letterSpacing:8}}>대한장애인사격연맹</div>
+              </div>
+            </div>
+
+          </div>
+          </div>
+        </div>;
+      })()}
+
       {editAppMode&&detailApp&&(()=>{
         const players=editMembers.filter(m=>m.role==="선수");
         const indEvents=events.filter(e=>e.type==="individual");
