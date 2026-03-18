@@ -1251,6 +1251,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const teamCatByMember={};
     appTeamEntries.forEach(t=>{if(!teamCatByMember[t.member_id])teamCatByMember[t.member_id]=new Set(); if(catMap[t.event_code])teamCatByMember[t.member_id].add(catMap[t.event_code]);});
     // 멤버 복사 + _events 파생 (카테고리 목록 - 개인전+단체전 모두 반영)
+    const roleMap={"감독":"지도자","코치":"지도자","팀닥터":"기타","기타임원":"기타"};
     setEditMembers(appMembers.map(m=>{
       const memberEvCodes=ie[m.id]||[];
       const catsFromInd=memberEvCodes.map(c=>catMap[c]).filter(Boolean);
@@ -1259,9 +1260,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       // class_type이 유효한 카테고리명이면 포함
       const validCats=["소총","소총(SH2)","권총","산탄총","청각"];
       if(m.class_type && validCats.includes(m.class_type) && !cats.includes(m.class_type)) cats.unshift(m.class_type);
-      // DB "녀" → UI "여" 변환
+      // DB "녀" → UI "여" 변환, DB role → Entry 기준 role 변환
       const uiGender=m.gender==="녀"?"여":m.gender;
-      return {...m, gender:uiGender, _events:cats, _orig:true};
+      const uiRole=roleMap[m.role]||m.role;
+      return {...m, gender:uiGender, role:uiRole, _events:cats, _orig:true};
     }));
     // 단체전/혼성팀 - new key format: team-CODE_1 for team, pair-CODE-NUM for mixed
     const tc={}; const grouped={};
@@ -6827,7 +6829,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     <div style={detailRow}>
                       <span style={detailLabel}>직책 <span style={{color:"#cc4444"}}>*</span></span>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {["선수","감독","코치","팀닥터","로더","기타임원"].map(r=><button key={r} onClick={()=>{
+                        {["선수","지도자","로더","기타"].map(r=><button key={r} onClick={()=>{
+                          if(r==="로더"){const hasSH2=editMembers.some(mm=>mm.role==="선수"&&(mm._events||[]).includes("소총(SH2)")&&mm.id!==m.id);
+                            if(!hasSH2){flash("로더는 소총(SH2) 종목을 선택한 선수가 있어야 등록 가능합니다.","error");return;}}
                           setEditMembers(prev=>prev.map((mm,ii)=>ii===idx?{...mm,role:r,...(r!=="선수"?{_events:[]}:{})}:mm));
                         }} style={chipBtn(m.role===r)}>{r}</button>)}
                       </div>
