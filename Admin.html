@@ -4648,7 +4648,23 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // ── 스타트리스트 테이블 ──
             const renderStartTable=(list)=>{
               let seq=0;
-              return <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
+              return <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border,touchAction:slDrag?'none':'auto'}}
+                onPointerDown={e=>{
+                  const tr=e.target.closest&&e.target.closest('[data-slrow]');
+                  if(!tr)return;const idx=parseInt(tr.dataset.slrow);
+                  if(isNaN(idx)||list[idx]?.absent)return;
+                  e.preventDefault();setSlDrag({evCode:selectedEvCode,fromIdx:idx});
+                }}
+                onPointerUp={e=>{
+                  if(!slDrag||slDrag.evCode!==selectedEvCode){setSlDrag(null);return;}
+                  const el=document.elementFromPoint(e.clientX,e.clientY);
+                  const tr=el&&el.closest&&el.closest('[data-slrow]');
+                  if(tr){const toIdx=parseInt(tr.dataset.slrow);
+                    if(!isNaN(toIdx)&&!list[toIdx]?.absent&&toIdx!==slDrag.fromIdx){swapRows(slDrag.fromIdx,toIdx);return;}}
+                  setSlDrag(null);
+                }}
+                onPointerLeave={()=>setSlDrag(null)}
+                onPointerCancel={()=>setSlDrag(null)}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
                   {["#","사대","이름","소속","단체번호","비고",""].map(h=><th key={h} style={S.th}>{h}</th>)}
                 </tr></thead><tbody>
@@ -4656,12 +4672,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     const isAbsent=p.absent;
                     if(!isAbsent) seq++;
                     const isDragFrom=slDrag&&slDrag.evCode===selectedEvCode&&slDrag.fromIdx===i;
-                    return <tr key={p.memberId+"-"+i}
-                      draggable={!isAbsent}
-                      onDragStart={()=>setSlDrag({evCode:selectedEvCode,fromIdx:i})}
-                      onDragOver={e=>{if(slDrag&&slDrag.evCode===selectedEvCode&&!isAbsent)e.preventDefault();}}
-                      onDrop={e=>{e.preventDefault();if(slDrag&&slDrag.evCode===selectedEvCode)swapRows(slDrag.fromIdx,i);}}
-                      onDragEnd={()=>setSlDrag(null)}
+                    return <tr key={p.memberId+"-"+i} data-slrow={i}
                       style={{background:isAbsent?"#ef444411":isDragFrom?"#3b82f622":i%2===0?"transparent":"#0d152044",
                         opacity:isAbsent?0.5:1,cursor:isAbsent?"default":"grab",transition:"background .1s"}}>
                       <td style={{...S.td,color:isAbsent?"#ef4444":C.dim,textDecoration:isAbsent?"line-through":"none"}}>{isAbsent?"—":seq}</td>
@@ -5591,7 +5602,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               {/* 종목·조 팔레트 (스타트리스트 저장 완료 세션만 표시) - 스크롤 시 고정 */}
               <div style={{position:"sticky",top:-24,zIndex:20,marginLeft:-24,marginRight:-24,marginTop:-24,padding:"24px 24px 12px",background:C.bg}}>
               <div style={{padding:12,background:C.card,borderRadius:10,border:"1px solid "+C.border}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.gold,marginBottom:4}}>📋 종목·조 팔레트 (스타트리스트 저장 완료 → 드래그하여 시간표 배치)</div>
+                <div style={{fontSize:11,fontWeight:700,color:C.gold,marginBottom:4}}>📋 종목·조 팔레트 (슬롯 탭 선택 → 시간표 행 탭으로 배치 · 데스크탑: 드래그도 가능)</div>
                 <div style={{fontSize:9,color:C.dim,marginBottom:8}}>⚠️ 같은 종목의 1조·2조는 반드시 동일 일차에 배치해야 합니다 (공식 훈련은 조별 별도 생성)</div>
                 {readySlots.length===0?(
                   <div style={{fontSize:11,color:C.dimmer,fontStyle:"italic"}}>{laneSlots.length===0?"사대 배정 탭에서 종목별 사대를 먼저 배정하세요":"종목별 현황 탭에서 스타트리스트를 먼저 생성·저장하세요"}</div>
@@ -5601,13 +5612,17 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       const used=assignedSlots.has(slot.key);
                       const ev=events.find(e=>e.code===slot.evCode);
                       const siblingDay=evDayMap[slot.evCode]!==undefined?evDayMap[slot.evCode]+1:null;
+                      const isSlotSel=schedDrag===slot.key;
                       return <div key={slot.key} draggable={!used}
                         onDragStart={e=>{if(!used){setSchedDrag(slot.key);e.dataTransfer.effectAllowed="move";}}}
-                        onDragEnd={()=>setSchedDrag(null)} title={(ev?.name||slot.evCode)+" "+slot.relay+"조 ("+slot.laneCount+"사대)"+(siblingDay&&!used?" → "+siblingDay+"일차에 배치 필요":"")}
-                        style={{padding:"3px 8px",borderRadius:5,fontSize:10,fontWeight:600,cursor:used?"default":"grab",
-                          background:used?"#333":evClr(slot.evCode)+"22",color:used?"#555":evClr(slot.evCode),
-                          border:"1px solid "+(used?"#444":siblingDay&&!used?"#fbbf24":evClr(slot.evCode)+"55"),
-                          opacity:used?0.4:1,textDecoration:used?"line-through":"none"}}>
+                        onDragEnd={()=>setSchedDrag(null)}
+                        onClick={()=>{if(!used)setSchedDrag(prev=>prev===slot.key?null:slot.key);}}
+                        title={(ev?.name||slot.evCode)+" "+slot.relay+"조 ("+slot.laneCount+"사대)"+(siblingDay&&!used?" → "+siblingDay+"일차에 배치 필요":"")}
+                        style={{padding:"3px 8px",borderRadius:5,fontSize:10,fontWeight:600,cursor:used?"default":"pointer",
+                          background:used?"#333":isSlotSel?evClr(slot.evCode)+"44":evClr(slot.evCode)+"22",color:used?"#555":evClr(slot.evCode),
+                          border:"2px solid "+(isSlotSel?evClr(slot.evCode):used?"#444":siblingDay&&!used?"#fbbf24":evClr(slot.evCode)+"55"),
+                          opacity:used?0.4:1,textDecoration:used?"line-through":"none",
+                          boxShadow:isSlotSel?"0 0 8px "+evClr(slot.evCode)+"66":"none"}}>
                         {slot.evCode} {slot.relay}조 <span style={{fontSize:8,opacity:0.7}}>({slot.laneCount})</span>
                         {siblingDay&&!used&&<span style={{fontSize:7,color:"#fbbf24",marginLeft:3}}>→{siblingDay}일</span>}
                       </div>;
@@ -5616,6 +5631,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 )}
                 {notReadySlots.length>0&&<div style={{marginTop:8,fontSize:10,color:"#ef4444"}}>
                   ⏳ 스타트리스트 미완료: {notReadySlots.map(s=>s.evCode+" "+s.relay+"조").join(", ")}
+                </div>}
+                {schedDrag&&<div style={{marginTop:8,padding:"6px 12px",borderRadius:6,background:C.gold+"22",border:"1px solid "+C.gold+"66",fontSize:11,color:C.gold,fontWeight:600}}>
+                  ✅ {schedDrag.split("_")[0]} {schedDrag.split("_")[1]||"1"}조 선택됨 — 아래 시간표 행을 탭하여 배치 <button onClick={()=>setSchedDrag(null)} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:C.gold+"33",color:C.gold,border:"1px solid "+C.gold+"66",cursor:"pointer"}}>선택 해제</button>
+                </div>}
+                {schedRowDrag&&<div style={{marginTop:4,padding:"6px 12px",borderRadius:6,background:"#3b82f622",border:"1px solid #3b82f666",fontSize:11,color:"#60a5fa",fontWeight:600}}>
+                  ↕️ 행 이동 중 — 이동할 위치의 행을 탭하세요 <button onClick={()=>{setSchedRowDrag(null);setSchedRowOver(null);}} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:"#3b82f633",color:"#60a5fa",border:"1px solid #3b82f666",cursor:"pointer"}}>취소</button>
                 </div>}
               </div>
               </div>{/* sticky 끝 */}
@@ -5648,9 +5669,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           const isInsertBefore=schedRowDrag&&schedRowOver&&schedRowOver.dayIdx===dayIdx&&schedRowOver.rowIdx===ri&&!isDragSrc;
                           const isInsertAfterLast=schedRowDrag&&schedRowOver&&schedRowOver.dayIdx===dayIdx&&schedRowOver.rowIdx===day.rows.length&&ri===day.rows.length-1&&!isDragSrc;
                           const rowBg=isPET?"#422006":ri%2===0?"transparent":C.card+"33";
+                          const isDropTarget=schedDrag&&!isPET;
                           return <tr key={row.id} style={{
                               background:isDragSrc?"#1e293b44":rowBg,
                               opacity:isDragSrc?0.35:1, transition:"opacity .12s",
+                              cursor:isDropTarget?"pointer":undefined,
+                              outline:isDropTarget?"1px dashed "+C.gold+"44":"none",
                               boxShadow:isInsertBefore?"inset 0 3px 0 "+C.gold+", 0 -2px 6px "+C.gold+"44"
                                 :isInsertAfterLast?"inset 0 -3px 0 "+C.gold+", 0 2px 6px "+C.gold+"44":"none",
                               position:"relative", zIndex:isInsertBefore||isInsertAfterLast?2:undefined
@@ -5665,6 +5689,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             onDrop={e=>{e.preventDefault();
                               if(schedRowDrag){const toIdx=schedRowOver?schedRowOver.rowIdx:ri; dropRow(schedRowDrag.dayIdx,schedRowDrag.rowIdx,dayIdx,toIdx);}
                               if(schedDrag&&!isPET){assignSlot(dayIdx,ri,schedDrag);setSchedDrag(null);}
+                            }}
+                            onClick={()=>{
+                              if(schedDrag&&!isPET){assignSlot(dayIdx,ri,schedDrag);setSchedDrag(null);return;}
+                              if(schedRowDrag&&!(schedRowDrag.dayIdx===dayIdx&&schedRowDrag.rowIdx===ri)){
+                                dropRow(schedRowDrag.dayIdx,schedRowDrag.rowIdx,dayIdx,ri);return;}
                             }}>
                             {/* 구분 */}
                             {showCat&&<td rowSpan={spans[ri]} style={{...cSt,textAlign:"center",fontWeight:700,fontSize:11,
@@ -5774,9 +5803,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                                 <span draggable onDragStart={e=>{setSchedRowDrag({dayIdx,rowIdx:ri});e.dataTransfer.effectAllowed="move";
                                     try{e.dataTransfer.setDragImage(e.currentTarget.closest("tr"),0,0);}catch(ex){}}}
                                   onDragEnd={()=>{setSchedRowDrag(null);setSchedRowOver(null);}}
-                                  style={{cursor:"grab",fontSize:15,color:C.dim,lineHeight:1,padding:"6px 4px",borderRadius:3,letterSpacing:-1,touchAction:"none"}}
-                                  onMouseEnter={e=>e.currentTarget.style.color=C.gold} onMouseLeave={e=>e.currentTarget.style.color=C.dim}
-                                  title="드래그하여 순서 변경">⠿</span>
+                                  onClick={e=>{e.stopPropagation();
+                                    if(schedRowDrag&&schedRowDrag.dayIdx===dayIdx&&schedRowDrag.rowIdx===ri){setSchedRowDrag(null);setSchedRowOver(null);}
+                                    else setSchedRowDrag({dayIdx,rowIdx:ri});}}
+                                  style={{cursor:"pointer",fontSize:15,color:isDragSrc?C.gold:C.dim,lineHeight:1,padding:"6px 4px",borderRadius:3,letterSpacing:-1,touchAction:"none",
+                                    background:isDragSrc?C.gold+"22":"transparent"}}
+                                  onPointerEnter={e=>{if(e.pointerType==="mouse")e.currentTarget.style.color=C.gold;}} onPointerLeave={e=>{if(!isDragSrc)e.currentTarget.style.color=C.dim;}}
+                                  title="드래그 또는 탭하여 순서 변경">⠿</span>
                               </div>
                             </td>
                           </tr>;
@@ -5793,6 +5826,17 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           }}
                           onDrop={e=>{e.preventDefault();
                             if(schedRowDrag){dropRow(schedRowDrag.dayIdx,schedRowDrag.rowIdx,dayIdx,day.rows.length);}
+                            if(schedDrag){
+                              const[evCode,relayStr]=schedDrag.split("_");const relay=relayStr||"1";
+                              let conflict=false;
+                              schedData.forEach((d,di)=>{if(di!==dayIdx) d.rows.forEach(r=>{if(r.event_code===evCode&&r.type==="prelim") conflict=true;});});
+                              if(conflict){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다","error");setSchedDrag(null);return;}
+                              updSched(nd=>{const ev=events.find(x=>x.code===evCode);
+                                nd[dayIdx].rows.push(newSchedRow({event_code:evCode,type:"prelim",relay:relay,category:evToCategory(evCode),content:(ev?ev.name:"")+" "+relay+"조"}));
+                                addPETAuto(nd,dayIdx,evCode,relay);});setSchedDrag(null);
+                          }}}
+                          onClick={()=>{
+                            if(schedRowDrag){dropRow(schedRowDrag.dayIdx,schedRowDrag.rowIdx,dayIdx,day.rows.length);return;}
                             if(schedDrag){
                               const[evCode,relayStr]=schedDrag.split("_");const relay=relayStr||"1";
                               let conflict=false;
@@ -6202,8 +6246,48 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     {!laneMarkBroken&&laneSelEv&&<span style={{fontSize:11,color:getEvColor(laneSelEv),fontWeight:600}}>🎯 {laneSelEv} {laneRelay}조 배정 중 — 빈 사대 클릭/드래그 · 배정 사대는 ✕로 삭제</span>}
                     {!laneMarkBroken&&!laneSelEv&&<span style={{fontSize:11,color:C.dim}}>← 종목 선택 후 사대 클릭/드래그</span>}
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:3,userSelect:"none"}}
-                    onMouseLeave={()=>{if(laneDragStart!==null)commitDrag();if(laneClearDrag)commitClearDrag();}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:3,userSelect:"none",
+                      touchAction:(laneDragStart!==null||laneClearDrag)?'none':'auto'}}
+                    onPointerDown={e=>{
+                      const clearEl=e.target.closest&&e.target.closest('[data-laneclear]');
+                      const laneEl=clearEl||( e.target.closest&&e.target.closest('[data-lane]'));
+                      if(!laneEl)return;
+                      const n=parseInt(clearEl?clearEl.dataset.laneclear:laneEl.dataset.lane);
+                      if(isNaN(n))return;
+                      e.preventDefault();
+                      if(clearEl){
+                        setLaneClearDrag({start:n,hover:n});
+                      } else {
+                        const ow=laneOwner(n);const ib=ow==="__broken__";const he=ow&&!ib;
+                        if(laneMarkBroken){setLaneDragStart(n);setLaneDragHover(n);}
+                        else if(laneSelEv&&(!he||ow!==laneSelEv)){setLaneDragStart(n);setLaneDragHover(n);}
+                        else toggleLane(n);
+                      }
+                    }}
+                    onPointerMove={e=>{
+                      if(laneDragStart===null&&!laneClearDrag)return;
+                      e.preventDefault();
+                      const el=document.elementFromPoint(e.clientX,e.clientY);
+                      if(!el)return;
+                      const clearEl=el.closest&&el.closest('[data-laneclear]');
+                      const laneEl=clearEl||(el.closest&&el.closest('[data-lane]'));
+                      if(!laneEl)return;
+                      const n=parseInt(clearEl?clearEl.dataset.laneclear:laneEl.dataset.lane);
+                      if(isNaN(n))return;
+                      if(laneDragStart!==null)setLaneDragHover(n);
+                      if(laneClearDrag)setLaneClearDrag(p=>p?{...p,hover:n}:null);
+                    }}
+                    onPointerUp={()=>{
+                      if(laneDragStart!==null)commitDrag();
+                      if(laneClearDrag)commitClearDrag();
+                    }}
+                    onPointerLeave={()=>{
+                      if(laneDragStart!==null)commitDrag();
+                      if(laneClearDrag)commitClearDrag();
+                    }}
+                    onPointerCancel={()=>{
+                      setLaneDragStart(null);setLaneDragHover(null);setLaneClearDrag(null);
+                    }}>
                     {Array.from({length:laneConfig[laneRange]},(_,i)=>i+1).map(n=>{
                       const owner=laneOwner(n);
                       const isBroken=owner==="__broken__";
@@ -6213,14 +6297,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       const inClear=isInClearRange(n)&&hasEv;
                       const evObj=hasEv?events.find(e=>e.code===owner):null;
                       return <div key={n} style={{display:"flex",alignItems:"stretch",gap:0}}>
-                        <div
-                          onMouseDown={e=>{e.preventDefault();
-                            if(laneMarkBroken){setLaneDragStart(n);setLaneDragHover(n);return;}
-                            if(laneSelEv&&(!hasEv||owner!==laneSelEv)){setLaneDragStart(n);setLaneDragHover(n);}
-                            else toggleLane(n);
-                          }}
-                          onMouseEnter={()=>{if(laneDragStart!==null)setLaneDragHover(n);}}
-                          onMouseUp={()=>{if(laneDragStart!==null)commitDrag();}}
+                        <div data-lane={n}
                           style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",flex:1,minHeight:36,
                             borderRadius:hasEv?"6px 0 0 6px":"6px",
                             cursor:(laneSelEv||laneMarkBroken)?"pointer":"default",transition:"all .08s",
@@ -6235,10 +6312,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           </>}
                           {!owner&&!isBroken&&<span style={{fontSize:10,color:"#444"}}>—</span>}
                         </div>
-                        {hasEv&&<div
-                          onMouseDown={e=>{e.preventDefault();e.stopPropagation();setLaneClearDrag({start:n,hover:n});}}
-                          onMouseEnter={()=>{if(laneClearDrag)setLaneClearDrag(p=>p?{...p,hover:n}:null);}}
-                          onMouseUp={e=>{e.stopPropagation();if(laneClearDrag)commitClearDrag(); else clearLane(n);}}
+                        {hasEv&&<div data-laneclear={n}
                           style={{width:32,display:"flex",alignItems:"center",justifyContent:"center",
                             borderRadius:"0 6px 6px 0",cursor:"pointer",transition:"all .08s",flexShrink:0,
                             border:"2px solid "+(inClear?"#ef4444":clr+"44"),borderLeft:"none",
