@@ -29,7 +29,7 @@
     @media print { .db-bar { display:none; } }
     /* 인쇄 미리보기 */
     .print-overlay { position:fixed; inset:0; z-index:9999; background:#f0f0f0; overflow-y:auto; }
-    .print-page { width:210mm; min-height:297mm; margin:20px auto; background:#fff; color:#000; padding:10mm 12mm 20mm; box-shadow:0 2px 8px rgba(0,0,0,.2); font-family:'Malgun Gothic','맑은 고딕',sans-serif; font-size:10pt; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .print-page { width:210mm; min-height:297mm; margin:20px auto; background:#fff; color:#000; padding:8mm 8mm 15mm; box-shadow:0 2px 8px rgba(0,0,0,.2); font-family:'Malgun Gothic','맑은 고딕',sans-serif; font-size:10pt; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .print-page h2 { font-size:14pt; text-align:center; margin-bottom:4mm; font-weight:800; }
     .print-page h3 { font-size:11pt; text-align:center; margin-bottom:3mm; font-weight:700; color:#333; }
     .print-page .meta { display:flex; justify-content:space-between; font-size:9pt; color:#555; margin-bottom:4mm; }
@@ -56,7 +56,7 @@
       .cert-print-view table { page-break-inside:avoid; }
       .cert-print-view .no-print { display:none !important; }
       /* 공통 */
-      .print-page { width:100%; margin:0; padding:8mm 10mm 12mm; box-shadow:none; page-break-after:always; }
+      .print-page { width:100%; margin:0; padding:5mm 6mm 10mm; box-shadow:none; page-break-after:always; }
       .print-page:last-of-type { page-break-after:auto; }
       .print-bar { display:none; }
       .no-print { display:none !important; }
@@ -284,6 +284,8 @@ CREATE TRIGGER trg_tod_updated BEFORE UPDATE ON tournament_ops_data FOR EACH ROW
 
 ALTER TABLE tournament_events ADD COLUMN IF NOT EXISTS final_format VARCHAR(20) DEFAULT 'final';
 
+ALTER TABLE tournament_events ADD COLUMN IF NOT EXISTS distance VARCHAR(10) DEFAULT '10M';
+
 ALTER TABLE competition_results DROP CONSTRAINT IF EXISTS competition_results_result_type_check;
 ALTER TABLE competition_results ADD CONSTRAINT competition_results_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold'));
 
@@ -411,6 +413,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   // ── 단체번호 수동 오버라이드 ──
   const [orgNumOverrides, setOrgNumOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
   const [teamDropdown, setTeamDropdown]=useState(null); // {memberId, evCode, rect:{top,left}, currentNum}
+  // ── 혼성팀 개인별 팀 배정 오버라이드 ──
+  const [mixedTeamOverrides, setMixedTeamOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
+  const [mixedTeamDD, setMixedTeamDD]=useState(null); // {memberId, evCode, rect:{top,left}, currentNum}
   // ── 조 배정 (종목별 참가자→조 매핑) ──
   const [relayAssign, setRelayAssign]=useState({}); // {evCode: {memberId: relayNumber}}
   const [relaySaveDropdown, setRelaySaveDropdown]=useState(false); // 저장 드롭다운 토글
@@ -458,6 +463,29 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     }
     setTeamDropdown(null);
     flash(newNum?"단체"+newNum+" 배정 완료":"단체 배정 해제");
+  };
+  // ── 혼성팀 개인별 팀 변경 핸들러 ──
+  const changeMixedTeam=async(memberId,newTeamNum)=>{
+    const evCode=mixedTeamDD?.evCode;
+    if(!evCode) return;
+    const newOv={...mixedTeamOverrides};
+    if(!newOv[evCode]) newOv[evCode]={};
+    newOv[evCode][String(memberId)]=newTeamNum; // null = 미배정
+    setMixedTeamOverrides(newOv);
+    await dbSave("mixed_team_overrides",newOv);
+    // 스타트리스트에도 반영
+    const slKey=selectedEvCode;
+    if(slKey&&startLists[slKey]){
+      const updatedSL={...startLists};
+      updatedSL[slKey]=updatedSL[slKey].map(p=>
+        p.memberId===memberId?{...p,_mixedTeamNum:newTeamNum||null}:p
+      );
+      setStartLists(updatedSL);
+      dbSave("startlists",updatedSL);
+      syncStartlistSessions(updatedSL,[slKey]);
+    }
+    setMixedTeamDD(null);
+    flash(newTeamNum?"팀"+newTeamNum+" 배정 완료":"팀 배정 해제");
   };
   // 경기 결과 관리
   const [resEvCode, setResEvCode]=useState(null);
@@ -616,11 +644,36 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           rows.push({
             tournament_id:tid, day_number:d.day, sort_order:i+1,
             category:r.category||"", content:r.content||"", event_code:r.event_code||"",
-            relay:r.relay||"", time_slot:r.time||"", participant_count:r.count||"",
+            relay:r.relay||"", time_slot:r.time||"", participant_count:(()=>{
+              if(r.event_code&&r.relay){
+                // 25M 종목: 완사/급사 → 전체 relay 합산
+                if(evToCategory(r.event_code)==="25M"){
+                  const relayKeys=Object.keys(startLists).filter(k=>k.startsWith(r.event_code+"_")&&/\d+$/.test(k)&&startLists[k]&&startLists[k].length>0);
+                  if(relayKeys.length>0){
+                    const totalActive=relayKeys.reduce((s,k)=>s+(startLists[k]||[]).filter(p=>!p.absent).length,0);
+                    return totalActive+"명";
+                  }
+                }
+                const sKey=r.event_code+"_"+r.relay;
+                const sl=startLists[sKey];
+                if(sl&&sl.length>0){
+                  const active=sl.filter(p=>!p.absent);
+                  const ev=events.find(e=>e.code===r.event_code);
+                  if(ev&&ev.type==="mixed"){const tns=new Set(active.map(p=>p._mixedTeamNum||p._orgNum||p._teamIdx).filter(Boolean));return tns.size+"팀";}
+                  return active.length+"명";
+                }
+              }
+              return r.count||"";
+            })(),
             remark:r.remark||"", type:r.type||"custom"
           });
           if(r.event_code&&r.relay&&r.type==="prelim"){
-            usedSessionKeys.add(r.event_code+"_"+r.relay);
+            // 25M 종목: 완사/급사 → 실제 numeric relay 키들을 추가
+            if(evToCategory(r.event_code)==="25M"){
+              Object.keys(startLists).filter(k=>k.startsWith(r.event_code+"_")&&/\d+$/.test(k)).forEach(k=>usedSessionKeys.add(k));
+            } else {
+              usedSessionKeys.add(r.event_code+"_"+r.relay);
+            }
           }
         });
       });
@@ -880,12 +933,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const loadAllLocal=async(tid)=>{
     // DB에서 불러오기 시도, 없으면 localStorage 폴백
     const s=await dbLoad("sched",tid);if(s)setSchedData(s);
-    const l=await dbLoad("lanes",tid);if(l){if(l.laneAssign)setLaneAssign(l.laneAssign);if(l.laneBroken)setLaneBroken(l.laneBroken);if(l.laneConfig)setLaneConfig(l.laneConfig);}
+    const l=await dbLoad("lanes",tid);if(l){if(l.laneAssign)setLaneAssign(l.laneAssign);if(l.laneBroken)setLaneBroken(p=>({...p,...l.laneBroken}));if(l.laneConfig)setLaneConfig(p=>({...p,...l.laneConfig}));}
     const sl=await dbLoad("startlists",tid);if(sl){setStartLists(sl);setSlSavedKeys(new Set(Object.keys(sl).filter(k=>sl[k]&&sl[k].length>0)));}
     const ep=await dbLoad("evpdata",tid); // 더 이상 사용하지 않음 - 항상 DB 실시간 쿼리
     const ss=await dbLoad("session_status",tid);if(ss)setSessionStatuses(ss); else setSessionStatuses({});
     const ah=await dbLoad("absent_history",tid);if(ah)setAbsentHistory(ah); else setAbsentHistory([]);
     const ono=await dbLoad("orgnum_overrides",tid);if(ono)setOrgNumOverrides(ono); else setOrgNumOverrides({});
+    const mto=await dbLoad("mixed_team_overrides",tid);if(mto)setMixedTeamOverrides(mto); else setMixedTeamOverrides({});
     const ra=await dbLoad("relay_assignments",tid);if(ra)setRelayAssign(ra); else setRelayAssign({});
     // 후원사 로고 DB 로드
     await loadSponsorLogoDB(tid);
@@ -895,15 +949,28 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   // 종목코드 → 구분 자동 매핑
   const evToCategory=(code)=>{
     if(!code) return "";
+    // 대회 종목에서 distance 정보 우선 조회
+    const ev=events.find(e=>e.code===code);
+    if(ev&&ev.distance) return ev.distance;
     // 마스터 종목에서 거리 정보 조회
     const me=masterEvents.find(e=>e.code===code);
     if(me&&me.distance) return me.distance;
-    // 폴백: 하드코딩
-    if(["PT1","PT2","PT3"].includes(code)) return "산탄총";
-    if(["R6","R7","R8","R9","P4"].includes(code)) return "50M";
-    if(["P3"].includes(code)) return "25M";
+    // 폴백: 종목명에서 추론
+    const name=ev?.name||me?.name||"";
+    if(name.includes("50m")||name.includes("50M")) return "50M";
+    if(name.includes("25m")||name.includes("25M")) return "25M";
+    if((ev?.category||me?.category)==="산탄총") return "산탄총";
     return "10M";
   };
+  const isShotgunEv=(code)=>evToCategory(code)==="산탄총";
+  const relayLabel=(code,relay)=>isShotgunEv(code)?(relay+"일차"):(relay+"조");
+  const is25MEv=(code)=>evToCategory(code)==="25M";
+  const schedLabel=(code,relay)=>{
+    if(relay==="완사"||relay==="급사") return relay;
+    if(is25MEv(code)) return relay+"조";
+    return relayLabel(code,relay);
+  };
+  const SHOTGUN_DAYS=3; // 산탄총은 항상 3일차
   const SCHED_CATS=["","10M","25M","50M","산탄총"];
   const newSchedRow=(overrides={})=>({id:Date.now()+"_"+Math.random().toString(36).slice(2,6),category:"",content:"",event_code:"",relay:"",time:"",count:"",remark:"",type:"custom",...overrides});
   const [schedData, setSchedData]=useState(()=>{
@@ -913,6 +980,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   });
   const [schedDrag, setSchedDrag]=useState(null);
   const [schedTouchMode, setSchedTouchMode]=useState(false); // iPad 드래그 모드
+  const [schedEditMode, setSchedEditMode]=useState(false); // 내용 직접 편집 모드
   const [schedDropdown, setSchedDropdown]=useState(null); // {dayIdx,rowIdx}
   const [schedRowDrag, setSchedRowDrag]=useState(null); // {dayIdx, rowIdx}
   const [schedRowOver, setSchedRowOver]=useState(null); // {dayIdx, rowIdx} - insertion point
@@ -945,15 +1013,16 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   };
 
   // ─── 사대 배정 ───
-  const [laneConfig, setLaneConfig]=useState({"10M":48,"25M":25,"50M":20});
+  const [laneConfig, setLaneConfig]=useState({"10M":48,"25M":25,"50M":20,"산탄총":5});
   const [laneAssign, setLaneAssign]=useState({}); // {dayNum: {eventCode: {relay, lanes:[]}}}
   const [laneSelEv, setLaneSelEv]=useState(null);
   const [laneRange, setLaneRange]=useState("10M");
   const [laneDay, setLaneDay]=useState(1); // 현재 선택된 일차
   const [laneRelay, setLaneRelay]=useState(1);
-  const [laneBroken, setLaneBroken]=useState({"10M":[],"25M":[],"50M":[]});
+  const [laneBroken, setLaneBroken]=useState({"10M":[],"25M":[],"50M":[],"산탄총":[]});
   const [laneDragStart, setLaneDragStart]=useState(null);
   const [laneDragHover, setLaneDragHover]=useState(null);
+  const [laneMoveDrag, setLaneMoveDrag]=useState(null); // {start, hover} - 배정된 슬롯 이동/스왑
   const [laneMarkBroken, setLaneMarkBroken]=useState(false);
   const [laneClearDrag, setLaneClearDrag]=useState(null); // {start, hover} 삭제 드래그
   // 멀티릴레이 키: "R1" = relay 1, "R1_R2" = relay 2, "R1_R3" = relay 3
@@ -1044,6 +1113,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       if(v.sort_order)v.sort_order=Number(v.sort_order);
       if(!v.result_format) v.result_format="rifle";
       if(!v.final_format) v.final_format="final";
+      if(!v.distance) v.distance="10M";
       const doSave=async(obj)=>{
         if(obj.id){
           const id=obj.id; const o={...obj}; delete o.id;
@@ -1058,11 +1128,19 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       try{
         await doSave(v);
       }catch(e1){
-        const v2={...v}; delete v2.final_format;
+        // distance 컬럼 없으면 빼고 재시도
+        const v2={...v}; delete v2.distance;
         try{
           await doSave(v2);
-          setMigrationSQL(true);
-        }catch(e2){ throw e2; }
+        }catch(e2){
+          // final_format도 없으면 빼고 재시도
+          const v3={...v2}; delete v3.final_format;
+          try{
+            await doSave(v3);
+            setMigrationSQL(true);
+          }catch(e3){ throw e3; }
+        }
+        setMigrationSQL(true);
       }
       flash(v.id?"종목 수정 완료":"종목 추가 완료");
       setEditEv(null); reloadEvents();
@@ -1116,7 +1194,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const saveEvPreset=async()=>{
     const name=prompt("프리셋 이름을 입력하세요","기본 종목 세트");
     if(!name) return;
-    const evData=events.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format||getEvFmt(e.code),final_format:e.final_format||getEvFinalFmt(e.code)}));
+    const evData=events.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format||getEvFmt(e.code),final_format:e.final_format||getEvFinalFmt(e.code),distance:e.distance||evToCategory(e.code)}));
     const updated={...evPresets,[name]:{events:evData,savedAt:new Date().toISOString()}};
     await saveEvPresetsToDB(updated);
     setEvPresets(updated);
@@ -1124,7 +1202,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     setEvPresetMenu(false);
   };
   const saveDefaultAsPreset=async()=>{
-    const evData=DEFAULT_EVENTS.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format,final_format:e.final_format}));
+    const evData=DEFAULT_EVENTS.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format,final_format:e.final_format,distance:e.distance||"10M"}));
     const key="기본 종목 ("+DEFAULT_EVENTS.length+"개)";
     const updated={...evPresets,[key]:{events:evData,savedAt:new Date().toISOString()}};
     await saveEvPresetsToDB(updated);
@@ -1959,45 +2037,55 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
 
     let rows;
     if(isMixed&&isPrelim){
-      // 혼성팀: 같은 시도별로 2인 1팀 → 팀요약 + 개인 2행 = 3행/팀
-      const byRegion={};
-      activePlayers.forEach(p=>{const r=p.regionName||""; if(!byRegion[r])byRegion[r]=[]; byRegion[r].push(p);});
+      // 혼성팀: mixedTeamOverrides 기반 팀 그룹핑 → 팀요약 + 개인 2행 = 3행/팀
+      const mixedOv=(mixedTeamOverrides[resEvCode])||{};
+      // 기본 팀번호: team_entries 기반
+      const defaultTMSL={};
+      if(evPData&&evPData.allTeamEntries){
+        const gk2n={};let gs=0;
+        evPData.allTeamEntries.filter(t=>t.event_code===resEvCode).forEach(t=>{
+          const gk=t.application_id+"_"+(t.team_number||1);
+          if(gk2n[gk]===undefined){gs++;gk2n[gk]=gs;}
+          defaultTMSL[t.member_id]=gk2n[gk];
+        });
+      }
+      const getTeamNumSL=(p)=>{const ov=mixedOv[String(p.memberId)];return ov!==undefined?ov:(defaultTMSL[p.memberId]||null);};
+      // 팀번호별 그룹핑
+      const byTeam={};
+      activePlayers.forEach(p=>{const tn=getTeamNumSL(p);if(tn){if(!byTeam[tn])byTeam[tn]=[];byTeam[tn].push(p);}});
       rows=[];
       const teamList=[];
-      const regionTeamCount={};
-      Object.entries(byRegion).forEach(([region,members])=>{
-        for(let t=0;t<Math.floor(members.length/2);t++){
-          regionTeamCount[region]=(regionTeamCount[region]||0)+1;
-          const tNum=regionTeamCount[region];
-          const p1=members[t*2], p2=members[t*2+1];
-          // 개인 점수 생성 (혼성팀 합산 아닌 개인 수준)
-          const m1={_new:true,id:"tst_"+Date.now()+"_m1_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
-            rank:0,bib:"sub",name:p1.name,region,is_team:true,_sub_org:p1.subOrg||"",
-            s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
-          const m2={_new:true,id:"tst_"+Date.now()+"_m2_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
-            rank:0,bib:"sub",name:p2.name,region,is_team:true,_sub_org:p2.subOrg||"",
-            s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
-          // 개인 수준 점수 생성 (mixed 플래그 빼고)
-          const indivCfg={...cfg,mixed:false};
-          resGenScores(m1,indivCfg); resGenScores(m2,indivCfg);
-          // 팀 합산 행
-          const teamRow={_new:true,id:"tst_"+Date.now()+"_t_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
-            rank:0,bib:"team",name:region+(tNum>1?tNum:""),region,is_team:true,_sub_org:p1.subOrg||"",
-            s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
-          let tTotal=0;let tXCount=0;
-          for(let s=1;s<=cfg.series;s++){
-            const v1=parseFloat(m1["s"+s])||0, v2=parseFloat(m2["s"+s])||0;
-            const sum=v1+v2;
-            teamRow["s"+s]=cfg.decimal?sum.toFixed(1):String(sum);
-            tTotal+=sum;
-          }
-          teamRow.total=cfg.decimal?tTotal.toFixed(1):String(tTotal);
-          if(cfg.xcount){
-            const x1=parseInt(m1.x_count)||0, x2=parseInt(m2.x_count)||0;
-            teamRow.x_count=String(x1+x2);
-          }
-          teamList.push({teamRow,m1,m2});
+      Object.entries(byTeam).forEach(([tNum,members])=>{
+        if(members.length<2) return; // 2인 미만은 스킵
+        const p1=members[0], p2=members[1];
+        const region=p1.regionName||"";
+        // 개인 점수 생성 (혼성팀 합산 아닌 개인 수준)
+        const m1={_new:true,id:"tst_"+Date.now()+"_m1_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+          rank:0,bib:"sub",name:p1.name,region,is_team:true,_sub_org:p1.subOrg||"",
+          s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
+        const m2={_new:true,id:"tst_"+Date.now()+"_m2_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+          rank:0,bib:"sub",name:p2.name,region:p2.regionName||"",is_team:true,_sub_org:p2.subOrg||"",
+          s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
+        // 개인 수준 점수 생성 (mixed 플래그 빼고)
+        const indivCfg={...cfg,mixed:false};
+        resGenScores(m1,indivCfg); resGenScores(m2,indivCfg);
+        // 팀 합산 행
+        const teamRow={_new:true,id:"tst_"+Date.now()+"_t_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+          rank:0,bib:"team",name:"팀"+tNum,region,is_team:true,_sub_org:p1.subOrg||"",
+          s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
+        let tTotal=0;
+        for(let s=1;s<=cfg.series;s++){
+          const v1=parseFloat(m1["s"+s])||0, v2=parseFloat(m2["s"+s])||0;
+          const sum=v1+v2;
+          teamRow["s"+s]=cfg.decimal?sum.toFixed(1):String(sum);
+          tTotal+=sum;
         }
+        teamRow.total=cfg.decimal?tTotal.toFixed(1):String(tTotal);
+        if(cfg.xcount){
+          const x1=parseInt(m1.x_count)||0, x2=parseInt(m2.x_count)||0;
+          teamRow.x_count=String(x1+x2);
+        }
+        teamList.push({teamRow,m1,m2});
       });
       // 팀 합산 기준 정렬
       teamList.sort((a,b)=>parseFloat(b.teamRow.total)-parseFloat(a.teamRow.total));
@@ -2075,7 +2163,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
         resGenScores(m1,indivCfg); resGenScores(m2,indivCfg);
         const teamRow={_new:true,id:"tst_"+Date.now()+"_t_"+i,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
-          rank:0,bib:"team",name:region+(tNum>1?tNum:""),region,is_team:true,_sub_org:regionSubMap[region],
+          rank:0,bib:"team",name:"팀"+(i+1),region,is_team:true,_sub_org:regionSubMap[region],
           s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""};
         let tTotal=0;
         for(let s=1;s<=cfg.series;s++){
@@ -3665,8 +3753,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       }
       return {spans,sk};
     };
-    const thSt={border:"1px solid #333",padding:"3px 6px",background:"#e8e8e8",fontWeight:700,fontSize:"8pt"};
-    const tdSt={border:"1px solid #333",padding:"2px 5px",fontSize:"8.5pt"};
+    const thSt={border:"1px solid #333",padding:"2px 4px",background:"#e8e8e8",fontWeight:700,fontSize:"12pt",whiteSpace:"nowrap"};
+    const tdSt={border:"1px solid #333",padding:"1px 4px",fontSize:"12pt",whiteSpace:"nowrap",overflow:"hidden"};
     const startDate=selectedT?.start_date;
     const dayLabel=(dayNum)=>{
       if(!startDate) return dayNum+"일차";
@@ -3678,8 +3766,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     return <div className="print-overlay">
       <div className="print-page">
         <div className="print-page-header"><span>대한장애인사격연맹</span><span>대회운영관리시스템</span></div>
-        <div style={{textAlign:"center",marginBottom:"4mm"}}>
-          <div style={{fontSize:"14pt",fontWeight:800,marginBottom:"2mm"}}>{tName}</div>
+        <div style={{textAlign:"center",marginBottom:"3mm"}}>
+          <div style={{fontSize:"14pt",fontWeight:800,marginBottom:"1mm"}}>{tName}</div>
           <div style={{fontSize:"12pt",fontWeight:700}}>대회 일정표</div>
         </div>
         <button className="no-print" onClick={()=>setSchedPrint(false)} style={{position:"fixed",top:20,right:20,zIndex:10000,padding:"8px 20px",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✕ 닫기</button>
@@ -3688,16 +3776,24 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         {schedData.filter(d=>d.rows.length>0).map((day,dayIdx)=>{
           const {spans,sk}=calcSpans(day.rows);
           const totalRows=day.rows.length;
-          return <div key={day.day} style={{marginBottom:"6mm"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
+          return <div key={day.day} style={{marginBottom:"4mm"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+              <colgroup>
+                <col style={{width:"72px"}}/>
+                <col style={{width:"56px"}}/>
+                <col/>
+                <col style={{width:"105px"}}/>
+                <col style={{width:"44px"}}/>
+                <col style={{width:"44px"}}/>
+              </colgroup>
               <thead>
                 <tr>
-                  <th style={{...thSt,width:"70px"}}>날짜</th>
-                  <th style={{...thSt,width:"50px"}}>구분</th>
-                  <th style={thSt}>내용</th>
-                  <th style={{...thSt,width:"80px"}}>시간</th>
-                  <th style={{...thSt,width:"46px"}}>인원</th>
-                  <th style={{...thSt,width:"60px"}}>비고</th>
+                  <th style={thSt}>날짜</th>
+                  <th style={thSt}>구분</th>
+                  <th style={{...thSt,whiteSpace:"normal"}}>내용</th>
+                  <th style={thSt}>시간</th>
+                  <th style={thSt}>인원</th>
+                  <th style={thSt}>비고</th>
                 </tr>
               </thead>
               <tbody>
@@ -3705,14 +3801,50 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   const showCat=!sk.has(ri);
                   const isPET=row.type==="pet";
                   const evName=row.event_code?(events.find(e=>e.code===row.event_code)||{}).name||row.event_code:"";
-                  const displayContent=isPET?("공식 훈련 ("+row.event_code+")"):(row.event_code?evName:row.content);
-                  const countVal=row.event_code?evCountMap[row.event_code]:row.count;
+                  const displayContent=isPET?(row.content||("공식 훈련 ("+row.event_code+")")):(row.event_code?(evName.startsWith(row.event_code)?evName:row.event_code+" "+evName):row.content);
+                  const sKey=row.event_code+(row.relay?"_"+row.relay:"");
+                  const sl=startLists[sKey];
+                  const ev=events.find(e=>e.code===row.event_code);
+                  const isMx=ev&&ev.type==="mixed";
+                  let countVal;
+                  const is25Print=row.event_code&&evToCategory(row.event_code)==="25M";
+                  if(row.event_code&&is25Print){
+                    // 25M: 전체 relay 합산
+                    const relayKeys=Object.keys(startLists).filter(k=>k.startsWith(row.event_code+"_")&&/\d+$/.test(k)&&startLists[k]&&startLists[k].length>0);
+                    if(relayKeys.length>0){
+                      const totalActive=relayKeys.reduce((s,k)=>s+(startLists[k]||[]).filter(p=>!p.absent).length,0);
+                      countVal=totalActive+"명";
+                    } else {
+                      countVal=evCountMap[row.event_code]?evCountMap[row.event_code]+"명":row.count;
+                    }
+                  } else if(row.event_code&&sl&&sl.length>0){
+                    const active=sl.filter(p=>!p.absent);
+                    if(isMx){const tns=new Set(active.map(p=>p._mixedTeamNum||p._orgNum||p._teamIdx).filter(Boolean));countVal=tns.size+"팀";}
+                    else countVal=active.length+"명";
+                  } else {
+                    countVal=row.event_code&&evCountMap[row.event_code]?(evCountMap[row.event_code]+(isMx?"팀":"명")):row.count;
+                  }
+                  // 내용 텍스트에서 종목코드, N조, 완사/급사를 볼드 처리 (SH1/SH2 제외)
+                  const boldifyContent=(text)=>{
+                    if(!text) return text;
+                    // split with capture group: 홀수 인덱스가 매칭된 부분
+                    const parts=text.split(/((?:DB-)?(?:PT|P|R)\d{1,2}(?:\([A-Z]+\))?(?=[\s,)]|$)|\d+조|완사|급사)/);
+                    return parts.map((part,i)=>i%2===1?<b key={i}>{part}</b>:<span key={i}>{part}</span>);
+                  };
+                  const renderPrintContent=(text)=>{
+                    const idx=text.indexOf("(");
+                    if(idx>0) return <span>{text.substring(0,idx)}<span style={{fontSize:"10pt"}}>{text.substring(idx)}</span></span>;
+                    return text;
+                  };
                   return <tr key={row.id} style={isPET?{background:"#e8e8e8"}:undefined}>
-                    {ri===0&&<td rowSpan={totalRows} style={{...tdSt,textAlign:"center",fontWeight:800,fontSize:"9pt",verticalAlign:"middle",background:"#f5f5f5"}}>{dayLabel(day.day)}</td>}
-                    {showCat&&<td rowSpan={spans[ri]} style={{...tdSt,textAlign:"center",fontWeight:700,fontSize:"9pt",verticalAlign:"middle"}}>{row.category}</td>}
-                    <td style={{...tdSt,textAlign:"left",paddingLeft:"8px"}}>{displayContent}{row.relay?(" "+row.relay+"조"):""}</td>
-                    <td style={{...tdSt,textAlign:"center"}}>{row.time}</td>
-                    <td style={{...tdSt,textAlign:"center"}}>{countVal?(countVal+(typeof countVal==="number"?"명":"")):""}</td>
+                    {ri===0&&<td rowSpan={totalRows} style={{...tdSt,textAlign:"center",fontWeight:800,verticalAlign:"middle",background:"#f5f5f5"}}>{dayLabel(day.day)}</td>}
+                    {showCat&&<td rowSpan={spans[ri]} style={{...tdSt,textAlign:"center",fontWeight:700,verticalAlign:"middle"}}>{row.category}</td>}
+                    <td style={{...tdSt,textAlign:"left",paddingLeft:"4px",whiteSpace:"normal"}}>{isPET?renderPrintContent(displayContent):<span>{boldifyContent(displayContent+((!isPET&&row.relay)?(" "+schedLabel(row.event_code,row.relay)):""))}</span>}</td>
+                    <td style={{...tdSt,textAlign:"center"}}>{row.time}{row.category==="25M"&&row.time&&(()=>{
+                      const rk=Object.keys(startLists).filter(k=>k.startsWith(row.event_code+"_")&&/\d+$/.test(k)&&startLists[k]&&startLists[k].length>0);
+                      return rk.length>=2?<div style={{fontSize:"8pt"}}>(1조) / (2조)</div>:null;
+                    })()}</td>
+                    <td style={{...tdSt,textAlign:"center"}}>{isPET?"":countVal||""}</td>
                     <td style={{...tdSt,textAlign:"center"}}>{row.remark}</td>
                   </tr>;
                 })}
@@ -3741,7 +3873,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const startDate=selectedT?.start_date;
     let dateStr="X월 X일";
     if(dayNum&&startDate){const dt=new Date(startDate);dt.setDate(dt.getDate()+dayNum-1);dateStr=(dt.getMonth()+1)+"월 "+dt.getDate()+"일";}
-    const timeStr=time||"00:00-00:00";
+    const timeStr=time||(evToCategory(pEvCode)==="25M"?"00:00 / 00:00":"00:00-00:00");
     // ── team_entries 기반 단체번호 조회 ──
     const evOvPrint=orgNumOverrides[pEvCode]||{};
     const printTeamNum={};
@@ -3778,7 +3910,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6mm"}}>
           <div>
             <div style={{fontSize:"16pt",fontWeight:800,color:"#000",marginBottom:"2mm"}}>{evName} {pRelay}조</div>
-            <div style={{fontSize:"13pt",color:"#333"}}>{dateStr}　{timeStr}</div>
+            <div style={{fontSize:"13pt",color:"#333"}}>{dateStr}　{timeStr}{evToCategory(pEvCode)==="25M"&&<span style={{fontSize:"9pt",color:"#888",marginLeft:4}}>(완사 / 급사)</span>}</div>
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:"11pt",color:"#555"}}>{tName}</div>
@@ -3836,7 +3968,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     </div>}
     {/* ── 단체번호 드롭다운 오버레이 ── */}
     {teamDropdown&&<div style={{position:"fixed",inset:0,zIndex:10001}} onClick={()=>setTeamDropdown(null)}>
-      <div style={{position:"absolute",top:teamDropdown.rect.top,left:teamDropdown.rect.left,background:"#1a2332",border:"1px solid #3a506b",borderRadius:8,padding:6,minWidth:180,maxHeight:300,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.7)",animation:"fadeIn .15s ease"}} onClick={e=>e.stopPropagation()}>
+      {(()=>{
+        const ddHeight=280;
+        const spaceBelow=teamDropdown.rect.vpHeight-teamDropdown.rect.top;
+        const flipUp=spaceBelow<ddHeight&&teamDropdown.rect.bottom>ddHeight;
+        const posStyle=flipUp
+          ?{position:"fixed",bottom:teamDropdown.rect.vpHeight-teamDropdown.rect.bottom,left:teamDropdown.rect.left}
+          :{position:"fixed",top:teamDropdown.rect.top,left:teamDropdown.rect.left};
+        return <div style={{...posStyle,background:"#1a2332",border:"1px solid #3a506b",borderRadius:8,padding:6,minWidth:180,maxHeight:300,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.7)",animation:"fadeIn .15s ease"}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:10,color:"#6b7d94",fontWeight:700,padding:"4px 8px",borderBottom:"1px solid #2a3a5c",marginBottom:4}}>단체번호 배정 (최대 4명/단체)</div>
         {(()=>{
           const evCode=teamDropdown.evCode;
@@ -3922,6 +4061,83 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           </div>;
         })()}
       </div>
+      })()}
+    </div>}
+    {/* ── 혼성팀 팀 배정 드롭다운 오버레이 ── */}
+    {mixedTeamDD&&<div style={{position:"fixed",inset:0,zIndex:10001}} onClick={()=>setMixedTeamDD(null)}>
+      {(()=>{
+        const ddHeight=280;
+        const spaceBelow=mixedTeamDD.rect.vpHeight-mixedTeamDD.rect.top;
+        const flipUp=spaceBelow<ddHeight&&mixedTeamDD.rect.bottom>ddHeight;
+        const posStyle=flipUp
+          ?{position:"fixed",bottom:mixedTeamDD.rect.vpHeight-mixedTeamDD.rect.bottom,left:mixedTeamDD.rect.left}
+          :{position:"fixed",top:mixedTeamDD.rect.top,left:mixedTeamDD.rect.left};
+        return <div style={{...posStyle,background:"#1a2332",border:"1px solid #3a506b",borderRadius:8,padding:6,minWidth:200,maxHeight:340,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.7)",animation:"fadeIn .15s ease"}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:10,color:"#6b7d94",fontWeight:700,padding:"4px 8px",borderBottom:"1px solid #2a3a5c",marginBottom:4}}>혼성팀 배정 (최대 2명/팀)</div>
+        {(()=>{
+          const evCode=mixedTeamDD.evCode;
+          const mixedOv=(mixedTeamOverrides[evCode])||{};
+          const ep=evPData||{allMembers:[],allEntries:[],allTeamEntries:[],appMap:{}};
+          const memberMap2={}; ep.allMembers.forEach(m=>{memberMap2[m.id]=m;});
+          const memberAppMap2={}; ep.allMembers.forEach(m=>{memberAppMap2[m.id]=ep.appMap[m.application_id];});
+          // team_entries에서 해당 종목의 모든 참가자
+          const teamEntries2=ep.allTeamEntries.filter(t=>t.event_code===evCode);
+          // 기본 팀번호 매핑
+          const defaultTM2={};const gk2n={};let gs2=0;
+          teamEntries2.forEach(t=>{const gk=t.application_id+"_"+(t.team_number||1);if(gk2n[gk]===undefined){gs2++;gk2n[gk]=gs2;}defaultTM2[t.member_id]=gk2n[gk];});
+          // 각 참가자의 현재 팀번호
+          const allMids2=[];const seen2=new Set();
+          teamEntries2.forEach(t=>{if(seen2.has(t.member_id))return;seen2.add(t.member_id);if(memberMap2[t.member_id])allMids2.push(t.member_id);});
+          const getNum2=(mid)=>{const ov=mixedOv[String(mid)];return ov!==undefined?ov:(defaultTM2[mid]||null);};
+          // 카운트
+          const counts={};
+          allMids2.forEach(mid=>{const n=getNum2(mid);if(n)counts[n]=(counts[n]||0)+1;});
+          const curMid=mixedTeamDD.memberId;
+          const curNum=getNum2(curMid);
+          const maxN=Math.max(...Object.keys(counts).map(Number),0);
+          const options=[];
+          for(let n=1;n<=maxN;n++){
+            const cnt=counts[n]||0;
+            const cntExcluding=n===curNum?cnt-1:cnt;
+            // 같은 팀 멤버 이름 표시
+            const teamMates=allMids2.filter(mid=>mid!==curMid&&getNum2(mid)===n).map(mid=>memberMap2[mid]?.name||"?");
+            options.push({num:n,count:cnt,full:cntExcluding>=2,isCurrent:n===curNum,teamMates});
+          }
+          const newNum=maxN+1;
+          const newTC=getTeamColor(newNum);
+          return <div>
+            {/* 미배정 */}
+            <div onClick={()=>changeMixedTeam(curMid,null)}
+              style={{padding:"6px 10px",borderRadius:5,cursor:"pointer",display:"flex",alignItems:"center",gap:6,
+                background:curNum===null?"#33445522":"transparent",color:"#6b7d94",fontSize:11,marginBottom:4,
+                border:curNum===null?"1px solid #334455":"1px solid transparent",fontWeight:curNum===null?700:400}}>
+              <span style={{display:"inline-block",width:10,height:10,borderRadius:3,border:"1px dashed #556",flexShrink:0}}/>
+              미배정 {curNum===null?"✓":""}
+            </div>
+            <div style={{borderTop:"1px solid #2a3a5c",marginBottom:4}}/>
+            {options.map(o=>{const tc=getTeamColor(o.num);return <div key={o.num}
+              onClick={()=>{if(!o.full||o.isCurrent) changeMixedTeam(curMid,o.num);}}
+              style={{padding:"6px 10px",borderRadius:5,cursor:o.full&&!o.isCurrent?"not-allowed":"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",
+                background:o.isCurrent?tc+"22":"transparent",color:o.full&&!o.isCurrent?"#555":"#c8d6e5",
+                opacity:o.full&&!o.isCurrent?0.5:1,fontSize:12,marginBottom:2,
+                ...(o.isCurrent?{border:"1px solid "+tc+"77"}:{border:"1px solid transparent"})}}>
+              <span style={{display:"flex",alignItems:"center",gap:6,fontWeight:o.isCurrent?700:400}}>
+                <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:tc,flexShrink:0}}/>
+                팀{o.num} {o.isCurrent?"✓":""}
+                {o.teamMates.length>0&&<span style={{fontSize:9,color:"#6b7d94",fontWeight:400}}>({o.teamMates.join(", ")})</span>}
+              </span>
+              <span style={{fontSize:10,color:o.full&&!o.isCurrent?"#ef4444":"#6b7d94"}}>{o.count}/2{o.full&&!o.isCurrent?" (만석)":""}</span>
+            </div>;})}
+            <div onClick={()=>changeMixedTeam(curMid,newNum)}
+              style={{padding:"6px 10px",borderRadius:5,cursor:"pointer",display:"flex",alignItems:"center",gap:6,
+                color:newTC,fontSize:12,marginTop:4,borderTop:"1px solid #2a3a5c",paddingTop:8}}>
+              <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:newTC,flexShrink:0}}/>
+              <span>＋ 새 팀 추가 (팀{newNum})</span>
+            </div>
+          </div>;
+        })()}
+      </div>
+      })()}
     </div>}
     <div style={{display:"flex",height:"100vh"}}>
       <div style={{width:220,minWidth:220,background:C.sidebar,borderRight:"1px solid "+C.border,display:"flex",flexDirection:"column",padding:"16px 0"}}>
@@ -3987,14 +4203,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 </div>
               </div></>}
             </div>
-            <button style={S.btn(C.gold,C.bg)} onClick={()=>{setEditEv("new");setEditEvVal({code:"",name:"",category:"소총",type:"individual",gender:"혼",team_size:1,sort_order:events.length+1,result_format:"rifle",final_format:"final"});}}>+ 종목 추가</button></>}
+            <button style={S.btn(C.gold,C.bg)} onClick={()=>{setEditEv("new");setEditEvVal({code:"",name:"",category:"소총",type:"individual",gender:"혼",team_size:1,sort_order:events.length+1,result_format:"rifle",final_format:"final",distance:"10M"});}}>+ 종목 추가</button></>}
           {detailTab==="evp"&&<div style={{fontSize:12,color:C.dim}}>종목별 참가현황 · 조 배정 · 스타트리스트 (DB 실시간 조회)</div>}
           {detailTab==="results"&&<div style={{fontSize:12,color:C.dim}}>종목별 본선 · 결선 · 단체전 경기 결과</div>}
           {detailTab==="absent"&&<div style={{fontSize:12,color:C.dim}}>불참 신청 이력 관리</div>}
           {detailTab==="lanes"&&<><div style={{fontSize:12,color:C.dim}}>세부종목별 사대 배정 · 조 자동 생성 → 시간표 연동</div>
             <div style={{flex:1}}/><button style={S.btn(C.gold,C.bg)} onClick={saveLanes}>💾 저장</button></>}
           {detailTab==="schedule"&&<><div style={{fontSize:12,color:C.dim}}>사대배정 기반 자동 시간표 · 조별 공식훈련(PET) 생성</div>
-            <div style={{flex:1}}/><button style={{...S.btn(C.red,C.bg),marginRight:6}} onClick={()=>{if(!confirm("시간표의 모든 행을 초기화합니다. 계속하시겠습니까?")) return;setSchedData(sd=>sd.map(d=>({...d,rows:[]})));flash("시간표 전체 초기화 완료");}}>🗑 전체 초기화</button><button style={S.btn(C.gold,C.bg)} onClick={saveSched}>💾 저장</button><button style={{...S.btn("#22c55e","#fff"),marginLeft:6}} onClick={publishSched}>📤 게시</button><button style={{...S.btn("#334155","#e8dcc8"),marginLeft:6}} onClick={()=>setSchedPrint(true)}>🖨 인쇄</button></>}
+            <div style={{flex:1}}/><button style={{...S.btn(schedEditMode?"#f59e0b":"#334155",schedEditMode?"#000":"#e8dcc8"),marginRight:6}} onClick={()=>setSchedEditMode(p=>!p)}>{schedEditMode?"✏️ 편집 ON":"✏️ 편집 OFF"}</button><button style={{...S.btn(C.red,C.bg),marginRight:6}} onClick={()=>{if(!confirm("시간표의 모든 행을 초기화합니다. 계속하시겠습니까?")) return;setSchedData(sd=>sd.map(d=>({...d,rows:[]})));flash("시간표 전체 초기화 완료");}}>🗑 전체 초기화</button><button style={S.btn(C.gold,C.bg)} onClick={saveSched}>💾 저장</button><button style={{...S.btn("#22c55e","#fff"),marginLeft:6}} onClick={publishSched}>📤 게시</button><button style={{...S.btn("#334155","#e8dcc8"),marginLeft:6}} onClick={()=>setSchedPrint(true)}>🖨 인쇄</button></>}
         </div>
         <div style={{flex:1,overflow:"auto",padding:24,animation:"fadeIn .2s"}}>
           {/* 참가신청 */}
@@ -4228,15 +4444,16 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               <div style={{fontSize:14,marginBottom:8,color:C.dim}}>등록된 종목이 없습니다</div>
               <div style={{fontSize:12,color:C.dimmer}}>상단의 <b>📦 프리셋</b> 버튼으로 종목을 일괄 불러오거나, <b>+ 종목 추가</b>로 개별 등록하세요</div>
             </div>:<table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
-              {["코드","종목명","카테고리","유형","성별","관리"].map(h=><th key={h} style={S.th}>{h}</th>)}
+              {["코드","종목명","카테고리","유형","성별","거리","관리"].map(h=><th key={h} style={S.th}>{h}</th>)}
             </tr></thead><tbody>
               {events.map((ev,i)=><tr key={ev.id} style={{background:i%2===0?"transparent":"#0d152044"}}>
                 <td style={{...S.td,fontWeight:600,color:C.gold}}>{ev.code}</td>
                 <td style={S.td}>{ev.name}</td><td style={S.td}>{ev.category}</td>
                 <td style={S.td}><span style={S.badge(ev.type==="individual"?C.blue:C.gold)}>{ev.type==="individual"?"개인전":"혼성팀"}</span></td>
                 <td style={S.td}><span style={S.badge(ev.gender==="남"?"#3388cc":ev.gender==="여"?"#cc5577":C.gold)}>{ev.gender==="남"?"남성":ev.gender==="여"?"여성":"혼성"}</span></td>
+                <td style={S.td}><span style={S.badge({"10M":"#3b82f6","25M":"#8b5cf6","50M":"#10b981","산탄총":"#f59e0b"}[ev.distance||evToCategory(ev.code)]||C.dim)}>{ev.distance||evToCategory(ev.code)}</span></td>
                 <td style={{...S.td,whiteSpace:"nowrap"}}>
-                  <button style={S.sm(C.blue)} onClick={()=>{setEditEv(ev);setEditEvVal({...ev,result_format:ev.result_format||getEvFmt(ev.code)||"rifle",final_format:ev.final_format||getEvFinalFmt(ev.code)||"final"});}}>수정</button>
+                  <button style={S.sm(C.blue)} onClick={()=>{setEditEv(ev);setEditEvVal({...ev,result_format:ev.result_format||getEvFmt(ev.code)||"rifle",final_format:ev.final_format||getEvFinalFmt(ev.code)||"final",distance:ev.distance||evToCategory(ev.code)||"10M"});}}>수정</button>
                   <button style={S.sm(C.red)} onClick={()=>deleteEvent(ev.id)}>삭제</button>
                 </td>
               </tr>)}
@@ -4287,8 +4504,29 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             const selIsMixed=selEvObj&&selEvObj.type==="mixed";
             let participants=[];
             if(selIsMixed){
+              // ── 혼성팀: 개인 단위로 나열, mixedTeamOverrides로 팀 배정 ──
               const teamEntries=allTeamEntries.filter(t=>t.event_code===selEvCode);
-              participants=groupMixedTeams(teamEntries,memberMap,memberAppMap);
+              const mixedOv=(selEvCode&&mixedTeamOverrides[selEvCode])||{};
+              // 기본 팀번호: team_entries의 (application_id, team_number) 그룹 → 순차 번호
+              const defaultTeamMap={}; // memberId → defaultTeamNum
+              const groupKey2Num={};let gSeq=0;
+              teamEntries.forEach(t=>{
+                const gk=t.application_id+"_"+(t.team_number||1);
+                if(groupKey2Num[gk]===undefined){gSeq++;groupKey2Num[gk]=gSeq;}
+                defaultTeamMap[t.member_id]=groupKey2Num[gk];
+              });
+              const individuals=[];
+              const seen=new Set();
+              teamEntries.forEach(t=>{
+                if(seen.has(t.member_id)) return; seen.add(t.member_id);
+                const m=memberMap[t.member_id]; const app=memberAppMap[t.member_id];
+                if(!m) return;
+                const ov=mixedOv[String(t.member_id)];
+                const teamNum=ov!==undefined?ov:(defaultTeamMap[t.member_id]||1);
+                individuals.push({memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-",
+                  appId:t.application_id,_mixedTeamNum:teamNum,slotOrder:t.slot_order||0});
+              });
+              participants=individuals;
             } else {
               const entries=selEvCode?allEntries.filter(e=>e.event_code===selEvCode):[];
               participants=entries.map(e=>{
@@ -4297,23 +4535,21 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               }).filter(Boolean);
             }
             // 참가 인원/팀 수 (UI 표시용)
-            const participantCount=selIsMixed?participants.length+"팀 "+participants.reduce((s,p)=>(p._team?s+p._team.length:s+1),0)+"명":participants.length+"명";
+            const mixedTeamSet=selIsMixed?new Set(participants.filter(p=>p._mixedTeamNum).map(p=>p._mixedTeamNum)):new Set();
+            const participantCount=selIsMixed?mixedTeamSet.size+"팀 "+participants.length+"명":participants.length+"명";
             const regionOrder=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
-            const sorted=[...participants].sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return (ai===-1?99:ai)-(bi===-1?99:bi);});
+            const sorted=[...participants].sort((a,b)=>{
+              if(selIsMixed) return (a._mixedTeamNum||999)-(b._mixedTeamNum||999)||(a.slotOrder||0)-(b.slotOrder||0);
+              const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return (ai===-1?99:ai)-(bi===-1?99:bi);
+            });
             // orgNumMap: team_entries에서 event_code=현재종목 + team_type='team'인 행으로 단체전 참가자 조회
             const orgNumMap={};
             const evOverrides=(selEvCode&&orgNumOverrides[selEvCode])||{};
             let flatParticipants=sorted;
             if(selIsMixed){
-              sorted.forEach((p,i)=>{
-                const ov=evOverrides[String(p.memberId)];
-                const num=ov||i+1;
-                p._orgNum=num;p._inTeam=true;
-                if(p._team) p._team.forEach(m=>{m._orgNum=num;m._inTeam=true;});
-                orgNumMap["__team_"+i]=num;
-              });
-              sorted.forEach((p,i)=>{if(!orgNumMap[p.orgName])orgNumMap[p.orgName]=p._orgNum||i+1;});
-              flatParticipants=sorted.flatMap((p,ti)=>(p._team||[p]).map(m=>({...m,_teamIdx:ti,_orgNum:p._orgNum,_inTeam:true})));
+              // 혼성팀: 개인 단위, _mixedTeamNum이 팀 배정
+              sorted.forEach(p=>{p._orgNum=p._mixedTeamNum;p._inTeam=!!p._mixedTeamNum;});
+              flatParticipants=sorted;
             } else {
               // ── 개인전: team_entries에서 event_code=현재종목 AND team_type='team'인 행 조회 ──
               const evTeamEntries=allTeamEntries.filter(t=>
@@ -4348,15 +4584,22 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
 
             // ── 단체번호 헬퍼 (유일한 소스) ──
             const getEffectiveOrgNum=(p)=>{
+              if(selIsMixed) return p._mixedTeamNum||null; // 혼성팀: mixedTeamOverrides 기반
               const ov=evOverrides[String(p.memberId)];
               if(ov!==undefined) return ov; // null이면 null 반환 (명시적 해제), 숫자면 숫자 반환
               if(p._inTeam && p._orgNum) return p._orgNum;
               return null;
             };
-            // 현재 종목의 모든 단체번호와 인원수 계산
-            const getTeamCounts=()=>{
+            // 현재 종목의 모든 단체번호와 인원수 계산 (혼성팀: 팀번호별 인원)
+            const getMixedTeamCounts=()=>{
               const counts={};
-              const allP=selIsMixed?flatParticipants:sorted;
+              sorted.forEach(p=>{const tn=p._mixedTeamNum;if(tn)counts[tn]=(counts[tn]||0)+1;});
+              return counts;
+            };
+            const getTeamCounts=()=>{
+              if(selIsMixed) return getMixedTeamCounts();
+              const counts={};
+              const allP=flatParticipants;
               allP.forEach(p=>{
                 const num=getEffectiveOrgNum(p);
                 if(num) counts[num]=(counts[num]||0)+1;
@@ -4365,17 +4608,31 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             };
             const teamCounts=selEvCode?getTeamCounts():{};
             const maxTeamNum=Object.keys(teamCounts).length>0?Math.max(...Object.keys(teamCounts).map(Number)):0;
-            // 드롭다운 렌더
+            // ── 혼성팀 팀 뱃지 렌더 ──
+            const renderMixedTeamBadge=(p,extraStyle)=>{
+              const mid=p.memberId;
+              const curNum=p._mixedTeamNum||null;
+              const openDd=(e)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setMixedTeamDD(dd=>dd&&dd.memberId===mid?null:{memberId:mid,evCode:selEvCode,rect:{top:r.bottom,left:r.left,bottom:r.top,vpHeight:window.innerHeight},currentNum:curNum});};
+              if(!curNum) return <span onClick={openDd}
+                style={{fontSize:10,color:"#556",padding:"2px 8px",borderRadius:4,border:"1px dashed #334",cursor:"pointer",userSelect:"none",...(extraStyle||{})}}>
+                미배정 ▾
+              </span>;
+              const tc=getTeamColor(curNum);
+              return <span onClick={openDd}
+                style={{...S.badge(tc),fontWeight:700,cursor:"pointer",userSelect:"none",position:"relative",color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.5)",...(extraStyle||{})}}>
+                팀{curNum} ▾
+              </span>;
+            };
+            // 드롭다운 렌더 (개인전 단체번호용)
             const renderTeamBadge=(p,orgNum,extraStyle)=>{
               const mid=p.memberId;
-              if(!orgNum && orgNum!==0) return <span
-                onClick={(e)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setTeamDropdown(td=>td&&td.memberId===mid?null:{memberId:mid,evCode:selEvCode,rect:{top:r.bottom+window.scrollY,left:r.left+window.scrollX},currentNum:null});}}
+              const openDd=(e)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setTeamDropdown(td=>td&&td.memberId===mid?null:{memberId:mid,evCode:selEvCode,rect:{top:r.bottom,left:r.left,bottom:r.top,vpHeight:window.innerHeight},currentNum:orgNum||null});};
+              if(!orgNum && orgNum!==0) return <span onClick={openDd}
                 style={{fontSize:10,color:"#556",padding:"2px 8px",borderRadius:4,border:"1px dashed #334",cursor:"pointer",userSelect:"none",...(extraStyle||{})}}>
                 해당없음 ▾
               </span>;
               const tc=getTeamColor(orgNum);
-              return <span
-                onClick={(e)=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setTeamDropdown(td=>td&&td.memberId===mid?null:{memberId:mid,evCode:selEvCode,rect:{top:r.bottom+window.scrollY,left:r.left+window.scrollX},currentNum:orgNum});}}
+              return <span onClick={openDd}
                 style={{...S.badge(tc),fontWeight:700,cursor:"pointer",userSelect:"none",position:"relative",color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.5)",...(extraStyle||{})}}>
                 단체{orgNum} ▾
               </span>;
@@ -4406,7 +4663,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const startDate=selectedT?.start_date;
               let dateStr="X월 X일";
               if(dayNum&&startDate){const dt=new Date(startDate);dt.setDate(dt.getDate()+dayNum-1);dateStr=(dt.getMonth()+1)+"월 "+dt.getDate()+"일";}
-              return {dayNum, dateStr, time:time||"00:00-00:00"};
+              return {dayNum, dateStr, time:time||(evToCategory(evCode)==="25M"?"00:00 / 00:00":"00:00-00:00")};
             };
 
             // ── 조 배정 관련 (세션 수 = 조 수) ──
@@ -4416,6 +4673,23 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // ── 세션 단위 스타트리스트 생성 (전체 릴레이 한번에) ──
             const generateSessionStartLists=()=>{
               if(!selEvCode||sibSessions.length===0) return;
+              // ── 산탄총: 전 참가자가 모든 일차(릴레이)에 동일하게 참가 ──
+              if(isShotgunEv(selEvCode)){
+                const shuffled=buildStartList(sorted,orgNumMap);
+                const newSL={...startLists};
+                sibSessions.forEach(ss=>{
+                  const lanes=getSessionLanes(ss.key);
+                  newSL[ss.key]=shuffled.map((p,i)=>({...p,lane:lanes[i]?ss.relay+"-"+lanes[i]:null,absent:false,remark:""}));
+                });
+                setStartLists(newSL);
+                setSlSavedKeys(prev=>{const next=new Set(prev);sibSessions.forEach(ss=>next.delete(ss.key));return next;});
+                flash(selEvCode+" 산탄총 스타트리스트 생성 완료 ("+shuffled.length+"명 × "+sibSessions.length+"일차)");
+                dbSave("startlists",newSL);
+                const savedKeys=sibSessions.map(ss=>ss.key);
+                syncStartlistSessions(newSL,savedKeys);
+                setSlSavedKeys(prev=>{const next=new Set(prev);savedKeys.forEach(k=>next.add(k));return next;});
+                return;
+              }
               const hasRelayMap=totalRelays>1&&Object.keys(evRelayMap).length>0;
               // 조 배정이 있으면 조별 분배, 없으면 기존 방식 (순차 분할)
               if(hasRelayMap){
@@ -4429,27 +4703,32 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   let relayParticipants;
                   if(selIsMixed){
                     relayParticipants=sorted.filter(p=>{const ra=evRelayMap[String(p.memberId)];return ra===relayNum;});
-                    relayParticipants.forEach((p,i)=>{if(!p._orgNum) p._orgNum=getEffectiveOrgNum(p);});
                   } else {
                     relayParticipants=sorted.filter(p=>{const ra=evRelayMap[String(p.memberId)];return ra===relayNum;});
                   }
                   if(relayParticipants.length===0){newSL[ss.key]=[];return;}
                   const relayOrgMap={};relayParticipants.forEach(p=>{if(!relayOrgMap[p.orgName])relayOrgMap[p.orgName]=getEffectiveOrgNum(p);});
-                  const shuffled=buildStartList(relayParticipants,relayOrgMap);
                   if(selIsMixed){
+                    // 혼성팀: 팀번호별 그룹 → 팀 단위로 셔플 → 개인 행
+                    const teamGroups={};
+                    relayParticipants.forEach(p=>{const tn=p._mixedTeamNum||0;if(!teamGroups[tn])teamGroups[tn]=[];teamGroups[tn].push(p);});
+                    const teamProxies=Object.entries(teamGroups).filter(([tn])=>Number(tn)>0).map(([tn,members])=>({
+                      ...members[0],_team:members,_orgNum:Number(tn),_mixedTeamNum:Number(tn)
+                    }));
+                    const shuffled=buildStartList(teamProxies,relayOrgMap);
                     const rows=[];
                     shuffled.forEach((tp,ti)=>{
-                      const tn=tp._orgNum||getEffectiveOrgNum(tp);
+                      const tn=tp._mixedTeamNum;
                       const team=tp._team||[tp];
                       const lane1=lanes[ti*2]?ss.relay+"-"+lanes[ti*2]:null;
                       const lane2=lanes[ti*2+1]?ss.relay+"-"+lanes[ti*2+1]:null;
                       team.forEach((m,mi)=>{
                         rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,
-                          lane:mi===0?lane1:lane2,absent:false,remark:"",_teamIdx:ti,_orgNum:tn});
+                          lane:mi===0?lane1:lane2,absent:false,remark:"",_teamIdx:ti,_orgNum:tn,_mixedTeamNum:tn});
                       });
                     });
                     newSL[ss.key]=rows;
-                    totalGenerated+=shuffled.reduce((s,t)=>(t._team?s+t._team.length:s+1),0);
+                    totalGenerated+=rows.length;
                   } else {
                     newSL[ss.key]=shuffled.map((p,i)=>({...p,lane:lanes[i]?ss.relay+"-"+lanes[i]:null,absent:false,remark:""}));
                     // 사대보다 인원이 많으면 남은 인원도 추가 (lane=null)
@@ -4471,8 +4750,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               }
               // ── 기존 방식: 순차 분할 ──
               if(selIsMixed){
-                // 혼성팀: 팀 단위 셔플 → 개인 행으로 펼침
-                const shuffledTeams=buildStartList(sorted,orgNumMap);
+                // 혼성팀: 팀번호별 그룹 → 팀 단위 셔플 → 개인 행으로 펼침
+                const teamGroups={};
+                sorted.forEach(p=>{const tn=p._mixedTeamNum||0;if(!teamGroups[tn])teamGroups[tn]=[];teamGroups[tn].push(p);});
+                const teamProxies=Object.entries(teamGroups).filter(([tn])=>Number(tn)>0).map(([tn,members])=>({
+                  ...members[0],_team:members,_orgNum:Number(tn),_mixedTeamNum:Number(tn)
+                }));
+                const shuffledTeams=buildStartList(teamProxies,orgNumMap);
                 let offset=0;
                 const newSL={...startLists};
                 sibSessions.forEach(ss=>{
@@ -4484,10 +4768,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     const team=teamProxy._team||[teamProxy];
                     const lane1=lanes[ti*2]?ss.relay+"-"+lanes[ti*2]:null;
                     const lane2=lanes[ti*2+1]?ss.relay+"-"+lanes[ti*2+1]:null;
-                    const tn=teamProxy._orgNum||(offset+ti+1);
+                    const tn=teamProxy._mixedTeamNum||(offset+ti+1);
                     team.forEach((m,mi)=>{
                       rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,
-                        lane:mi===0?lane1:lane2,absent:false,remark:"",_teamIdx:ti,_orgNum:tn});
+                        lane:mi===0?lane1:lane2,absent:false,remark:"",_teamIdx:ti,_orgNum:tn,_mixedTeamNum:tn});
                     });
                   });
                   newSL[ss.key]=rows;
@@ -4498,9 +4782,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   const lastKey=sibSessions[sibSessions.length-1].key;
                   const remaining=[];
                   shuffledTeams.slice(offset).forEach(tp=>{
-                    const tn=tp._orgNum||0;
+                    const tn=tp._mixedTeamNum||0;
                     (tp._team||[tp]).forEach(m=>{
-                      remaining.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:null,absent:false,remark:"",_orgNum:tn});
+                      remaining.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:null,absent:false,remark:"",_orgNum:tn,_mixedTeamNum:tn});
                     });
                   });
                   newSL[lastKey]=[...newSL[lastKey],...remaining];
@@ -4640,22 +4924,22 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // 조 미배정 경고 확인
             const hasUnassignedRelay=()=>{
               if(totalRelays<2) return false;
-              const pList=selIsMixed?flatParticipants:sorted;
+              const pList=sorted;
               return pList.some(p=>!getParticipantRelay(p));
             };
             const renderListTable=(list)=>(<div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
-                {(selIsMixed?["#","팀","이름","소속","단체번호"]:["#","이름","소속","단체번호"]).concat(totalRelays>1?["조 배정"]:[]).map(h=><th key={h} style={S.th}>{h}</th>)}
+                {["#",selIsMixed?"팀":"","이름","소속",selIsMixed?"":"단체번호"].filter(Boolean).concat(totalRelays>1?["조 배정"]:[]).map(h=><th key={h} style={S.th}>{h}</th>)}
               </tr></thead><tbody>
                 {list.map((p,i)=>{
-                  const isNewTeam=selIsMixed&&(i===0||p._teamIdx!==list[i-1]?._teamIdx);
+                  const isNewTeam=selIsMixed&&(i===0||(p._mixedTeamNum!==list[i-1]?._mixedTeamNum));
                   const pRelay=getParticipantRelay(p);
-                  return <tr key={(p.memberId||i)+"-"+i} style={{background:i%2===0?"transparent":"#0d152044",borderTop:isNewTeam&&i>0?"2px solid "+C.border:"none"}}>
+                  return <tr key={(p.memberId||i)+"-"+i} style={{background:i%2===0?"transparent":"#0d152044",borderTop:isNewTeam&&i>0?"2px solid "+C.gold+"44":"none"}}>
                     <td style={{...S.td,color:C.dim}}>{i+1}</td>
-                    {selIsMixed&&<td style={{...S.td,color:C.gold,fontWeight:700,fontSize:10}}>{isNewTeam?"팀"+(p._teamIdx+1):""}</td>}
+                    {selIsMixed&&<td style={S.td}>{renderMixedTeamBadge(p)}</td>}
                     <td style={{...S.td,fontWeight:600}}>{p.name}</td>
                     <td style={S.td}>{p.subOrg||"-"}</td>
-                    <td style={S.td}>{renderTeamBadge(p,getEffectiveOrgNum(p))}</td>
+                    {!selIsMixed&&<td style={S.td}>{renderTeamBadge(p,getEffectiveOrgNum(p))}</td>}
                     {totalRelays>1&&<td style={{...S.td,padding:"2px 4px"}}>
                       <select value={pRelay||""} onChange={e=>{const v=e.target.value?Number(e.target.value):null;setParticipantRelay(p.memberId,v);}}
                         style={{padding:"3px 6px",fontSize:11,borderRadius:4,border:"1px solid "+C.border,background:pRelay?getTeamColor(pRelay)+"33":C.card,color:pRelay?"#fff":"#888",cursor:"pointer",fontWeight:pRelay?600:400,minWidth:56}}>
@@ -4677,7 +4961,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 </div>}
                 <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
-                  {["#","사대","이름","소속","단체번호","비고",""].map(h=><th key={h} style={S.th}>{h}</th>)}
+                  {["#","사대","이름","소속",selIsMixed?"팀":"단체번호","비고",""].map(h=><th key={h} style={S.th}>{h}</th>)}
                 </tr></thead><tbody>
                   {list.map((p,i)=>{
                     const isAbsent=p.absent;
@@ -4702,7 +4986,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       <td style={{...S.td,fontWeight:700,color:p.lane?"#ddd":"#555",textAlign:"center"}}>{p.lane||"-"}</td>
                       <td style={{...S.td,fontWeight:600,textDecoration:isAbsent?"line-through":"none"}}>{p.name}</td>
                       <td style={S.td}>{p.subOrg||"-"}</td>
-                      <td style={S.td}>{renderTeamBadge(p,p._orgNum||getEffectiveOrgNum(p))}</td>
+                      <td style={S.td}>{selIsMixed?renderMixedTeamBadge({...p,_mixedTeamNum:p._mixedTeamNum||p._orgNum}):renderTeamBadge(p,p._orgNum||getEffectiveOrgNum(p))}</td>
                       <td style={S.td}>{p.remark||""}</td>
                       <td style={{...S.td,padding:"2px 4px"}} className="no-print">
                         <button onClick={()=>toggleAbsent(i)} title={isAbsent?"참가 복원":"불참 처리"}
@@ -4731,35 +5015,58 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const isMx=evObj&&evObj.type==="mixed";
                 let evParticipants=[];
                 if(isMx){
-                  evParticipants=groupMixedTeams(allTeamEntries.filter(t=>t.event_code===evCode),memberMap,memberAppMap);
+                  // 혼성팀: 개인 단위 + mixedTeamOverrides
+                  const mixedOv=(mixedTeamOverrides[evCode])||{};
+                  const defaultTMAll={};const gk2nAll={};let gsAll=0;
+                  allTeamEntries.filter(t=>t.event_code===evCode).forEach(t=>{
+                    const gk=t.application_id+"_"+(t.team_number||1);
+                    if(gk2nAll[gk]===undefined){gsAll++;gk2nAll[gk]=gsAll;}
+                    defaultTMAll[t.member_id]=gk2nAll[gk];
+                  });
+                  const seen=new Set();
+                  allTeamEntries.filter(t=>t.event_code===evCode).forEach(t=>{
+                    if(seen.has(t.member_id))return;seen.add(t.member_id);
+                    const m=memberMap[t.member_id];const app=memberAppMap[t.member_id];
+                    if(!m) return;
+                    const ov=mixedOv[String(t.member_id)];
+                    const teamNum=ov!==undefined?ov:(defaultTMAll[t.member_id]||1);
+                    evParticipants.push({memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-",_mixedTeamNum:teamNum});
+                  });
                 } else {
                   const evEntries=allEntries.filter(e=>e.event_code===evCode);
                   evParticipants=evEntries.map(e=>{const m=memberMap[e.member_id];const app=memberAppMap[e.member_id];return m?{memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"}:null;}).filter(Boolean);
                 }
                 if(evParticipants.length===0) return;
-                const evSorted=[...evParticipants].sort((a,b)=>{const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return (ai===-1?99:ai)-(bi===-1?99:bi);});
-                if(isMx) evSorted.forEach((p,i)=>{const ov2=(orgNumOverrides[evCode]||{})[String(p.memberId)];p._orgNum=ov2||i+1;if(p._team)p._team.forEach(m=>{m._orgNum=p._orgNum;});});
+                const evSorted=[...evParticipants].sort((a,b)=>{
+                  if(isMx) return (a._mixedTeamNum||999)-(b._mixedTeamNum||999);
+                  const ai=regionOrder.indexOf(a.regionName),bi=regionOrder.indexOf(b.regionName);return (ai===-1?99:ai)-(bi===-1?99:bi);
+                });
                 const evOrgOrder=[]; evSorted.forEach(p=>{if(!evOrgOrder.includes(p.orgName))evOrgOrder.push(p.orgName);});
                 const evOrgNumMap={}; evOrgOrder.forEach((org,i)=>{evOrgNumMap[org]=i+1;});
                 if(!isMx) evSorted.forEach(p=>{const ov2=(orgNumOverrides[evCode]||{})[String(p.memberId)];if(ov2!==undefined)p._orgNum=ov2;else if(!p._orgNum)p._orgNum=evOrgNumMap[p.orgName];});
+                // 혼성팀: 팀번호별 그룹 → 팀 프록시
+                const buildMixedProxies=(pList)=>{
+                  const tg={};pList.forEach(p=>{const tn=p._mixedTeamNum||0;if(tn>0){if(!tg[tn])tg[tn]=[];tg[tn].push(p);}});
+                  return Object.entries(tg).map(([tn,members])=>({...members[0],_team:members,_orgNum:Number(tn),_mixedTeamNum:Number(tn)}));
+                };
                 // ── 조 배정 확인 ──
                 const evRA=relayAssign[evCode]||{};
                 const hasRA=evSessions.length>1&&Object.keys(evRA).length>0;
                 if(hasRA){
-                  // 조 배정 기반: 세션별로 해당 조 참가자만 필터 → 독립 셔플
                   evSessions.forEach(ss=>{
                     const lanes=getSessionLanes(ss.key);
                     const relayNum=ss.relay;
                     const relayP=evSorted.filter(p=>{const ra=evRA[String(p.memberId)];return ra===relayNum;});
                     if(relayP.length===0){newSL[ss.key]=[];totalSessions++;return;}
                     const rOrgMap={};relayP.forEach(p=>{if(!rOrgMap[p.orgName])rOrgMap[p.orgName]=p._orgNum||evOrgNumMap[p.orgName]||1;});
-                    const shuffled=buildStartList(relayP,rOrgMap);
                     if(isMx){
+                      const proxies=buildMixedProxies(relayP);
+                      const shuffled=buildStartList(proxies,rOrgMap);
                       const rows=[];
-                      shuffled.forEach((tp,ti)=>{const tn=tp._orgNum||1;const team=tp._team||[tp];const ln1=lanes[ti*2]?ss.relay+"-"+lanes[ti*2]:null;const ln2=lanes[ti*2+1]?ss.relay+"-"+lanes[ti*2+1]:null;team.forEach((m,mi)=>{rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:mi===0?ln1:ln2,absent:false,remark:"",_teamIdx:ti,_orgNum:tn});});});
-                      newSL[ss.key]=rows;
-                      totalPlayers+=shuffled.reduce((s,t)=>(t._team?s+t._team.length:s+1),0);
+                      shuffled.forEach((tp,ti)=>{const tn=tp._mixedTeamNum||1;const team=tp._team||[tp];const ln1=lanes[ti*2]?ss.relay+"-"+lanes[ti*2]:null;const ln2=lanes[ti*2+1]?ss.relay+"-"+lanes[ti*2+1]:null;team.forEach((m,mi)=>{rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:mi===0?ln1:ln2,absent:false,remark:"",_teamIdx:ti,_orgNum:tn,_mixedTeamNum:tn});});});
+                      newSL[ss.key]=rows;totalPlayers+=rows.length;
                     } else {
+                      const shuffled=buildStartList(relayP,rOrgMap);
                       newSL[ss.key]=shuffled.map((p,i)=>({...p,lane:lanes[i]?ss.relay+"-"+lanes[i]:null,absent:false,remark:""}));
                       if(shuffled.length>lanes.length){const extra=shuffled.slice(lanes.length).map(p=>({...p,lane:null,absent:false,remark:""}));newSL[ss.key]=[...newSL[ss.key].slice(0,lanes.length),...extra];}
                       totalPlayers+=shuffled.length;
@@ -4767,19 +5074,22 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     totalSessions++;
                   });
                 } else {
-                  // 기존 순차 분할 방식
-                  const shuffled=buildStartList(evSorted,evOrgNumMap);
-                  let offset=0;
                   if(isMx){
+                    const proxies=buildMixedProxies(evSorted);
+                    const shuffled=buildStartList(proxies,evOrgNumMap);
+                    let offset=0;
                     evSessions.forEach(ss=>{
                       const lanes=getSessionLanes(ss.key);const teamSlots=Math.floor(lanes.length/2);
                       const chunk=shuffled.slice(offset,offset+teamSlots);const rows=[];
-                      chunk.forEach((tp,ti)=>{const tn=tp._orgNum||(offset+ti+1);(tp._team||[tp]).forEach((m,mi)=>{rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:lanes[ti*2+mi]?ss.relay+"-"+lanes[ti*2+mi]:null,absent:false,remark:"",_teamIdx:ti,_orgNum:tn});});});
+                      chunk.forEach((tp,ti)=>{const tn=tp._mixedTeamNum||(offset+ti+1);(tp._team||[tp]).forEach((m,mi)=>{rows.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:lanes[ti*2+mi]?ss.relay+"-"+lanes[ti*2+mi]:null,absent:false,remark:"",_teamIdx:ti,_orgNum:tn,_mixedTeamNum:tn});});});
                       newSL[ss.key]=rows;offset+=teamSlots;totalSessions++;
                     });
-                    if(offset<shuffled.length&&evSessions.length>0){const lk=evSessions[evSessions.length-1].key;const rem=[];shuffled.slice(offset).forEach(tp=>{const tn=tp._orgNum||0;(tp._team||[tp]).forEach(m=>{rem.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:null,absent:false,remark:"",_orgNum:tn});});});newSL[lk]=[...newSL[lk],...rem];}
+                    if(offset<shuffled.length&&evSessions.length>0){const lk=evSessions[evSessions.length-1].key;const rem=[];shuffled.slice(offset).forEach(tp=>{const tn=tp._mixedTeamNum||0;(tp._team||[tp]).forEach(m=>{rem.push({memberId:m.memberId,name:m.name,subOrg:m.subOrg,orgName:m.orgName,regionName:m.regionName,lane:null,absent:false,remark:"",_orgNum:tn,_mixedTeamNum:tn});});});newSL[lk]=[...newSL[lk],...rem];}
                     totalPlayers+=shuffled.reduce((s,t)=>(t._team?s+t._team.length:s+1),0);
                   } else {
+                    // 기존 순차 분할 방식
+                    const shuffled=buildStartList(evSorted,evOrgNumMap);
+                    let offset=0;
                     evSessions.forEach(ss=>{const lanes=getSessionLanes(ss.key);const count=lanes.length;const chunk=shuffled.slice(offset,offset+count);newSL[ss.key]=chunk.map((p,i)=>({...p,lane:lanes[i]?ss.relay+"-"+lanes[i]:null,absent:false,remark:""}));offset+=count;totalSessions++;});
                     if(offset<shuffled.length&&evSessions.length>0){const lk=evSessions[evSessions.length-1].key;newSL[lk]=[...newSL[lk],...shuffled.slice(offset).map(p=>({...p,lane:null,absent:false,remark:""}))];};
                     totalPlayers+=shuffled.length;
@@ -4896,7 +5206,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                                             background:isSel?cc+"33":C.bg,color:isSel?cc:"#aaa",
                                             border:"1px solid "+(isSel?cc:C.border),display:"flex",alignItems:"center",gap:4
                                           }}>
-                                            {r.relay}조 <span style={{opacity:.5}}>({r.laneCount})</span>
+                                            {relayLabel(r.evCode||selEvCode,r.relay)} <span style={{opacity:.5}}>({r.laneCount})</span>
                                             <span style={{width:6,height:6,borderRadius:3,background:stClr,display:"inline-block"}}/>
                                           </button>;
                                         })}
@@ -4915,7 +5225,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   {/* ── 선택된 세션 상세 ── */}
                   {selSession&&<div>
                     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                      <span style={{fontSize:16,fontWeight:800,color:catClr(selSession.category)}}>{selSession.evName}{selSession.virtual?"":" "+selSession.relay+"조"}</span>
+                      <span style={{fontSize:16,fontWeight:800,color:catClr(selSession.category)}}>{selSession.evName}{selSession.virtual?"":" "+relayLabel(selSession.evCode,selSession.relay)}</span>
                       <span style={{fontSize:12,color:C.dim}}>{selSession.virtual?"사대 미배정":selSession.laneCount+"사대"} · {participantCount} 참가(종목 전체){sibSessions.filter(s=>!s.virtual).length>1?" · 총 "+sibSessions.reduce((s,ss)=>s+ss.laneCount,0)+"사대":""}</span>
                       {sibSessions.filter(s=>!s.virtual).length>1&&<span style={{fontSize:11,color:C.gold}}>📌 {selEvCode} 총 {sibSessions.filter(s=>!s.virtual).length}개 세션</span>}
                     </div>
@@ -4997,7 +5307,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             <button style={{...S.btn("#8b5cf6",C.bg),fontSize:11,padding:"5px 12px"}} onClick={autoDistributeRelays}>🔀 자동 조 배분</button>
                             <span style={{fontSize:10,color:C.dim}}>
                               {(()=>{
-                                const counts={};(selIsMixed?flatParticipants:sorted).forEach(p=>{const r=getParticipantRelay(p);const k=r||0;counts[k]=(counts[k]||0)+1;});
+                                const counts={};sorted.forEach(p=>{const r=getParticipantRelay(p);const k=r||0;counts[k]=(counts[k]||0)+1;});
                                 const parts=sibSessions.map(ss=>{const c=counts[ss.relay]||0;const lanes=getSessionLanes(ss.key).length;return ss.relay+"조:"+c+"명/"+lanes+"사대";});
                                 if(counts[0]) parts.push("미배정:"+counts[0]+"명");
                                 return parts.join(" · ");
@@ -5009,7 +5319,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         {totalRelays>1&&hasUnassignedRelay()&&<div style={{padding:"8px 14px",marginBottom:10,borderRadius:8,background:"#fbbf2418",border:"1px solid #fbbf2444",fontSize:12,color:"#fbbf24"}}>
                           ⚠️ 조가 배정되지 않은 참가자가 있습니다. 스타트리스트 작성 전에 모든 참가자에게 조를 배정해주세요.
                         </div>}
-                        {renderListTable(selIsMixed?flatParticipants:sorted)}
+                        {renderListTable(sorted)}
                         {/* 저장 드롭다운 */}
                         {totalRelays>1&&<div style={{marginTop:12,display:"flex",gap:8,alignItems:"center",position:"relative"}}>
                           <button style={{...S.btn(C.gold,C.bg),fontSize:12,padding:"8px 16px"}} onClick={async()=>{
@@ -5035,7 +5345,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           </button>
                           {curStartList&&<>
                             <button style={{...S.btn("#8b5cf6",C.bg),fontSize:11,padding:"5px 12px"}} onClick={()=>setSlPrint(selectedEvCode)}>🖨 인쇄</button>
-                            <span style={{fontSize:12,color:C.dim}}>{selSession.evName} {selSession.relay}조 · {curStartList.filter(p=>!p.absent).length}명</span>
+                            <span style={{fontSize:12,color:C.dim}}>{selSession.evName} {relayLabel(selSession.evCode,selSession.relay)} · {curStartList.filter(p=>!p.absent).length}명</span>
                             {copyBtn(curStartList,"스타트리스트")}{csvBtn(curStartList,"스타트리스트")}
                             <button style={{...S.btn(C.gold,C.bg),fontSize:11,padding:"5px 12px"}} onClick={saveStartLists}>💾 저장</button>
                           </>}
@@ -5051,7 +5361,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                               background:isActive?catClr(ss.category)+"22":"transparent",
                               color:isActive?catClr(ss.category):C.dim,
                               border:"1px solid "+(isActive?catClr(ss.category):C.border)
-                            }}>{ss.relay}조 ({ss.laneCount}) {hasSL?"✓":""}</button>;
+                            }}>{relayLabel(ss.evCode||selEvCode,ss.relay)} ({ss.laneCount}) {hasSL?"✓":""}</button>;
                           })}
                         </div>}
 
@@ -5549,7 +5859,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const prev=nd[dayIdx-1];
               const petKey=eventCode+"_"+relay;
               if(prev.rows.some(r=>r.event_code===eventCode&&r.type==="pet"&&r.relay==String(relay))) return;
-              prev.rows.push(newSchedRow({category:evToCategory(eventCode),content:"공식 훈련 ("+eventCode+" "+relay+"조)",event_code:eventCode,type:"pet",relay:String(relay)}));
+              prev.rows.push(newSchedRow({category:evToCategory(eventCode),content:"공식 훈련 ("+eventCode+" "+schedLabel(eventCode,relay)+")",event_code:eventCode,type:"pet",relay:String(relay)}));
             };
             const removePETAuto=(nd,dayIdx,eventCode,relay)=>{
               if(dayIdx<=0) return;
@@ -5561,12 +5871,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               // 같은 종목의 다른 조가 다른 일차에 있는지 확인
               let otherDayIdx=null;
               nd.forEach((d,di)=>{if(di!==dayIdx) d.rows.forEach(r=>{if(r.event_code===evCode&&r.type==="prelim"){otherDayIdx=di;}});});
-              if(otherDayIdx!==null){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다 (현재 "+(otherDayIdx+1)+"일차에 배치됨)","error");return;}
+              if(otherDayIdx!==null&&!isShotgunEv(evCode)){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다 (현재 "+(otherDayIdx+1)+"일차에 배치됨)","error");return;}
               const row=nd[dayIdx].rows[rowIdx];
               if(row.event_code&&row.type==="prelim") removePETAuto(nd,dayIdx,row.event_code,row.relay||"1");
               const ev=events.find(e=>e.code===evCode);
               row.event_code=evCode;row.type="prelim";row.relay=relay;
-              row.category=evToCategory(evCode);row.content=(ev?ev.name:"")+" "+relay+"조";
+              row.category=evToCategory(evCode);const evNm=ev?ev.name:"";row.content=(evNm.startsWith(evCode)?evNm:evCode+" "+evNm)+" "+schedLabel(evCode,relay);
               addPETAuto(nd,dayIdx,evCode,relay);
             });
             const clearEv=(dayIdx,rowIdx)=>updSched(nd=>{
@@ -5587,15 +5897,26 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               }
               return {spans,sk};
             };
-            const fmtTime=(v)=>{
+            const fmtTime=(v,is25M)=>{
               const d=v.replace(/[^0-9]/g,"");
+              const sep=is25M?" / ":"-";
               if(d.length<=2) return d;
               if(d.length<=4) return d.slice(0,2)+":"+d.slice(2);
-              if(d.length<=6) return d.slice(0,2)+":"+d.slice(2,4)+"-"+d.slice(4);
-              return d.slice(0,2)+":"+d.slice(2,4)+"-"+d.slice(4,6)+":"+d.slice(6,8);
+              if(d.length<=6) return d.slice(0,2)+":"+d.slice(2,4)+sep+d.slice(4);
+              return d.slice(0,2)+":"+d.slice(2,4)+sep+d.slice(4,6)+":"+d.slice(6,8);
+            };
+            const is25MRow=(row)=>{
+              if(row.category==="25M") return true;
+              if(row.event_code) return evToCategory(row.event_code)==="25M";
+              return false;
             };
             const cSt={padding:"10px 6px",borderBottom:"1px solid "+C.border,fontSize:12,verticalAlign:"middle"};
             const iSt={background:"transparent",border:"1px solid "+C.border,borderRadius:4,color:"#fff",fontSize:11,padding:"6px 5px",width:"100%",boxSizing:"border-box"};
+            // 25M 종목의 relay 수 구하기
+            const get25MRelayCount=(evCode)=>{
+              const keys=Object.keys(startLists).filter(k=>k.startsWith(evCode+"_")&&/\d+$/.test(k)&&startLists[k]&&startLists[k].length>0);
+              return Math.max(keys.length,1);
+            };
 
             // 사대배정에서 종목+조 슬롯 자동 생성
             const laneSlots=[];
@@ -5612,9 +5933,30 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               });
             });
             laneSlots.sort((a,b)=>a.evCode.localeCompare(b.evCode)||(a.relay-b.relay));
+
+            // 25M 종목: relay 기반 슬롯 → 완사/급사 슬롯 변환
+            const schedSlots=[];
+            const processed25M=new Set();
+            laneSlots.forEach(slot=>{
+              if(is25MEv(slot.evCode)){
+                if(!processed25M.has(slot.evCode)){
+                  processed25M.add(slot.evCode);
+                  const allRelays=laneSlots.filter(s=>s.evCode===slot.evCode);
+                  const totalLanes=allRelays.reduce((s,r)=>s+r.laneCount,0);
+                  const rCount=allRelays.length;
+                  const allReady=allRelays.every(r=>startLists[r.key]&&startLists[r.key].length>0);
+                  const rKeys=allRelays.map(r=>r.key);
+                  schedSlots.push({key:slot.evCode+"_완사",evCode:slot.evCode,relay:"완사",laneDay:slot.laneDay,laneCount:totalLanes,is25M:true,relayCount:rCount,_allReady:allReady,_relayKeys:rKeys});
+                  schedSlots.push({key:slot.evCode+"_급사",evCode:slot.evCode,relay:"급사",laneDay:slot.laneDay,laneCount:totalLanes,is25M:true,relayCount:rCount,_allReady:allReady,_relayKeys:rKeys});
+                }
+              } else {
+                schedSlots.push(slot);
+              }
+            });
+
             // 스타트리스트가 저장된 세션만 팔레트에 표시
-            const readySlots=laneSlots.filter(slot=>!!startLists[slot.key]&&startLists[slot.key].length>0);
-            const notReadySlots=laneSlots.filter(slot=>!startLists[slot.key]||startLists[slot.key].length===0);
+            const readySlots=schedSlots.filter(slot=>slot.is25M?slot._allReady:(!!startLists[slot.key]&&startLists[slot.key].length>0));
+            const notReadySlots=schedSlots.filter(slot=>slot.is25M?!slot._allReady:(!startLists[slot.key]||startLists[slot.key].length===0));
             const assignedSlots=new Set();
             schedData.forEach(d=>d.rows.forEach(r=>{if(r.event_code&&r.type==="prelim"&&r.relay)assignedSlots.add(r.event_code+"_"+r.relay);}));
             // 같은 종목의 모든 조를 동일 일차에 배치해야 하는 제약 확인
@@ -5638,7 +5980,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 {schedTouchMode&&<div style={{fontSize:10,color:C.gold,marginBottom:4,padding:"4px 8px",background:C.gold+"11",borderRadius:4}}>
                   📱 터치 드래그 모드 활성 — 화면 스크롤이 이 영역에서 비활성화됩니다. 슬롯 탭 → 행 탭으로 배치, ⠿ 탭 → 행 탭으로 이동.
                 </div>}
-                <div style={{fontSize:9,color:C.dim,marginBottom:8}}>⚠️ 같은 종목의 1조·2조는 반드시 동일 일차에 배치해야 합니다 (공식 훈련은 조별 별도 생성)</div>
+                <div style={{fontSize:9,color:C.dim,marginBottom:8}}>⚠️ 같은 종목의 1조·2조는 반드시 동일 일차에 배치해야 합니다 (산탄총 제외, 공식 훈련은 조별 별도 생성)</div>
                 {readySlots.length===0?(
                   <div style={{fontSize:11,color:C.dimmer,fontStyle:"italic"}}>{laneSlots.length===0?"사대 배정 탭에서 종목별 사대를 먼저 배정하세요":"종목별 현황 탭에서 스타트리스트를 먼저 생성·저장하세요"}</div>
                 ):(
@@ -5646,29 +5988,29 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     {readySlots.map(slot=>{
                       const used=assignedSlots.has(slot.key);
                       const ev=events.find(e=>e.code===slot.evCode);
-                      const siblingDay=evDayMap[slot.evCode]!==undefined?evDayMap[slot.evCode]+1:null;
+                      const siblingDay=!isShotgunEv(slot.evCode)&&evDayMap[slot.evCode]!==undefined?evDayMap[slot.evCode]+1:null;
                       const isSlotSel=schedDrag===slot.key;
                       return <div key={slot.key} draggable={!used}
                         onDragStart={e=>{if(!used){setSchedDrag(slot.key);e.dataTransfer.effectAllowed="move";}}}
                         onDragEnd={()=>setSchedDrag(null)}
                         onClick={()=>{if(!used)setSchedDrag(prev=>prev===slot.key?null:slot.key);}}
-                        title={(ev?.name||slot.evCode)+" "+slot.relay+"조 ("+slot.laneCount+"사대)"+(siblingDay&&!used?" → "+siblingDay+"일차에 배치 필요":"")}
+                        title={(ev?.name||slot.evCode)+" "+relayLabel(slot.evCode,slot.relay)+" ("+slot.laneCount+"사대)"+(siblingDay&&!used?" → "+siblingDay+"일차에 배치 필요":"")}
                         style={{padding:"3px 8px",borderRadius:5,fontSize:10,fontWeight:600,cursor:used?"default":"pointer",
                           background:used?"#333":isSlotSel?evClr(slot.evCode)+"44":evClr(slot.evCode)+"22",color:used?"#555":evClr(slot.evCode),
                           border:"2px solid "+(isSlotSel?evClr(slot.evCode):used?"#444":siblingDay&&!used?"#fbbf24":evClr(slot.evCode)+"55"),
                           opacity:used?0.4:1,textDecoration:used?"line-through":"none",
                           boxShadow:isSlotSel?"0 0 8px "+evClr(slot.evCode)+"66":"none"}}>
-                        {slot.evCode} {slot.relay}조 <span style={{fontSize:8,opacity:0.7}}>({slot.laneCount})</span>
+                        {slot.evCode} {schedLabel(slot.evCode,slot.relay)} <span style={{fontSize:8,opacity:0.7}}>({slot.laneCount})</span>
                         {siblingDay&&!used&&<span style={{fontSize:7,color:"#fbbf24",marginLeft:3}}>→{siblingDay}일</span>}
                       </div>;
                     })}
                   </div>
                 )}
                 {notReadySlots.length>0&&<div style={{marginTop:8,fontSize:10,color:"#ef4444"}}>
-                  ⏳ 스타트리스트 미완료: {notReadySlots.map(s=>s.evCode+" "+s.relay+"조").join(", ")}
+                  ⏳ 스타트리스트 미완료: {notReadySlots.map(s=>s.evCode+" "+schedLabel(s.evCode,s.relay)).join(", ")}
                 </div>}
                 {schedDrag&&<div style={{marginTop:8,padding:"6px 12px",borderRadius:6,background:C.gold+"22",border:"1px solid "+C.gold+"66",fontSize:11,color:C.gold,fontWeight:600}}>
-                  ✅ {schedDrag.split("_")[0]} {schedDrag.split("_")[1]||"1"}조 선택됨 — 아래 시간표 행을 탭하여 배치 <button onClick={()=>setSchedDrag(null)} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:C.gold+"33",color:C.gold,border:"1px solid "+C.gold+"66",cursor:"pointer"}}>선택 해제</button>
+                  ✅ {schedDrag.split("_")[0]} {schedLabel(schedDrag.split("_")[0],schedDrag.split("_")[1]||"1")} 선택됨 — 아래 시간표 행을 탭하여 배치 <button onClick={()=>setSchedDrag(null)} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:C.gold+"33",color:C.gold,border:"1px solid "+C.gold+"66",cursor:"pointer"}}>선택 해제</button>
                 </div>}
                 {schedRowDrag&&<div style={{marginTop:4,padding:"6px 12px",borderRadius:6,background:"#3b82f622",border:"1px solid #3b82f666",fontSize:11,color:"#60a5fa",fontWeight:600}}>
                   ↕️ 행 이동 중 — 이동할 위치의 행을 탭하세요 <button onClick={()=>{setSchedRowDrag(null);setSchedRowOver(null);}} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:"#3b82f633",color:"#60a5fa",border:"1px solid #3b82f666",cursor:"pointer"}}>취소</button>
@@ -5741,11 +6083,44 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             </td>}
                             {/* 내용 */}
                             <td style={{...cSt,position:"relative"}} data-sdd="1">
-                              {isPET?(
-                                <span style={{color:"#fbbf24",fontSize:11,fontWeight:600}}>🔸 공식 훈련 ({row.event_code} {row.relay?row.relay+"조":""})</span>
+                              {schedEditMode?(
+                                <input value={row.content} onChange={e=>updateRow(dayIdx,ri,"content",e.target.value)}
+                                  style={{...iSt,width:"100%",fontSize:11,background:isPET?"#422006":"transparent"}}
+                                  placeholder="내용 직접 입력..."/>
+                              ):isPET?(
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{color:"#fbbf24",fontSize:11,fontWeight:600,flex:1}}>🔸 {row.content||("공식 훈련 ("+row.event_code+" "+schedLabel(row.event_code,row.relay)+")")}</span>
+                                  {(()=>{
+                                    // PET 합치기: 바로 아래 행도 PET이면 합치기 버튼 표시
+                                    const nextRow=day.rows[ri+1];
+                                    if(!nextRow||nextRow.type!=="pet") return null;
+                                    return <button onClick={e=>{e.stopPropagation();updSched(nd=>{
+                                      const curR=nd[dayIdx].rows[ri];
+                                      const nxtR=nd[dayIdx].rows[ri+1];
+                                      // 내용 합치기: "공식 훈련 (" 뒤 ~ 마지막 ")" 앞 추출
+                                      const extractPET=(c)=>{
+                                        const prefix="공식 훈련 (";
+                                        const idx=c.indexOf(prefix);
+                                        if(idx>=0){
+                                          const inner=c.substring(idx+prefix.length);
+                                          const lastP=inner.lastIndexOf(")");
+                                          return lastP>=0?inner.substring(0,lastP):inner;
+                                        }
+                                        return c.replace(/^🔸\s*/,"").replace(/^공식\s*훈련\s*/,"");
+                                      };
+                                      const combined="공식 훈련 ("+extractPET(curR.content)+", "+extractPET(nxtR.content)+")";
+                                      curR.content=combined;
+                                      // 시간은 윗줄 기준 유지
+                                      nd[dayIdx].rows.splice(ri+1,1);
+                                    });}} title="아래 공식훈련과 합치기"
+                                      style={{fontSize:8,padding:"2px 6px",borderRadius:3,background:"#fbbf2422",color:"#fbbf24",border:"1px solid #fbbf2444",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                                      ↓ 합치기
+                                    </button>;
+                                  })()}
+                                </div>
                               ):row.event_code?(
                                 <div style={{display:"flex",alignItems:"center",gap:6}}>
-                                  <span style={{padding:"1px 6px",borderRadius:4,fontSize:9,fontWeight:700,background:evClr(row.event_code)+"22",color:evClr(row.event_code),whiteSpace:"nowrap"}}>{row.event_code}{row.relay?" "+row.relay+"조":""}</span>
+                                  <span style={{padding:"1px 6px",borderRadius:4,fontSize:9,fontWeight:700,background:evClr(row.event_code)+"22",color:evClr(row.event_code),whiteSpace:"nowrap"}}>{row.event_code}{row.relay?" "+schedLabel(row.event_code,row.relay):""}</span>
                                   <span style={{fontSize:11,color:"#ddd",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row.content.replace(row.event_code+" ","")}</span>
                                   <button onClick={()=>clearEv(dayIdx,ri)} style={{fontSize:9,background:"none",border:"none",color:"#666",cursor:"pointer",flexShrink:0}}>✕</button>
                                 </div>
@@ -5761,25 +6136,40 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                                   {schedDropdown&&schedDropdown.dayIdx===dayIdx&&schedDropdown.rowIdx===ri&&(
                                     <div data-sdd="1" style={{position:"absolute",top:"100%",left:0,zIndex:100,background:C.card,border:"1px solid "+C.border,borderRadius:8,padding:4,
                                       maxHeight:320,overflowY:"auto",minWidth:300,boxShadow:"0 8px 24px rgba(0,0,0,.6)"}}>
-                                      {/* 종목 리스트 (laneSlots 전체) */}
-                                      {laneSlots.filter(s=>!assignedSlots.has(s.key)).length>0&&<>
-                                        {laneSlots.filter(s=>!assignedSlots.has(s.key)).map(slot=>{
+                                      {/* 종목 리스트 (schedSlots 전체) */}
+                                      {schedSlots.filter(s=>!assignedSlots.has(s.key)).length>0&&<>
+                                        {schedSlots.filter(s=>!assignedSlots.has(s.key)).map(slot=>{
                                           const ev=events.find(e=>e.code===slot.evCode);
-                                          const ready=!!startLists[slot.key]&&startLists[slot.key].length>0;
+                                          const ready=slot.is25M?slot._allReady:(!!startLists[slot.key]&&startLists[slot.key].length>0);
                                           return <div key={slot.key} onClick={()=>{assignSlot(dayIdx,ri,slot.key);setSchedDropdown(null);}}
                                             style={{padding:"8px 10px",fontSize:12,cursor:"pointer",borderRadius:4,display:"flex",gap:8,alignItems:"center"}}
                                             onMouseEnter={e=>e.currentTarget.style.background=C.border+"66"}
                                             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                                             <span style={{width:7,height:7,borderRadius:4,background:evClr(slot.evCode),flexShrink:0}}/>
                                             <span style={{fontWeight:700,color:evClr(slot.evCode),minWidth:30}}>{slot.evCode}</span>
-                                            <span style={{color:C.gold,fontSize:11,fontWeight:600}}>{slot.relay}조</span>
+                                            <span style={{color:C.gold,fontSize:11,fontWeight:600}}>{schedLabel(slot.evCode,slot.relay)}</span>
                                             <span style={{color:C.dim,fontSize:10,flex:1}}>{ev?ev.name.replace(slot.evCode+" ",""):""}</span>
                                             {!ready&&<span style={{fontSize:8,color:"#f59e0b",flexShrink:0}}>⚠</span>}
                                           </div>;
                                         })}
                                       </>}
-                                      {laneSlots.filter(s=>!assignedSlots.has(s.key)).length===0&&
+                                      {schedSlots.filter(s=>!assignedSlots.has(s.key)).length===0&&
                                         <div style={{padding:10,fontSize:11,color:C.dim,textAlign:"center"}}>배정 가능 종목 없음</div>}
+                                      {/* 프리셋 항목 */}
+                                      <div style={{padding:"6px 10px",borderTop:"1px solid "+C.border+"44",marginTop:4}}>
+                                        <div style={{fontSize:9,color:C.dim,marginBottom:3}}>운영 일정:</div>
+                                        <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                                          {["개회식","심판 및 운영요원 회의","시도 감독자 회의","시도 사무국장 회의","장비 및 복장검사","등급분류"].map(label=>
+                                            <button key={label} onClick={()=>{updateRow(dayIdx,ri,"content",label);setSchedDropdown(null);}}
+                                              style={{padding:"5px 10px",fontSize:10,borderRadius:4,cursor:"pointer",fontWeight:600,
+                                                background:C.border+"44",color:"#e8dcc8",border:"1px solid "+C.border}}
+                                              onMouseEnter={e=>e.currentTarget.style.background=C.gold+"33"}
+                                              onMouseLeave={e=>e.currentTarget.style.background=C.border+"44"}>
+                                              {label}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
                                       {/* 직접 입력 (하단) */}
                                       <div style={{padding:"6px 10px",borderTop:"1px solid "+C.border+"44",marginTop:4}}>
                                         <div style={{fontSize:9,color:C.dim,marginBottom:3}}>기타 (개회식, 점심 등):</div>
@@ -5794,17 +6184,49 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                               )}
                             </td>
                             {/* 조 */}
-                            <td style={cSt}>{!isPET&&(row.event_code&&row.relay?<span style={{fontSize:11,fontWeight:600,color:C.dim,textAlign:"center",display:"block"}}>{row.relay}조</span>:<input value={row.relay} onChange={e=>updateRow(dayIdx,ri,"relay",e.target.value)} placeholder="-" style={{...iSt,width:30,textAlign:"center"}}/>)}</td>
+                            <td style={cSt}>{!isPET&&(row.event_code&&row.relay?<span style={{fontSize:11,fontWeight:600,color:C.dim,textAlign:"center",display:"block"}}>{schedLabel(row.event_code,row.relay)}</span>:<input value={row.relay} onChange={e=>updateRow(dayIdx,ri,"relay",e.target.value)} placeholder="-" style={{...iSt,width:30,textAlign:"center"}}/>)}</td>
                             {/* 시간 */}
-                            <td style={cSt}><input data-time-input={dayIdx+"-"+ri} value={row.time} onChange={e=>updateRow(dayIdx,ri,"time",fmtTime(e.target.value))} onKeyDown={e=>{
-                              if(e.key==="Enter"){e.preventDefault();
-                                const next=document.querySelector('[data-time-input="'+dayIdx+'-'+(e.shiftKey?ri-1:ri+1)+'"]');
-                                if(next) next.focus();}
-                            }} placeholder="00:00-00:00" style={{...iSt,width:96}}/></td>
+                            <td style={cSt}>{(()=>{
+                              const is25=is25MRow(row);
+                              const rCount25=is25?get25MRelayCount(row.event_code):0;
+                              const ph=is25?(rCount25>=2?"00:00(1조) / 00:00(2조)":"00:00"):"00:00-00:00";
+                              return <div style={{position:"relative"}}>
+                                <input data-time-input={dayIdx+"-"+ri} value={row.time} onChange={e=>updateRow(dayIdx,ri,"time",fmtTime(e.target.value,is25))} onKeyDown={e=>{
+                                  if(e.key==="Enter"){e.preventDefault();
+                                    const next=document.querySelector('[data-time-input="'+dayIdx+'-'+(e.shiftKey?ri-1:ri+1)+'"]');
+                                    if(next) next.focus();}
+                                }} placeholder={ph} style={{...iSt,width:is25?(rCount25>=2?160:60):96}}/>
+                                {is25&&rCount25>=2&&<div style={{fontSize:7,color:"#8b5cf6",textAlign:"center",marginTop:1}}>(1조) {'       '}(2조)</div>}
+                              </div>;
+                            })()}</td>
                             {/* 인원 */}
-                            <td style={cSt}>{!isPET&&(row.event_code?(
-                              <span style={{fontSize:11,color:"#ddd",display:"block",textAlign:"center"}}>{evCountMap[row.event_code]?(evCountMap[row.event_code]+(events.find(e=>e.code===row.event_code)?.type==="mixed"?"팀":"명")):"-"}</span>
-                            ):(
+                            <td style={cSt}>{!isPET&&(row.event_code?(()=>{
+                              const ev=events.find(e=>e.code===row.event_code);
+                              const isMx=ev&&ev.type==="mixed";
+                              const is25=is25MEv(row.event_code);
+                              // 25M: 완사/급사 행 → 전체 relay 합산
+                              if(is25){
+                                const relayKeys=Object.keys(startLists).filter(k=>k.startsWith(row.event_code+"_")&&/\d+$/.test(k)&&startLists[k]&&startLists[k].length>0);
+                                if(relayKeys.length>0){
+                                  const totalActive=relayKeys.reduce((s,k)=>s+(startLists[k]||[]).filter(p=>!p.absent).length,0);
+                                  return <span style={{fontSize:11,color:"#4ade80",display:"block",textAlign:"center",fontWeight:600}}>{totalActive}명</span>;
+                                }
+                                const total=evCountMap[row.event_code];
+                                return <span style={{fontSize:11,color:"#888",display:"block",textAlign:"center"}}>{total?total+"명":"-"}</span>;
+                              }
+                              const sKey=row.event_code+(row.relay?"_"+row.relay:"");
+                              const sl=startLists[sKey];
+                              if(sl&&sl.length>0){
+                                const active=sl.filter(p=>!p.absent);
+                                if(isMx){
+                                  const teamNums=new Set(active.map(p=>p._mixedTeamNum||p._orgNum||p._teamIdx).filter(Boolean));
+                                  return <span style={{fontSize:11,color:"#4ade80",display:"block",textAlign:"center",fontWeight:600}}>{teamNums.size}팀</span>;
+                                }
+                                return <span style={{fontSize:11,color:"#4ade80",display:"block",textAlign:"center",fontWeight:600}}>{active.length}명</span>;
+                              }
+                              const total=evCountMap[row.event_code];
+                              return <span style={{fontSize:11,color:"#888",display:"block",textAlign:"center"}}>{total?(total+(isMx?"팀":"명")):"-"}</span>;
+                            })():(
                               <input value={row.count} onChange={e=>updateRow(dayIdx,ri,"count",e.target.value)} placeholder="" style={{...iSt,width:44,textAlign:"center"}}/>
                             ))}</td>
                             {/* 비고 */}
@@ -5865,9 +6287,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                               const[evCode,relayStr]=schedDrag.split("_");const relay=relayStr||"1";
                               let conflict=false;
                               schedData.forEach((d,di)=>{if(di!==dayIdx) d.rows.forEach(r=>{if(r.event_code===evCode&&r.type==="prelim") conflict=true;});});
-                              if(conflict){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다","error");setSchedDrag(null);return;}
+                              if(conflict&&!isShotgunEv(evCode)){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다","error");setSchedDrag(null);return;}
                               updSched(nd=>{const ev=events.find(x=>x.code===evCode);
-                                nd[dayIdx].rows.push(newSchedRow({event_code:evCode,type:"prelim",relay:relay,category:evToCategory(evCode),content:(ev?ev.name:"")+" "+relay+"조"}));
+                                nd[dayIdx].rows.push(newSchedRow({event_code:evCode,type:"prelim",relay:relay,category:evToCategory(evCode),content:((ev&&ev.name.startsWith(evCode))?ev.name:evCode+" "+(ev?ev.name:""))+" "+schedLabel(evCode,relay)}));
                                 addPETAuto(nd,dayIdx,evCode,relay);});setSchedDrag(null);
                           }}}
                           onClick={()=>{
@@ -5876,9 +6298,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                               const[evCode,relayStr]=schedDrag.split("_");const relay=relayStr||"1";
                               let conflict=false;
                               schedData.forEach((d,di)=>{if(di!==dayIdx) d.rows.forEach(r=>{if(r.event_code===evCode&&r.type==="prelim") conflict=true;});});
-                              if(conflict){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다","error");setSchedDrag(null);return;}
+                              if(conflict&&!isShotgunEv(evCode)){flash(evCode+" "+relay+"조: 같은 종목의 모든 조는 동일 일차에 배치해야 합니다","error");setSchedDrag(null);return;}
                               updSched(nd=>{const ev=events.find(x=>x.code===evCode);
-                                nd[dayIdx].rows.push(newSchedRow({event_code:evCode,type:"prelim",relay:relay,category:evToCategory(evCode),content:(ev?ev.name:"")+" "+relay+"조"}));
+                                nd[dayIdx].rows.push(newSchedRow({event_code:evCode,type:"prelim",relay:relay,category:evToCategory(evCode),content:((ev&&ev.name.startsWith(evCode))?ev.name:evCode+" "+(ev?ev.name:""))+" "+schedLabel(evCode,relay)}));
                                 addPETAuto(nd,dayIdx,evCode,relay);});setSchedDrag(null);
                           }}}>
                           <td colSpan={7} style={{padding:4,textAlign:"center"}}>
@@ -5896,7 +6318,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
 
           {/* 사대 배정 */}
           {detailTab==="lanes"&&(()=>{
-            const RANGES=["10M","25M","50M"];
+            const RANGES=["10M","25M","50M","산탄총"];
             const rangeEvents=events.filter(e=>{const c=evToCategory(e.code);return RANGES.includes(c);}).sort((a,b)=>a.sort_order-b.sort_order);
             const evCountMap={};
             if(evPData&&evPData.allEntries){
@@ -5910,7 +6332,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               evPData.allTeamEntries.filter(t=>_mSet.has(t.member_id)).forEach(t=>{tmc[t.event_code]=(tmc[t.event_code]||0)+1;});
               Object.keys(tmc).forEach(ec=>{const ev=events.find(e=>e.code===ec);if(ev&&(ev.type==="mixed"||ev.type==="team")){evCountMap[ec]=(evCountMap[ec]||0)+Math.floor(tmc[ec]/(ev?.team_size||2));}});
             }
-            const rangeClr={"10M":"#3b82f6","25M":"#8b5cf6","50M":"#10b981"};
+            const rangeClr={"10M":"#3b82f6","25M":"#8b5cf6","50M":"#10b981","산탄총":"#f59e0b"};
             const evColors=["#3b82f6","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#6366f1","#14b8a6","#e11d48","#a855f7","#0ea5e9","#d946ef","#eab308","#22d3ee","#4ade80","#fb923c","#818cf8"];
             const getEvColor=(code)=>{const idx=rangeEvents.findIndex(e=>e.code===code);return evColors[idx%evColors.length];};
 
@@ -5950,6 +6372,23 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               });
               return total;
             };
+            // 산탄총용: 특정 릴레이만 배정 사대 수
+            const getRelayAssigned=(evCode,relay)=>{
+              let total=0;
+              Object.keys(laneAssign).forEach(dayKey=>{
+                const da=laneAssign[dayKey]||{};
+                Object.keys(da).forEach(k=>{
+                  const p=evKeyParse(k),a=da[k];
+                  if(p.evCode===evCode&&a&&a.relay===relay&&a.lanes) total+=a.lanes.length;
+                });
+              });
+              return total;
+            };
+            // 종목별 한도 체크: 산탄총은 릴레이별 독립, 일반은 전체 합산
+            const getAssignLimit=(evCode)=>{
+              if(isShotgunEv(evCode)) return getRelayAssigned(evCode,laneRelay);
+              return getTotalAssigned(evCode);
+            };
 
             const toggleLane=(n)=>{
               if(laneMarkBroken){
@@ -5976,8 +6415,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 if(owner1===laneSelEv&&owner2===laneSelEv) return; // 이미 배정됨
                 // 팀 수 초과 체크 (evCountMap=팀 수, 사대=팀×2)
                 const maxTeams=evCountMap[laneSelEv]||0;
-                const totalLanes=getTotalAssigned(laneSelEv);
-                if(maxTeams>0&&Math.floor(totalLanes/2)>=maxTeams){flash(laneSelEv+" 전체 일차 합산 "+maxTeams+"팀 배정 완료","error");return;}
+                const checkLanes=isShotgunEv(laneSelEv)?getRelayAssigned(laneSelEv,laneRelay):getTotalAssigned(laneSelEv);
+                if(maxTeams>0&&Math.floor(checkLanes/2)>=maxTeams){flash(laneSelEv+" "+(isShotgunEv(laneSelEv)?laneRelay+"일차":"전체 일차 합산")+" "+maxTeams+"팀 배정 완료","error");return;}
                 const da={...dayAssign};
                 const ek=evKeyMake(laneSelEv,laneRelay);
                 if(!da[ek]) da[ek]={relay:laneRelay,lanes:[]};
@@ -5995,7 +6434,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const owner=laneOwner(n);
                 if(owner===laneSelEv) return;
                 const maxCnt=evCountMap[laneSelEv]||0;
-                if(maxCnt>0&&getTotalAssigned(laneSelEv)>=maxCnt){flash(laneSelEv+" 전체 일차 합산 "+maxCnt+"명 배정 완료","error");return;}
+                if(maxCnt>0&&getAssignLimit(laneSelEv)>=maxCnt){flash(laneSelEv+" "+(isShotgunEv(laneSelEv)?laneRelay+"일차":"전체 일차 합산")+" "+maxCnt+"명 배정 완료","error");return;}
                 const da={...dayAssign};
                 const ek=evKeyMake(laneSelEv,laneRelay);
                 if(!da[ek]) da[ek]={relay:laneRelay,lanes:[]};
@@ -6043,7 +6482,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const maxCnt=evCountMap[laneSelEv]||0;
               const maxLanes=selEvMixed?maxCnt*2:maxCnt;
               let otherAssigned=0;
-              if(maxLanes>0){
+              if(maxLanes>0&&!isShotgunEv(laneSelEv)){
                 Object.keys(laneAssign).forEach(dayKey=>{
                   const dd=Number(dayKey)===laneDay?da:(laneAssign[dayKey]||{});
                   Object.keys(dd).forEach(k=>{
@@ -6073,29 +6512,34 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const cnt=evCountMap[evCode]||0;if(!cnt) return;
               const selEv=events.find(e=>e.code===evCode);
               const isMixed=selEv&&selEv.type==="mixed";
-              // 다른 일차에 이미 배정된 수 차감
+              const isSG=isShotgunEv(evCode);
+              // 다른 일차에 이미 배정된 수 차감 (산탄총은 차감 안 함)
               let otherDayLanes=0;
-              Object.keys(laneAssign).forEach(dayKey=>{
-                if(Number(dayKey)===laneDay) return;
-                const dd=laneAssign[dayKey]||{};
-                Object.keys(dd).forEach(k=>{
-                  const p=evKeyParse(k),a=dd[k];
-                  if(p.evCode===evCode&&a&&a.lanes) otherDayLanes+=a.lanes.length;
+              if(!isSG){
+                Object.keys(laneAssign).forEach(dayKey=>{
+                  if(Number(dayKey)===laneDay) return;
+                  const dd=laneAssign[dayKey]||{};
+                  Object.keys(dd).forEach(k=>{
+                    const p=evKeyParse(k),a=dd[k];
+                    if(p.evCode===evCode&&a&&a.lanes) otherDayLanes+=a.lanes.length;
+                  });
                 });
-              });
+              }
               const totalNeeded=isMixed?cnt*2:cnt; // 혼성팀: 팀당 2사대
               const availCnt=totalNeeded-otherDayLanes;
               if(availCnt<=0){flash(evCode+" 는 다른 일차에 이미 전원 배정 완료","error");return;}
               const maxLane=laneConfig[laneRange];
               const brokenSet=new Set(laneBroken[laneRange]||[]);
-              // 이 종목 기존 배정 모두 제거 (현재 일차)
+              // 이 종목 기존 배정 제거 (현재 일차 · 산탄총은 현재 릴레이만)
               const da={};
               Object.keys(dayAssign).forEach(k=>{
                 const p=evKeyParse(k);
                 if(p.evCode!==evCode) da[k]=dayAssign[k];
+                else if(isSG&&dayAssign[k].relay!==laneRelay) da[k]=dayAssign[k]; // 산탄총: 다른 릴레이 유지
               });
-              let remaining=availCnt, relay=1;
-              while(remaining>0&&relay<=10){
+              let remaining=availCnt, relay=isSG?laneRelay:1;
+              const maxRelayLoop=isSG?laneRelay:10; // 산탄총은 현재 릴레이만
+              while(remaining>0&&relay<=maxRelayLoop){
                 const usedByOthers=new Set(brokenSet);
                 Object.keys(da).forEach(k=>{
                   const a=da[k],p=evKeyParse(k);
@@ -6142,6 +6586,40 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             const isInClearRange=(n)=>{
               if(!laneClearDrag||laneClearDrag.start===null||laneClearDrag.hover===null) return false;
               return n>=Math.min(laneClearDrag.start,laneClearDrag.hover)&&n<=Math.max(laneClearDrag.start,laneClearDrag.hover);
+            };
+            const commitMoveDrag=()=>{
+              if(!laneMoveDrag||laneMoveDrag.start===null||laneMoveDrag.hover===null||laneMoveDrag.start===laneMoveDrag.hover){setLaneMoveDrag(null);return;}
+              const fromN=laneMoveDrag.start,toN=laneMoveDrag.hover;
+              const fromOwner=laneOwner(fromN),toOwner=laneOwner(toN);
+              if(!fromOwner||fromOwner==="__broken__"){setLaneMoveDrag(null);return;}
+              const da={...dayAssign};
+              // from 슬롯에서 제거
+              for(const k of Object.keys(da)){
+                if(da[k]&&da[k].lanes&&da[k].lanes.includes(fromN))
+                  da[k]={...da[k],lanes:da[k].lanes.filter(x=>x!==fromN)};
+              }
+              // to 슬롯에서 제거 (스왑 시)
+              let toEvKey=null;
+              if(toOwner&&toOwner!=="__broken__"){
+                for(const k of Object.keys(da)){
+                  if(da[k]&&da[k].lanes&&da[k].lanes.includes(toN)){
+                    toEvKey=k;
+                    da[k]={...da[k],lanes:da[k].lanes.filter(x=>x!==toN)};
+                  }
+                }
+              }
+              // from 종목을 to 위치에 배정
+              for(const k of Object.keys(da)){
+                const p=evKeyParse(k);
+                if(p.evCode===fromOwner&&da[k].relay===laneRelay){
+                  da[k]={...da[k],lanes:[...da[k].lanes,toN].sort((a,b)=>a-b)};break;
+                }
+              }
+              // 스왑: to 종목을 from 위치에 배정
+              if(toEvKey&&toOwner!==fromOwner){
+                da[toEvKey]={...da[toEvKey],lanes:[...da[toEvKey].lanes,fromN].sort((a,b)=>a-b)};
+              }
+              setDayAssign(da);setLaneMoveDrag(null);
             };
             const fmtRanges=(lanes)=>{
               if(!lanes||!lanes.length) return "";
@@ -6206,13 +6684,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     {r}
                   </button>
                 ))}
-                <span style={{fontSize:12,fontWeight:700,color:C.dim,marginLeft:10,marginRight:2}}>조:</span>
-                {Array.from({length:maxRelay+1},(_,i)=>i+1).map(r=>(
+                <span style={{fontSize:12,fontWeight:700,color:C.dim,marginLeft:10,marginRight:2}}>{laneRange==="산탄총"?"산탄총 일차:":"조:"}</span>
+                {(laneRange==="산탄총"?[1,2,3]:Array.from({length:maxRelay+1},(_,i)=>i+1)).map(r=>(
                   <button key={r} onClick={()=>{setLaneRelay(r);}}
                     style={{padding:"4px 10px",borderRadius:5,fontSize:11,fontWeight:700,cursor:"pointer",
                       border:"1px solid "+(laneRelay===r?C.gold:C.border),
                       background:laneRelay===r?C.gold+"22":"transparent",color:laneRelay===r?C.gold:C.dim}}>
-                    {r}조
+                    {laneRange==="산탄총"?r+"일차":r+"조"}
                   </button>
                 ))}
               </div>
@@ -6232,7 +6710,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               <div style={{display:"flex",gap:16,flexDirection:"row",flexWrap:"nowrap",marginTop:12}}>
                 {/* 좌측: 종목 - 스크롤 시 고정 */}
                 <div style={{width:230,flexShrink:0,maxHeight:"calc(100vh - 280px)",overflowY:"auto",position:"sticky",top:130,alignSelf:"flex-start"}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.gold,marginBottom:8}}>{laneDay}일차 · {laneRange} · {laneRelay}조</div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.gold,marginBottom:8}}>{laneDay}일차 · {laneRange} · {laneRange==="산탄총"?laneRelay+"일차":laneRelay+"조"}</div>
                   {curDayEvts.length===0?(
                     <div style={{padding:"12px 10px",fontSize:11,color:C.dimmer,fontStyle:"italic",border:"1px dashed "+C.border,borderRadius:6,textAlign:"center"}}>해당 거리에 종목이 없습니다</div>
                   ):(
@@ -6258,15 +6736,30 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             <span style={{fontSize:12,fontWeight:700,color:getEvColor(ev.code)}}>{ev.code}</span>
                             <span style={{fontSize:9,color:C.dim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{ev.name.replace(ev.code+" ","")}</span>
                           </div>
-                          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
-                            {(()=>{const isMx=ev.type==="mixed";const displayAssigned=isMx?Math.floor(totalAssigned/2):totalAssigned;const unit=isMx?"팀":"명";return <>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3,flexWrap:"wrap"}}>
+                            {(()=>{const isMx=ev.type==="mixed";const isSG=isShotgunEv(ev.code);const unit=isMx?"팀":"명";
+                            if(isSG){
+                              // 산탄총: 일차별 독립 카운팅
+                              return <>{[1,2,3].map(r=>{
+                                const rAssigned=getRelayAssigned(ev.code,r);
+                                const disp=isMx?Math.floor(rAssigned/2):rAssigned;
+                                const done=disp>=cnt&&cnt>0;
+                                const isCur=laneRelay===r;
+                                return <span key={r} style={{fontSize:9,padding:"1px 4px",borderRadius:3,
+                                  color:done?"#4ade80":disp>0?"#fbbf24":"#666",fontWeight:isCur?700:400,
+                                  background:isCur?"#ffffff11":"transparent",
+                                  border:isCur?"1px solid #ffffff22":"1px solid transparent"}}>{r}일:{disp}/{cnt}</span>;
+                              })}</>;
+                            }
+                            const displayAssigned=isMx?Math.floor(totalAssigned/2):totalAssigned;return <>
                             <span style={{fontSize:10,color:"#aaa"}}>{cnt}{unit}</span>
                             <span style={{fontSize:10,color:displayAssigned>=cnt&&cnt>0?"#4ade80":displayAssigned>0?"#fbbf24":"#666"}}>{displayAssigned}/{cnt}</span>
                             {(()=>{const curDay=evCurDayAssigned[ev.code]||0;const otherDay=totalAssigned-curDay;const otherDisp=isMx?Math.floor(otherDay/2):otherDay;return otherDisp>0?<span style={{fontSize:8,color:"#f59e0b",background:"#f59e0b22",padding:"0 3px",borderRadius:2}} title={"다른 일차 "+otherDisp+unit+" 배정됨"}>타{otherDisp}</span>:null;})()}
-                            {nRelays>0&&<span style={{fontSize:9,padding:"0 4px",borderRadius:3,background:C.border+"66",color:C.gold}}>{evRelays.sort((a,b)=>a-b).map(r=>r+"조").join("+")}</span>}
-                            {cnt>0&&displayAssigned<cnt&&<button onClick={e=>{e.stopPropagation();if(!laneSelEv||laneSelEv!==ev.code)setLaneSelEv(ev.code);autoAssign(ev.code);}} title="자동 배정 (오버플로우 시 다음 조로 분할)"
-                              style={{marginLeft:"auto",fontSize:9,background:getEvColor(ev.code)+"33",border:"none",color:getEvColor(ev.code),borderRadius:3,padding:"1px 6px",cursor:"pointer",fontWeight:700}}>AUTO</button>}
                             </>;})()}
+                            {(()=>{const isSG=isShotgunEv(ev.code);if(isSG)return null;return nRelays>0?<span style={{fontSize:9,padding:"0 4px",borderRadius:3,background:C.border+"66",color:C.gold}}>{evRelays.sort((a,b)=>a-b).map(r=>relayLabel(ev.code,r)).join("+")}</span>:null;})()}
+                            {(()=>{const isSG=isShotgunEv(ev.code);const checkVal=isSG?getRelayAssigned(ev.code,laneRelay):totalAssigned;const isMx=ev.type==="mixed";const displayCheck=isMx?Math.floor(checkVal/2):checkVal;
+                            return cnt>0&&displayCheck<cnt?<button onClick={e=>{e.stopPropagation();if(!laneSelEv||laneSelEv!==ev.code)setLaneSelEv(ev.code);autoAssign(ev.code);}} title="자동 배정"
+                              style={{marginLeft:"auto",fontSize:9,background:getEvColor(ev.code)+"33",border:"none",color:getEvColor(ev.code),borderRadius:3,padding:"1px 6px",cursor:"pointer",fontWeight:700}}>AUTO</button>:null;})()}
                           </div>
                         </div>;
                       })}
@@ -6278,11 +6771,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 <div style={{flex:1,minWidth:0,maxWidth:420}}>
                   <div style={{marginBottom:8}}>
                     {laneMarkBroken&&<span style={{fontSize:11,color:"#ef4444",fontWeight:700}}>🔧 고장 표시 모드 — 사대 클릭/드래그로 고장 지정/해제 · 📱 터치 드래그 활성</span>}
-                    {!laneMarkBroken&&laneSelEv&&<span style={{fontSize:11,color:getEvColor(laneSelEv),fontWeight:600}}>🎯 {laneSelEv} {laneRelay}조 배정 중 — 사대 클릭/드래그 · 📱 터치 드래그 활성 (스크롤은 사대 영역 밖에서)</span>}
-                    {!laneMarkBroken&&!laneSelEv&&<span style={{fontSize:11,color:C.dim}}>← 종목 선택 후 사대 클릭/드래그 (터치 기기: 종목 선택 시 드래그 모드 자동 활성)</span>}
+                    {!laneMarkBroken&&laneSelEv&&<span style={{fontSize:11,color:getEvColor(laneSelEv),fontWeight:600}}>🎯 {laneSelEv} {laneRelay}조 배정 중 — 빈 사대 드래그 배정 · 배정 사대 드래그로 이동/스왑 · ✕ 삭제</span>}
+                    {!laneMarkBroken&&!laneSelEv&&<span style={{fontSize:11,color:C.dim}}>배정 사대를 드래그하여 이동/스왑 가능 · 종목 선택 후 빈 사대 클릭/드래그로 배정</span>}
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:3,userSelect:"none",
-                      touchAction:(laneSelEv||laneMarkBroken)?'none':'auto'}}
+                      touchAction:(laneSelEv||laneMarkBroken||laneMoveDrag)?'none':'auto'}}
                     onPointerDown={e=>{
                       const clearEl=e.target.closest&&e.target.closest('[data-laneclear]');
                       const laneEl=clearEl||( e.target.closest&&e.target.closest('[data-lane]'));
@@ -6295,12 +6788,20 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       } else {
                         const ow=laneOwner(n);const ib=ow==="__broken__";const he=ow&&!ib;
                         if(laneMarkBroken){setLaneDragStart(n);setLaneDragHover(n);}
+                        else if(he&&!laneSelEv){
+                          // 종목 미선택 + 배정된 슬롯 → 이동/스왑 드래그
+                          setLaneMoveDrag({start:n,hover:n});
+                        }
+                        else if(laneSelEv&&he&&ow===laneSelEv){
+                          // 자기 종목 슬롯 → 이동/스왑 드래그
+                          setLaneMoveDrag({start:n,hover:n});
+                        }
                         else if(laneSelEv&&(!he||ow!==laneSelEv)){setLaneDragStart(n);setLaneDragHover(n);}
                         else toggleLane(n);
                       }
                     }}
                     onPointerMove={e=>{
-                      if(laneDragStart===null&&!laneClearDrag)return;
+                      if(laneDragStart===null&&!laneClearDrag&&!laneMoveDrag)return;
                       e.preventDefault();
                       const el=document.elementFromPoint(e.clientX,e.clientY);
                       if(!el)return;
@@ -6311,17 +6812,20 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       if(isNaN(n))return;
                       if(laneDragStart!==null)setLaneDragHover(n);
                       if(laneClearDrag)setLaneClearDrag(p=>p?{...p,hover:n}:null);
+                      if(laneMoveDrag)setLaneMoveDrag(p=>p?{...p,hover:n}:null);
                     }}
                     onPointerUp={()=>{
                       if(laneDragStart!==null)commitDrag();
                       if(laneClearDrag)commitClearDrag();
+                      if(laneMoveDrag)commitMoveDrag();
                     }}
                     onPointerLeave={()=>{
                       if(laneDragStart!==null)commitDrag();
                       if(laneClearDrag)commitClearDrag();
+                      if(laneMoveDrag)commitMoveDrag();
                     }}
                     onPointerCancel={()=>{
-                      setLaneDragStart(null);setLaneDragHover(null);setLaneClearDrag(null);
+                      setLaneDragStart(null);setLaneDragHover(null);setLaneClearDrag(null);setLaneMoveDrag(null);
                     }}>
                     {Array.from({length:laneConfig[laneRange]},(_,i)=>i+1).map(n=>{
                       const owner=laneOwner(n);
@@ -6330,15 +6834,19 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       const clr=hasEv?getEvColor(owner):null;
                       const inDrag=isInDragRange(n)&&(laneSelEv||laneMarkBroken);
                       const inClear=isInClearRange(n)&&hasEv;
+                      const isMoveSrc=laneMoveDrag&&laneMoveDrag.start===n;
+                      const isMoveTarget=laneMoveDrag&&laneMoveDrag.hover===n&&laneMoveDrag.start!==n;
+                      const moveSrcClr=laneMoveDrag?getEvColor(laneOwner(laneMoveDrag.start)):null;
                       const evObj=hasEv?events.find(e=>e.code===owner):null;
                       return <div key={n} style={{display:"flex",alignItems:"stretch",gap:0}}>
                         <div data-lane={n}
                           style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",flex:1,minHeight:36,
                             borderRadius:hasEv?"6px 0 0 6px":"6px",
-                            cursor:(laneSelEv||laneMarkBroken)?"pointer":"default",transition:"all .08s",
-                            border:"2px solid "+(inClear?"#ef4444":inDrag?(laneMarkBroken?"#ef4444":getEvColor(laneSelEv)):isBroken?"#ef444466":hasEv?clr+"44":C.border),
+                            cursor:(laneSelEv||laneMarkBroken||hasEv)?"pointer":"default",transition:"all .08s",
+                            opacity:isMoveSrc?0.4:1,
+                            border:"2px solid "+(isMoveTarget?(moveSrcClr||C.gold):inClear?"#ef4444":inDrag?(laneMarkBroken?"#ef4444":getEvColor(laneSelEv)):isBroken?"#ef444466":hasEv?clr+"44":C.border),
                             borderRight:hasEv?"none":undefined,
-                            background:inClear?"#ef444422":inDrag?(laneMarkBroken?"#ef444422":getEvColor(laneSelEv)+"22"):isBroken?"#ef444411":hasEv?clr+"11":"transparent"}}>
+                            background:isMoveTarget?(moveSrcClr||C.gold)+"22":inClear?"#ef444422":inDrag?(laneMarkBroken?"#ef444422":getEvColor(laneSelEv)+"22"):isBroken?"#ef444411":hasEv?clr+"11":"transparent"}}>
                           <span style={{width:30,fontSize:12,fontWeight:700,color:isBroken?"#ef4444":hasEv?clr:"#555",textAlign:"center",flexShrink:0}}>{n}</span>
                           {isBroken&&<span style={{fontSize:11,color:"#ef4444",fontWeight:600}}>🔧 고장</span>}
                           {hasEv&&<>
@@ -6430,6 +6938,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           {k:"category",l:"카테고리",t:"select",opts:[["소총","소총"],["소총(SH2)","소총(SH2)"],["권총","권총"],["산탄총","산탄총"],["청각","청각"]]},
           {k:"type",l:"유형",t:"select",opts:[["individual","개인전"],["mixed","혼성팀"]]},
           {k:"gender",l:"성별",t:"select",opts:[["남","남성"],["여","여성"],["혼","혼성"]]},
+          {k:"distance",l:"사격장 거리",t:"select",opts:[["10M","10M"],["25M","25M"],["50M","50M"],["산탄총","산탄총"]]},
           {k:"result_format",l:"본선 기록지 양식",t:"select",opts:RESULT_FORMAT_OPTS},
           {k:"final_format",l:"결선 기록지 양식",t:"select",opts:FINAL_FORMAT_OPTS},
         ].map(f=>(
