@@ -124,6 +124,8 @@ const EVENT_RESULT_CFG = {
   mixedRifle: { label:"혼성팀 소총 (3시리즈·소수점)", series:3, decimal:true, xcount:false, codes:["R10","R11"], mixed:true },
   // 혼성팀 권총: 3시리즈, 정수, X텐 표기 (2인 1팀)
   mixedPistol: { label:"혼성팀 권총 (3시리즈·정수·X텐)", series:3, decimal:false, xcount:true, codes:["P6"], mixed:true },
+  // 산탄총: 5시리즈, 정수, X텐 미표기
+  shotgun: { label:"산탄총 (5시리즈·정수)", series:5, decimal:false, xcount:false, codes:["PT1","PT2","PT3"] },
 };
 const RESULT_FORMAT_OPTS=Object.entries(EVENT_RESULT_CFG).map(([k,v])=>[k,v.label]);
 
@@ -161,9 +163,9 @@ const DEFAULT_EVENTS = [
   { code:"R10", name:"R10 공기소총 복사 혼성팀 SH1", category:"소총", type:"mixed", gender:"혼", team_size:2, sort_order:15, result_format:"mixedRifle", final_format:"medal_match" },
   { code:"R11", name:"R11 공기소총 복사 혼성팀 SH2", category:"소총(SH2)", type:"mixed", gender:"혼", team_size:2, sort_order:16, result_format:"mixedRifle", final_format:"medal_match" },
   { code:"P6", name:"P6 공기권총 혼성팀 SH1", category:"권총", type:"mixed", gender:"혼", team_size:2, sort_order:17, result_format:"mixedPistol", final_format:"medal_match" },
-  { code:"PT1", name:"PT1 트랩 좌식 혼성 SG-S", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:18, result_format:"rifle", final_format:"final" },
-  { code:"PT2", name:"PT2 트랩 하지 혼성 SG-L", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:19, result_format:"rifle", final_format:"final" },
-  { code:"PT3", name:"PT3 트랩 상지 혼성 SG-U", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:20, result_format:"rifle", final_format:"final" },
+  { code:"PT1", name:"PT1 트랩 좌식 혼성 SG-S", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:18, result_format:"shotgun", final_format:"final" },
+  { code:"PT2", name:"PT2 트랩 하지 혼성 SG-L", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:19, result_format:"shotgun", final_format:"final" },
+  { code:"PT3", name:"PT3 트랩 상지 혼성 SG-U", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:20, result_format:"shotgun", final_format:"final" },
 ];
 
 const DROP_SQL = `DROP FUNCTION IF EXISTS submit_application(JSONB) CASCADE;
@@ -214,7 +216,7 @@ CREATE POLICY "pub_r_br" ON best_records FOR SELECT USING (true); CREATE POLICY 
 ALTER TABLE competition_results ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "pub_r_cr" ON competition_results FOR SELECT USING (true); CREATE POLICY "pub_i_cr" ON competition_results FOR INSERT WITH CHECK (true); CREATE POLICY "pub_u_cr" ON competition_results FOR UPDATE USING (true); CREATE POLICY "pub_d_cr" ON competition_results FOR DELETE USING (true);
 INSERT INTO tournaments (name, year, venue, start_date, end_date, reg_start, reg_end, reg_period, status) VALUES ('2026 전국장애인사격선수권대회', 2026, '창원국제사격장', '2026-05-15', '2026-05-18', '2026-02-01', '2026-03-31', '2026.02.01 ~ 03.31', 1), ('2026 장애인사격 추계대회', 2026, '서울종합운동장 사격장', '2026-09-20', '2026-09-22', '2026-07-01', '2026-08-15', '2026.07.01 ~ 08.15', 2), ('2025 전국장애인사격선수권대회', 2025, '창원국제사격장', '2025-05-10', '2025-05-13', '2025-02-01', '2025-03-31', '2025.02.01 ~ 03.31', 4);
-INSERT INTO tournament_events (tournament_id, code, name, category, type, gender, team_size, sort_order, result_format, final_format) VALUES (1,'R1','R1 공기소총 입사 남자 SH1','소총','individual','남',1,1,'rifle','final'),(1,'R2','R2 공기소총 입사 여자 SH1','소총','individual','여',1,2,'rifle','final'),(1,'R3','R3 공기소총 복사 혼성 SH1','소총','individual','혼',1,3,'rifle','final'),(1,'R4','R4 공기소총 입사 혼성 SH2','소총(SH2)','individual','혼',1,4,'rifle','final'),(1,'R5','R5 공기소총 복사 혼성 SH2','소총(SH2)','individual','혼',1,5,'rifle','final'),(1,'R6','R6 50m소총 복사 혼성 SH1','소총','individual','혼',1,6,'rifle','final'),(1,'R7','R7 50m소총 3자세 남자 SH1','소총','individual','남',1,7,'threePos','final_3pos'),(1,'R8','R8 50m소총 3자세 여자 SH1','소총','individual','여',1,8,'threePos','final_3pos'),(1,'R9','R9 50m소총 복사 혼성 SH2','소총(SH2)','individual','혼',1,9,'rifle','final'),(1,'P1','P1 공기권총 남자 SH1','권총','individual','남',1,10,'pistol','final'),(1,'P2','P2 공기권총 여자 SH1','권총','individual','여',1,11,'pistol','final'),(1,'P3','P3 25m권총 혼성 SH1','권총','individual','혼',1,12,'pistol','final'),(1,'P4','P4 50m권총 혼성 SH1','권총','individual','혼',1,13,'pistol','final'),(1,'P5','P5 스탠다드공기권총 혼성 SH1','권총','individual','혼',1,14,'p5','final'),(1,'R10','R10 공기소총 복사 혼성팀 SH1','소총','mixed','혼',2,15,'mixedRifle','medal_match'),(1,'R11','R11 공기소총 복사 혼성팀 SH2','소총(SH2)','mixed','혼',2,16,'mixedRifle','medal_match'),(1,'P6','P6 공기권총 혼성팀 SH1','권총','mixed','혼',2,17,'mixedPistol','medal_match'),(1,'PT1','PT1 트랩 좌식 혼성 SG-S','산탄총','individual','혼',1,18,'rifle','final'),(1,'PT2','PT2 트랩 하지 혼성 SG-L','산탄총','individual','혼',1,19,'rifle','final'),(1,'PT3','PT3 트랩 상지 혼성 SG-U','산탄총','individual','혼',1,20,'rifle','final');
+INSERT INTO tournament_events (tournament_id, code, name, category, type, gender, team_size, sort_order, result_format, final_format) VALUES (1,'R1','R1 공기소총 입사 남자 SH1','소총','individual','남',1,1,'rifle','final'),(1,'R2','R2 공기소총 입사 여자 SH1','소총','individual','여',1,2,'rifle','final'),(1,'R3','R3 공기소총 복사 혼성 SH1','소총','individual','혼',1,3,'rifle','final'),(1,'R4','R4 공기소총 입사 혼성 SH2','소총(SH2)','individual','혼',1,4,'rifle','final'),(1,'R5','R5 공기소총 복사 혼성 SH2','소총(SH2)','individual','혼',1,5,'rifle','final'),(1,'R6','R6 50m소총 복사 혼성 SH1','소총','individual','혼',1,6,'rifle','final'),(1,'R7','R7 50m소총 3자세 남자 SH1','소총','individual','남',1,7,'threePos','final_3pos'),(1,'R8','R8 50m소총 3자세 여자 SH1','소총','individual','여',1,8,'threePos','final_3pos'),(1,'R9','R9 50m소총 복사 혼성 SH2','소총(SH2)','individual','혼',1,9,'rifle','final'),(1,'P1','P1 공기권총 남자 SH1','권총','individual','남',1,10,'pistol','final'),(1,'P2','P2 공기권총 여자 SH1','권총','individual','여',1,11,'pistol','final'),(1,'P3','P3 25m권총 혼성 SH1','권총','individual','혼',1,12,'pistol','final'),(1,'P4','P4 50m권총 혼성 SH1','권총','individual','혼',1,13,'pistol','final'),(1,'P5','P5 스탠다드공기권총 혼성 SH1','권총','individual','혼',1,14,'p5','final'),(1,'R10','R10 공기소총 복사 혼성팀 SH1','소총','mixed','혼',2,15,'mixedRifle','medal_match'),(1,'R11','R11 공기소총 복사 혼성팀 SH2','소총(SH2)','mixed','혼',2,16,'mixedRifle','medal_match'),(1,'P6','P6 공기권총 혼성팀 SH1','권총','mixed','혼',2,17,'mixedPistol','medal_match'),(1,'PT1','PT1 트랩 좌식 혼성 SG-S','산탄총','individual','혼',1,18,'shotgun','final'),(1,'PT2','PT2 트랩 하지 혼성 SG-L','산탄총','individual','혼',1,19,'shotgun','final'),(1,'PT3','PT3 트랩 상지 혼성 SG-U','산탄총','individual','혼',1,20,'shotgun','final');
 INSERT INTO tournament_events (tournament_id, code, name, category, type, gender, team_size, sort_order, result_format, final_format) SELECT 2, code, name, category, type, gender, team_size, sort_order, result_format, final_format FROM tournament_events WHERE tournament_id = 1;
 CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_tournaments_updated BEFORE UPDATE ON tournaments FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -409,6 +411,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [startLists, setStartLists]=useState({}); // {sessionKey: [{...player, lane, absent}]}
   const [slSavedKeys, setSlSavedKeys]=useState(new Set()); // 저장 완료된 세션 키
   const [slDrag, setSlDrag]=useState(null); // {evCode, fromIdx}
+  const [slEditMode, setSlEditMode]=useState(false); // 편집모드 토글
+  const [slDragOver, setSlDragOver]=useState(null); // 드래그 호버 위치 인덱스
   const [slPrint, setSlPrint]=useState(null); // null 또는 evCode
   // ── 단체번호 수동 오버라이드 ──
   const [orgNumOverrides, setOrgNumOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
@@ -420,6 +424,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [relayAssign, setRelayAssign]=useState({}); // {evCode: {memberId: relayNumber}}
   const [relaySaveDropdown, setRelaySaveDropdown]=useState(false); // 저장 드롭다운 토글
   const [expandedEvCode, setExpandedEvCode]=useState(null); // 참가신청 탭 종목별 상세 열람
+  const [showFeeModal, setShowFeeModal]=useState(false); // 참가비 산정 모달
+  const [feeExpanded, setFeeExpanded]=useState(null); // 참가비 세부내역 열린 appId
   const [openPaletteCat, setOpenPaletteCat]=useState(null); // 세션 팔레트 카테고리 드롭다운
   // 불참 관리
   const [absentModal, setAbsentModal]=useState(null); // {idx, name, evCode, sessionKey} or null
@@ -4411,9 +4417,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 </div>
               </div>}
               {!evPData&&<div style={{marginBottom:12,padding:10,borderRadius:8,background:"#fbbf2418",border:"1px solid #fbbf2444",fontSize:12,color:"#fbbf24"}}>⏳ 참가 데이터 로딩 중...</div>}
-              <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
+              <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
                 <button style={{...S.btn(C.gold,C.bg),fontSize:11,padding:"5px 12px"}} onClick={genTestApp}>🧪 테스트 참가신청 생성 (1개 단체)</button>
                 <span style={{fontSize:11,color:C.dim}}>미사용 시도에서 랜덤 단체 생성 → DB 직접 저장</span>
+                <div style={{flex:1}}/>
+                {evPData&&apps.length>0&&<button style={{...S.btn("#06b6d4","#fff"),fontSize:11,padding:"5px 12px"}} onClick={()=>setShowFeeModal(true)}>💰 참가비 산정</button>}
               </div>
               {apps.length===0?<div style={{textAlign:"center",padding:60,color:C.dimmer}}><div style={{fontSize:40,marginBottom:12}}>📭</div>접수된 신청이 없습니다</div>:(
             <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
@@ -4435,6 +4443,126 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               </tbody></table>
             </div>
           )}
+              {/* ── 참가비 산정 모달 ── */}
+              {showFeeModal&&evPData&&(()=>{
+                const{allMembers:fM,allEntries:fE,allTeamEntries:fTE,appMap:fAM}=evPData;
+                const fMemberMap={};fM.forEach(m=>{fMemberMap[m.id]=m;});
+                const FEE_10M=5000, FEE_OTHER=10000;
+                const feeByApp={};
+                // 개인전 entries → 선수별 종목 매핑
+                fE.forEach(e=>{
+                  const app=fAM[e.application_id];if(!app)return;
+                  const m=fMemberMap[e.member_id];if(!m)return;
+                  const appId=e.application_id;
+                  if(!feeByApp[appId])feeByApp[appId]={appId,orgName:app.org_name,regionName:app.region_name,players:{}};
+                  const pk=e.member_id;
+                  if(!feeByApp[appId].players[pk])feeByApp[appId].players[pk]={memberId:pk,name:m.name,subOrg:m.sub_org||"",entries:[]};
+                  const cat=evToCategory(e.event_code);
+                  const fee=cat==="10M"?FEE_10M:FEE_OTHER;
+                  feeByApp[appId].players[pk].entries.push({code:e.event_code,cat,fee,type:"개인"});
+                });
+                // 혼성팀 entries (팀 단위 1건 → 각 멤버에게 표시하되 fee는 팀당 1번만)
+                const mixedCounted={};
+                fTE.forEach(t=>{
+                  const app=fAM[t.application_id];if(!app)return;
+                  const m=fMemberMap[t.member_id];if(!m)return;
+                  const appId=t.application_id;
+                  if(!feeByApp[appId])feeByApp[appId]={appId,orgName:app.org_name,regionName:app.region_name,players:{}};
+                  const teamKey=appId+"_"+t.event_code+"_"+(t.team_number||1);
+                  const isFirstOfTeam=!mixedCounted[teamKey];
+                  if(isFirstOfTeam)mixedCounted[teamKey]=true;
+                  const pk=t.member_id;
+                  if(!feeByApp[appId].players[pk])feeByApp[appId].players[pk]={memberId:pk,name:m.name,subOrg:m.sub_org||"",entries:[]};
+                  const cat=evToCategory(t.event_code);
+                  const fee=isFirstOfTeam?(cat==="10M"?FEE_10M:FEE_OTHER):0;
+                  feeByApp[appId].players[pk].entries.push({code:t.event_code,cat,fee,type:"혼성"+(t.team_number||1),counted:isFirstOfTeam});
+                });
+                const feeList=Object.values(feeByApp).map(f=>({...f,players:Object.values(f.players).sort((a,b)=>a.name.localeCompare(b.name))})).sort((a,b)=>a.appId-b.appId);
+                const getAppTotal=(f)=>f.players.reduce((s,p)=>s+p.entries.reduce((ss,e)=>ss+e.fee,0),0);
+                const getAppEntryCount=(f)=>f.players.reduce((s,p)=>s+p.entries.filter(e=>e.fee>0).length,0);
+                const grandTotal=feeList.reduce((s,f)=>s+getAppTotal(f),0);
+                return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}} onClick={()=>{setShowFeeModal(false);setFeeExpanded(null);}}>
+                  <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:14,width:"90%",maxWidth:860,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.6)"}} onClick={e=>e.stopPropagation()}>
+                    {/* 헤더 */}
+                    <div style={{padding:"16px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{fontSize:18,fontWeight:800,color:"#06b6d4"}}>💰 참가비 산정</div>
+                      <div style={{fontSize:12,color:C.dim}}>{feeList.length}개 단체 · 총 {grandTotal.toLocaleString()}원</div>
+                      <div style={{flex:1}}/>
+                      <button onClick={()=>{
+                        const hdr="단체명\t지역\t10M종목수\t기타종목수\t10M참가비\t기타참가비\t합계";
+                        const rows=feeList.map(f=>{
+                          const all=f.players.flatMap(p=>p.entries).filter(e=>e.fee>0);
+                          const e10=all.filter(e=>e.cat==="10M");const eO=all.filter(e=>e.cat!=="10M");
+                          return f.orgName+"\t"+f.regionName+"\t"+e10.length+"\t"+eO.length+"\t"+(e10.reduce((s,e)=>s+e.fee,0))+"\t"+(eO.reduce((s,e)=>s+e.fee,0))+"\t"+getAppTotal(f);
+                        });
+                        rows.push("합계\t\t\t\t\t\t"+grandTotal);
+                        navigator.clipboard.writeText(hdr+"\n"+rows.join("\n")).then(()=>flash("참가비 내역 클립보드 복사 완료"));
+                      }} style={{...S.btn(C.blue,"#fff"),fontSize:11,padding:"5px 12px"}}>📋 복사</button>
+                      <button onClick={()=>{setShowFeeModal(false);setFeeExpanded(null);}} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer",fontWeight:700}}>✕</button>
+                    </div>
+                    {/* 본문 */}
+                    <div style={{flex:1,overflow:"auto",padding:"16px 24px"}}>
+                      <div style={{fontSize:10,color:C.dim,marginBottom:12,padding:"6px 10px",background:"#334155",borderRadius:6}}>
+                        📌 10M 사격장 종목: <b>{FEE_10M.toLocaleString()}원</b>/건 &nbsp;|&nbsp; 25M · 50M · 산탄총 사격장 종목: <b>{FEE_OTHER.toLocaleString()}원</b>/건 &nbsp;|&nbsp; 개인전 + 혼성팀 종목 등록 기준
+                      </div>
+                      {/* 요약 테이블 */}
+                      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:12}}>
+                        <thead><tr>
+                          {["","단체명","지역","10M","25M/50M/산탄총","합계"].map(h=><th key={h} style={{...S.th,fontSize:10}}>{h}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {feeList.map((f,i)=>{
+                            const allE=f.players.flatMap(p=>p.entries).filter(e=>e.fee>0);
+                            const e10=allE.filter(e=>e.cat==="10M");
+                            const eOther=allE.filter(e=>e.cat!=="10M");
+                            const total=getAppTotal(f);
+                            const isExp=feeExpanded===f.appId;
+                            return <React.Fragment key={f.appId}>
+                              <tr style={{background:isExp?"#06b6d411":i%2===0?"transparent":"#0d152044",cursor:"pointer"}}
+                                onClick={()=>setFeeExpanded(isExp?null:f.appId)}>
+                                <td style={{...S.td,fontSize:11,width:24,textAlign:"center",color:"#06b6d4"}}>{isExp?"▼":"▶"}</td>
+                                <td style={{...S.td,fontSize:12,fontWeight:600}}>{f.orgName}</td>
+                                <td style={{...S.td,fontSize:11,color:C.dim}}>{f.regionName}</td>
+                                <td style={{...S.td,fontSize:11,textAlign:"center"}}>{e10.length>0?<><span style={{color:"#3b82f6",fontWeight:600}}>{e10.length}건</span> <span style={{color:C.dim}}>({(e10.reduce((s,e)=>s+e.fee,0)).toLocaleString()})</span></>:"-"}</td>
+                                <td style={{...S.td,fontSize:11,textAlign:"center"}}>{eOther.length>0?<><span style={{color:"#f59e0b",fontWeight:600}}>{eOther.length}건</span> <span style={{color:C.dim}}>({(eOther.reduce((s,e)=>s+e.fee,0)).toLocaleString()})</span></>:"-"}</td>
+                                <td style={{...S.td,fontSize:12,fontWeight:700,textAlign:"right",color:"#06b6d4"}}>{total.toLocaleString()}원</td>
+                              </tr>
+                              {isExp&&<tr><td colSpan={6} style={{padding:"8px 16px 12px",background:"#0f172a",borderBottom:"2px solid #06b6d444"}}>
+                                <div style={{fontSize:10,fontWeight:700,color:"#06b6d4",marginBottom:6}}>📋 {f.orgName} 세부 내역 — {f.players.length}명 · {getAppEntryCount(f)}건</div>
+                                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                                  <thead><tr>{["#","선수명","세부소속","등록종목","사격장","단가"].map(h=><th key={h} style={{fontSize:9,padding:"4px 6px",borderBottom:"1px solid #334155",color:"#64748b",fontWeight:600,textAlign:"left"}}>{h}</th>)}</tr></thead>
+                                  <tbody>{(()=>{
+                                    let seq=0;
+                                    return f.players.flatMap(p=>p.entries.filter(e=>e.fee>0).map((e,ei)=>{
+                                      seq++;
+                                      return <tr key={p.memberId+"-"+ei} style={{background:seq%2===0?"#1e293b44":"transparent"}}>
+                                        <td style={{fontSize:9,padding:"3px 6px",color:C.dim}}>{seq}</td>
+                                        <td style={{fontSize:10,padding:"3px 6px",fontWeight:600}}>{p.name}</td>
+                                        <td style={{fontSize:9,padding:"3px 6px",color:C.dim}}>{p.subOrg||"-"}</td>
+                                        <td style={{fontSize:9,padding:"3px 6px"}}><span style={{color:C.gold,fontWeight:600}}>{e.code}</span> <span style={{fontSize:8,color:C.dim}}>{e.type}</span></td>
+                                        <td style={{fontSize:9,padding:"3px 6px"}}><span style={{padding:"1px 6px",borderRadius:3,fontSize:8,fontWeight:600,
+                                          background:e.cat==="10M"?"#3b82f622":"#f59e0b22",color:e.cat==="10M"?"#3b82f6":"#f59e0b"}}>{e.cat}</span></td>
+                                        <td style={{fontSize:9,padding:"3px 6px",fontWeight:600}}>{e.fee.toLocaleString()}원</td>
+                                      </tr>;
+                                    }));
+                                  })()}</tbody>
+                                </table>
+                                <div style={{textAlign:"right",marginTop:6,fontSize:11,fontWeight:700,color:"#06b6d4"}}>소계: {total.toLocaleString()}원</div>
+                              </td></tr>}
+                            </React.Fragment>;
+                          })}
+                          <tr style={{borderTop:"2px solid #475569",background:"#334155"}}>
+                            <td colSpan={3} style={{...S.td,fontSize:12,fontWeight:800,textAlign:"center"}}>합계</td>
+                            <td style={{...S.td,fontSize:11,textAlign:"center",fontWeight:600}}>{feeList.reduce((s,f)=>s+f.players.flatMap(p=>p.entries).filter(e=>e.fee>0&&e.cat==="10M").length,0)}건</td>
+                            <td style={{...S.td,fontSize:11,textAlign:"center",fontWeight:600}}>{feeList.reduce((s,f)=>s+f.players.flatMap(p=>p.entries).filter(e=>e.fee>0&&e.cat!=="10M").length,0)}건</td>
+                            <td style={{...S.td,fontSize:14,fontWeight:800,textAlign:"right",color:"#06b6d4"}}>{grandTotal.toLocaleString()}원</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>;
+              })()}
             </div>;
           })()}
           {/* 종목 */}
@@ -4851,16 +4979,18 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             };
 
             // ── 드래그 교환 ──
+            const PERSON_FIELDS=["name","memberId","subOrg","orgName","regionName","remark","absent","_orgNum","_mixedTeamNum","_teamIdx"];
             const swapRows=(fromIdx,toIdx)=>{
               if(fromIdx===toIdx) return;
               const updated=[...curStartList];
-              const fromData={name:updated[fromIdx].name,memberId:updated[fromIdx].memberId,subOrg:updated[fromIdx].subOrg,orgName:updated[fromIdx].orgName,regionName:updated[fromIdx].regionName,remark:updated[fromIdx].remark,absent:updated[fromIdx].absent};
-              const toData={name:updated[toIdx].name,memberId:updated[toIdx].memberId,subOrg:updated[toIdx].subOrg,orgName:updated[toIdx].orgName,regionName:updated[toIdx].regionName,remark:updated[toIdx].remark,absent:updated[toIdx].absent};
+              const fromData={};const toData={};
+              PERSON_FIELDS.forEach(k=>{fromData[k]=updated[fromIdx][k];toData[k]=updated[toIdx][k];});
               updated[fromIdx]={...updated[fromIdx],...toData};
               updated[toIdx]={...updated[toIdx],...fromData};
               setStartLists({...startLists,[selectedEvCode]:updated});
               setSlSavedKeys(prev=>{const next=new Set(prev);next.delete(selectedEvCode);return next;});
               setSlDrag(null);
+              setSlDragOver(null);
             };
 
             // ── 복사/CSV ──
@@ -4955,48 +5085,64 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // ── 스타트리스트 테이블 ──
             const renderStartTable=(list)=>{
               let seq=0;
+              const isDragging=slEditMode&&slDrag&&slDrag.evCode===selectedEvCode;
               return <div>
-                {slDrag&&slDrag.evCode===selectedEvCode&&<div style={{marginBottom:6,padding:"5px 12px",borderRadius:6,background:"#3b82f622",border:"1px solid #3b82f666",fontSize:11,color:"#60a5fa",fontWeight:600}}>
-                  ↕️ {list[slDrag.fromIdx]?.name||""} 선택됨 — 이동할 위치의 행을 탭하세요 <button onClick={()=>setSlDrag(null)} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:"#3b82f633",color:"#60a5fa",border:"1px solid #3b82f666",cursor:"pointer"}}>취소</button>
+                {slEditMode&&<div style={{marginBottom:6,padding:"5px 12px",borderRadius:6,background:isDragging?"#3b82f622":"#f59e0b11",border:"1px solid "+(isDragging?"#3b82f666":"#f59e0b44"),fontSize:11,color:isDragging?"#60a5fa":"#f59e0b",fontWeight:600}}>
+                  {isDragging
+                    ? <>↕️ <strong>{list[slDrag.fromIdx]?.name||""}</strong> → 놓을 위치로 드래그하세요 (사대번호 고정, 인물정보만 이동) <button onClick={()=>{setSlDrag(null);setSlDragOver(null);}} style={{marginLeft:8,fontSize:10,padding:"1px 8px",borderRadius:4,background:"#3b82f633",color:"#60a5fa",border:"1px solid #3b82f666",cursor:"pointer"}}>취소</button></>
+                    : <>✏️ 편집모드 — 행을 드래그하여 순서를 변경하세요 (사대번호 고정, 인물정보만 이동)</>
+                  }
                 </div>}
                 <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
-                  {["#","사대","이름","소속",selIsMixed?"팀":"단체번호","비고",""].map(h=><th key={h} style={S.th}>{h}</th>)}
+                  {["#","사대","이름","소속",selIsMixed?"팀":"단체번호","비고",""].map((h,hi)=><th key={h+hi} style={{...S.th,...(hi<=1&&slEditMode?{background:"#0a1220",borderRight:hi===1?"2px solid #334466":"none"}:{})}}>{h}</th>)}
                 </tr></thead><tbody>
                   {list.map((p,i)=>{
                     const isAbsent=p.absent;
                     if(!isAbsent) seq++;
-                    const isDragFrom=slDrag&&slDrag.evCode===selectedEvCode&&slDrag.fromIdx===i;
-                    return <tr key={p.memberId+"-"+i} data-slrow={i}
-                      draggable={!isAbsent}
-                      onDragStart={()=>setSlDrag({evCode:selectedEvCode,fromIdx:i})}
-                      onDragOver={e=>{if(slDrag&&slDrag.evCode===selectedEvCode&&!isAbsent)e.preventDefault();}}
-                      onDrop={e=>{e.preventDefault();if(slDrag&&slDrag.evCode===selectedEvCode)swapRows(slDrag.fromIdx,i);}}
-                      onDragEnd={()=>setSlDrag(null)}
-                      onClick={()=>{
-                        if(isAbsent)return;
-                        if(slDrag&&slDrag.evCode===selectedEvCode&&slDrag.fromIdx!==i){swapRows(slDrag.fromIdx,i);return;}
-                        if(slDrag&&slDrag.evCode===selectedEvCode&&slDrag.fromIdx===i){setSlDrag(null);return;}
-                        setSlDrag({evCode:selectedEvCode,fromIdx:i});
-                      }}
-                      style={{background:isAbsent?"#ef444411":isDragFrom?"#3b82f622":i%2===0?"transparent":"#0d152044",
-                        opacity:isAbsent?0.5:1,cursor:isAbsent?"default":"pointer",transition:"background .1s",
-                        outline:isDragFrom?"2px solid #3b82f6":"none"}}>
-                      <td style={{...S.td,color:isAbsent?"#ef4444":C.dim,textDecoration:isAbsent?"line-through":"none"}}>{isAbsent?"—":seq}</td>
-                      <td style={{...S.td,fontWeight:700,color:p.lane?"#ddd":"#555",textAlign:"center"}}>{p.lane||"-"}</td>
-                      <td style={{...S.td,fontWeight:600,textDecoration:isAbsent?"line-through":"none"}}>{p.name}</td>
-                      <td style={S.td}>{p.subOrg||"-"}</td>
-                      <td style={S.td}>{selIsMixed?renderMixedTeamBadge({...p,_mixedTeamNum:p._mixedTeamNum||p._orgNum}):renderTeamBadge(p,p._orgNum||getEffectiveOrgNum(p))}</td>
-                      <td style={S.td}>{p.remark||""}</td>
-                      <td style={{...S.td,padding:"2px 4px"}} className="no-print">
-                        <button onClick={()=>toggleAbsent(i)} title={isAbsent?"참가 복원":"불참 처리"}
-                          style={{fontSize:9,padding:"2px 6px",borderRadius:4,cursor:"pointer",fontWeight:700,border:"1px solid",
-                            background:isAbsent?"#10b98122":"#ef444422",color:isAbsent?"#10b981":"#ef4444",
-                            borderColor:isAbsent?"#10b981":"#ef4444"}}>
-                          {isAbsent?"복원":"불참"}
-                        </button>
-                      </td>
-                    </tr>;
+                    const isDragFrom=isDragging&&slDrag.fromIdx===i;
+                    const isDropTarget=isDragging&&slDragOver===i&&slDrag.fromIdx!==i&&!isAbsent;
+                    const dragProps=slEditMode&&!isAbsent?{
+                      draggable:true,
+                      onDragStart:e=>{setSlDrag({evCode:selectedEvCode,fromIdx:i});e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain","");}catch(ex){}},
+                      onDragOver:e=>{if(isDragging&&!isAbsent){e.preventDefault();e.dataTransfer.dropEffect="move";setSlDragOver(i);}},
+                      onDragLeave:()=>{if(slDragOver===i)setSlDragOver(null);},
+                      onDrop:e=>{e.preventDefault();if(isDragging){swapRows(slDrag.fromIdx,i);setSlDragOver(null);}},
+                      onDragEnd:()=>{setSlDrag(null);setSlDragOver(null);}
+                    }:{};
+                    return <React.Fragment key={p.memberId+"-"+i}>
+                      {/* 드롭 위치 인디케이터: 위쪽 */}
+                      {isDropTarget&&slDrag.fromIdx>i&&<tr><td colSpan={7} style={{padding:0,height:3,background:"linear-gradient(90deg,transparent,#3b82f6,#3b82f6,transparent)",border:"none"}}></td></tr>}
+                      <tr data-slrow={i} {...dragProps}
+                        style={{background:isAbsent?"#ef444411":isDragFrom?"#3b82f633":i%2===0?"transparent":"#0d152044",
+                          opacity:isAbsent?0.5:isDragFrom?0.6:1,
+                          cursor:slEditMode&&!isAbsent?"grab":"default",transition:"background .15s",
+                          outline:isDragFrom?"2px solid #3b82f6":"none",
+                          borderTop:isDropTarget&&slDrag.fromIdx<i?"3px solid #3b82f6":"none",
+                          borderBottom:isDropTarget&&slDrag.fromIdx>i?"3px solid #3b82f6":"none"}}>
+                        {/* 고정 영역: #, 사대 */}
+                        <td style={{...S.td,color:isAbsent?"#ef4444":C.dim,textDecoration:isAbsent?"line-through":"none",...(slEditMode?{background:"#0a122088",borderRight:"none"}:{})}}>{isAbsent?"—":seq}</td>
+                        <td style={{...S.td,fontWeight:700,color:p.lane?"#ddd":"#555",textAlign:"center",...(slEditMode?{background:"#0a122088",borderRight:"2px solid #334466"}:{})}}>{p.lane||"-"}</td>
+                        {/* 이동 영역: 인물 정보 */}
+                        <td style={{...S.td,fontWeight:600,textDecoration:isAbsent?"line-through":"none"}}>{slEditMode&&isDragFrom?"↕️ ":""}{p.name}</td>
+                        <td style={S.td}>{p.subOrg||"-"}</td>
+                        <td style={S.td}>{selIsMixed?renderMixedTeamBadge({...p,_mixedTeamNum:p._mixedTeamNum||p._orgNum}):renderTeamBadge(p,p._orgNum||getEffectiveOrgNum(p))}</td>
+                        <td style={S.td}>{p.remark||""}</td>
+                        <td style={{...S.td,padding:"2px 4px"}} className="no-print">
+                          {slEditMode
+                            ? (!isAbsent&&<span style={{fontSize:13,cursor:"grab",userSelect:"none",color:"#667788"}}>☰</span>)
+                            : <button onClick={(e)=>{e.stopPropagation();toggleAbsent(i);}} title={isAbsent?"참가 복원":"불참 처리"}
+                                style={{fontSize:9,padding:"2px 6px",borderRadius:4,cursor:"pointer",fontWeight:700,border:"1px solid",
+                                  background:isAbsent?"#10b98122":"#ef444422",color:isAbsent?"#10b981":"#ef4444",
+                                  borderColor:isAbsent?"#10b981":"#ef4444"}}>
+                                {isAbsent?"복원":"불참"}
+                              </button>
+                          }
+                        </td>
+                      </tr>
+                      {/* 드롭 위치 인디케이터: 아래쪽 */}
+                      {isDropTarget&&slDrag.fromIdx<i&&<tr><td colSpan={7} style={{padding:0,height:3,background:"linear-gradient(90deg,transparent,#3b82f6,#3b82f6,transparent)",border:"none"}}></td></tr>}
+                    </React.Fragment>;
                   })}
                 </tbody></table>
               </div></div>;
@@ -5344,6 +5490,27 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             🔀 전체 세션 스타트리스트 생성 ({sibSessions.length}개 세션)
                           </button>
                           {curStartList&&<>
+                            <button style={{...S.btn(slEditMode?"#f59e0b":"#334155",slEditMode?"#000":"#e8dcc8"),fontSize:11,padding:"5px 12px"}} onClick={()=>{setSlEditMode(p=>!p);setSlDrag(null);setSlDragOver(null);}}>{slEditMode?"✏️ 편집모드 ON":"✏️ 편집모드"}</button>
+                            <button style={{...S.btn("#06b6d4",C.bg),fontSize:11,padding:"5px 12px"}} onClick={()=>{
+                              // 현재 선택된 세션의 사대번호만 갱신
+                              const lanes=getSessionLanes(selectedEvCode);
+                              const ss=sessions.find(x=>x.key===selectedEvCode);
+                              if(!ss){flash("세션 정보를 찾을 수 없습니다","error");return;}
+                              const relay=ss.relay;
+                              const updated=curStartList.map((p,i)=>{
+                                // 혼성팀: _teamIdx 기반 2사대씩
+                                if(selIsMixed&&p._teamIdx!==undefined){
+                                  const ti=p._teamIdx;
+                                  const slotInTeam=curStartList.slice(0,i).filter(q=>q._teamIdx===ti).length;
+                                  const laneIdx=ti*2+slotInTeam;
+                                  return {...p,lane:lanes[laneIdx]?relay+"-"+lanes[laneIdx]:null};
+                                }
+                                return {...p,lane:lanes[i]?relay+"-"+lanes[i]:null};
+                              });
+                              setStartLists({...startLists,[selectedEvCode]:updated});
+                              setSlSavedKeys(prev=>{const next=new Set(prev);next.delete(selectedEvCode);return next;});
+                              flash("사대번호 갱신 완료 ("+lanes.length+"사대)");
+                            }} title="스타트리스트 순서는 유지하고 사대번호만 현재 배정 기준으로 갱신">🔄 사대 새로고침</button>
                             <button style={{...S.btn("#8b5cf6",C.bg),fontSize:11,padding:"5px 12px"}} onClick={()=>setSlPrint(selectedEvCode)}>🖨 인쇄</button>
                             <span style={{fontSize:12,color:C.dim}}>{selSession.evName} {relayLabel(selSession.evCode,selSession.relay)} · {curStartList.filter(p=>!p.absent).length}명</span>
                             {copyBtn(curStartList,"스타트리스트")}{csvBtn(curStartList,"스타트리스트")}
@@ -5356,7 +5523,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           {sibSessions.map(ss=>{
                             const isActive=ss.key===selectedEvCode;
                             const hasSL=!!startLists[ss.key];
-                            return <button key={ss.key} onClick={()=>setSelectedEvCode(ss.key)} style={{
+                            return <button key={ss.key} onClick={()=>{setSelectedEvCode(ss.key);setSlDrag(null);setSlDragOver(null);}} style={{
                               padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:isActive?700:400,cursor:"pointer",
                               background:isActive?catClr(ss.category)+"22":"transparent",
                               color:isActive?catClr(ss.category):C.dim,
