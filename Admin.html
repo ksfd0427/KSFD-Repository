@@ -428,6 +428,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [showFeeModal, setShowFeeModal]=useState(false); // 참가비 산정 모달
   const [feeExpanded, setFeeExpanded]=useState(null); // 참가비 세부내역 열린 appId
   const [showMedalModal, setShowMedalModal]=useState(false); // 메달 산정 모달
+  const [medalDetail, setMedalDetail]=useState(null); // {evCode, subType} - 메달 세부 참가자 2차 모달
   const [openPaletteCat, setOpenPaletteCat]=useState(null); // 세션 팔레트 카테고리 드롭다운
   const [paletteViewMode, setPaletteViewMode]=useState("category"); // "category" | "daily"
   // 불참 관리
@@ -4722,6 +4723,64 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const CAT_ORD=["소총","소총(SH2)","권총","산탄총","청각"];
                 const catColorMap3={"소총":"#3b82f6","소총(SH2)":"#f59e0b","권총":"#8b5cf6","산탄총":"#10b981","청각":"#ec4899","기타":"#6b7d94"};
 
+                // ── 스타트리스트에서 종목별 고유 참가자 추출 헬퍼 ──
+                // 실제 인쇄되는 스타트리스트 기준, name으로 중복 제거
+                const getSlPlayers=(evCode)=>{
+                  const slKeys=Object.keys(startLists).filter(k=>k===evCode||k.startsWith(evCode+"_"));
+                  if(slKeys.length===0) return null; // 스타트리스트 없음
+                  const nameMap={}; // name → player object (처음 만난 것만)
+                  slKeys.forEach(k=>(startLists[k]||[]).forEach(p=>{
+                    if(p.absent) return;
+                    const nm=(p.name||"").trim();
+                    if(nm&&!nameMap[nm]) nameMap[nm]=p;
+                  }));
+                  return Object.values(nameMap);
+                };
+                // 스타트리스트 없을 때 entries 폴백 (name dedup)
+                const getEntryPlayers=(evCode)=>{
+                  const nameMap={};
+                  mE.filter(e=>e.event_code===evCode).forEach(e=>{
+                    const m=memberMap3[e.member_id]; if(!m) return;
+                    const nm=(m.name||"").trim();
+                    if(nm&&!nameMap[nm]){
+                      const app=memberAppMap3[e.member_id];
+                      nameMap[nm]={memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"};
+                    }
+                  });
+                  return Object.values(nameMap);
+                };
+                // 스타트리스트 내 단체전 표시된 선수 → 팀 구성 추출
+                const getSlTeams=(evCode)=>{
+                  const slKeys=Object.keys(startLists).filter(k=>k===evCode||k.startsWith(evCode+"_"));
+                  // 스타트리스트에서 _orgNum(단체번호)이 배정된 선수들을 팀별로 그룹
+                  const teamMap={}; // teamNum → Set(name)
+                  const teamDetail={}; // teamNum → [player, ...]
+                  slKeys.forEach(k=>(startLists[k]||[]).forEach(p=>{
+                    if(p.absent) return;
+                    const tn=p._orgNum||p._inTeam;
+                    if(!tn) return;
+                    const nm=(p.name||"").trim(); if(!nm) return;
+                    if(!teamMap[tn])teamMap[tn]=new Set();
+                    if(!teamDetail[tn])teamDetail[tn]=[];
+                    if(!teamMap[tn].has(nm)){teamMap[tn].add(nm);teamDetail[tn].push(p);}
+                  }));
+                  return{teamMap,teamDetail,teamCount:Object.keys(teamMap).length};
+                };
+                // DB team_entries 기반 팀 구성 (name dedup)
+                const getDbTeams=(evCode,teamType)=>{
+                  const tes=mTE.filter(t=>t.event_code===evCode&&(teamType?t.team_type===teamType:true)&&memberMap3[t.member_id]);
+                  const teamMap={};
+                  tes.forEach(t=>{
+                    const k=t.application_id+"_"+(t.team_number||1);
+                    const m=memberMap3[t.member_id];
+                    const nm=(m?.name||"").trim();
+                    if(!nm) return;
+                    if(!teamMap[k])teamMap[k]={teamNumber:t.team_number||1,appId:t.application_id,names:new Set(),members:[]};
+                    if(!teamMap[k].names.has(nm)){teamMap[k].names.add(nm);teamMap[k].members.push(t.member_id);}
+                  });
+                  return Object.values(teamMap);
+                };
+
                 // ── 메달 계산 ──
                 const medalRows=[];
                 events.forEach(ev=>{
@@ -4729,55 +4788,40 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   const cc=catColorMap3[cat]||"#6b7d94";
 
                   if(ev.type==="individual"){
-                    // (A) 개인전 메달
-                    // 스타트리스트 기반 인원수 (없으면 entries에서)
-                    let indCount=0;
-                    const slKeys=Object.keys(startLists).filter(k=>k===ev.code||k.startsWith(ev.code+"_"));
-                    if(slKeys.length>0){
-                      const allSl=[];const seen=new Set();
-                      slKeys.forEach(k=>(startLists[k]||[]).forEach(p=>{if(!p.absent&&!seen.has(p.memberId)){seen.add(p.memberId);allSl.push(p);}}));
-                      indCount=allSl.length;
-                    } else {
-                      const validMids=new Set(mM.map(m=>m.id));
-                      indCount=mE.filter(e=>e.event_code===ev.code&&validMids.has(e.member_id)).length;
-                    }
-                    // 개인전 메달
+                    // (A) 개인전: 스타트리스트 → entries 폴백
+                    const slP=getSlPlayers(ev.code);
+                    const indCount=slP?slP.length:getEntryPlayers(ev.code).length;
                     const indPlaces=Math.min(indCount,3);
                     if(indPlaces>0){
                       medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"개인전",
                         participants:indCount,teams:null,teamSize:null,places:indPlaces,perPlace:1,
                         gold:indPlaces>=1?1:0,silver:indPlaces>=2?1:0,bronze:indPlaces>=3?1:0});
                     }
-
-                    // (B) 해당 개인전 종목 내 단체전 메달
-                    const evTE=mTE.filter(t=>t.event_code===ev.code&&t.team_type==="team"&&memberMap3[t.member_id]);
-                    if(evTE.length>0){
-                      const teamGrp={};
-                      evTE.forEach(t=>{const k=t.application_id+"_"+(t.team_number||1);if(!teamGrp[k])teamGrp[k]=new Set();teamGrp[k].add(t.member_id);});
-                      // orgNumOverrides 반영
-                      const evOv3=orgNumOverrides[ev.code]||{};
-                      Object.entries(evOv3).forEach(([mid,tn])=>{
-                        if(tn){const k2="ov_"+tn;if(!teamGrp[k2])teamGrp[k2]=new Set();teamGrp[k2].add(Number(mid));}
-                      });
-                      const teamSizes=Object.values(teamGrp).map(s=>s.size);
-                      const teamCount=teamSizes.length;
-                      const maxSize=Math.max(...teamSizes);
+                    // (B) 단체전: 스타트리스트 내 _orgNum 우선 → DB team_entries 폴백
+                    const slT=getSlTeams(ev.code);
+                    let teamCount=0,maxSize=0,teamSizes=[];
+                    if(slT.teamCount>0){
+                      teamCount=slT.teamCount;
+                      teamSizes=Object.values(slT.teamMap).map(s=>s.size);
+                      maxSize=Math.max(...teamSizes);
+                    } else {
+                      const dbT=getDbTeams(ev.code,"team");
+                      teamCount=dbT.length;
+                      if(teamCount>0){teamSizes=dbT.map(t=>t.names.size);maxSize=Math.max(...teamSizes);}
+                    }
+                    if(teamCount>0){
                       const perPlace=(maxSize>=4&&teamCount>=3)?4:Math.min(maxSize,4);
                       const tPlaces=Math.min(teamCount,3);
-                      if(tPlaces>0){
-                        medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"단체전",
-                          participants:null,teams:teamCount,teamSize:maxSize,places:tPlaces,perPlace,
-                          gold:tPlaces>=1?perPlace:0,silver:tPlaces>=2?perPlace:0,bronze:tPlaces>=3?perPlace:0});
-                      }
+                      medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"단체전",
+                        participants:null,teams:teamCount,teamSize:maxSize,places:tPlaces,perPlace,
+                        gold:tPlaces>=1?perPlace:0,silver:tPlaces>=2?perPlace:0,bronze:tPlaces>=3?perPlace:0});
                     }
                   } else if(ev.type==="team"){
-                    // 순수 단체전 종목 (PT1, PT2, PT3)
-                    const evTE2=mTE.filter(t=>t.event_code===ev.code&&memberMap3[t.member_id]);
-                    const teamGrp2={};
-                    evTE2.forEach(t=>{const k=t.application_id+"_"+(t.team_number||1);if(!teamGrp2[k])teamGrp2[k]=new Set();teamGrp2[k].add(t.member_id);});
-                    const teamSizes2=Object.values(teamGrp2).map(s=>s.size);
-                    const teamCount2=teamSizes2.length;
+                    // 순수 단체전 (PT1 등)
+                    const dbT2=getDbTeams(ev.code,null);
+                    const teamCount2=dbT2.length;
                     if(teamCount2>0){
+                      const teamSizes2=dbT2.map(t=>t.names.size);
                       const maxSize2=Math.max(...teamSizes2);
                       const perPlace2=(maxSize2>=4&&teamCount2>=3)?4:Math.min(maxSize2,4);
                       const tPlaces2=Math.min(teamCount2,3);
@@ -4786,16 +4830,20 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         gold:tPlaces2>=1?perPlace2:0,silver:tPlaces2>=2?perPlace2:0,bronze:tPlaces2>=3?perPlace2:0});
                     }
                   } else if(ev.type==="mixed"){
-                    // 혼성팀
-                    const evTE3=mTE.filter(t=>t.event_code===ev.code&&memberMap3[t.member_id]);
-                    const teamGrp3={};
-                    evTE3.forEach(t=>{const k=t.application_id+"_"+(t.team_number||1);if(!teamGrp3[k])teamGrp3[k]=new Set();teamGrp3[k].add(t.member_id);});
-                    // mixedTeamOverrides 반영
-                    const mxOv=mixedTeamOverrides[ev.code]||{};
-                    Object.entries(mxOv).forEach(([mid,tn])=>{
-                      if(tn){const k3="mxov_"+tn;if(!teamGrp3[k3])teamGrp3[k3]=new Set();teamGrp3[k3].add(Number(mid));}
-                    });
-                    const teamCount3=Object.keys(teamGrp3).length;
+                    // 혼성팀: 스타트리스트에서 _mixedTeamNum 기준 팀 수
+                    const slKeys=Object.keys(startLists).filter(k=>k===ev.code||k.startsWith(ev.code+"_"));
+                    let teamCount3=0;
+                    if(slKeys.length>0){
+                      const teamNums=new Set();
+                      slKeys.forEach(k=>(startLists[k]||[]).forEach(p=>{
+                        if(!p.absent&&(p._mixedTeamNum||p._orgNum)) teamNums.add(p._mixedTeamNum||p._orgNum);
+                      }));
+                      teamCount3=teamNums.size;
+                    }
+                    if(teamCount3===0){
+                      const dbT3=getDbTeams(ev.code,null);
+                      teamCount3=dbT3.length;
+                    }
                     if(teamCount3>0){
                       const mxPlaces=Math.min(teamCount3,3);
                       medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"혼성팀",
@@ -4911,7 +4959,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   flash("메달 산정 엑셀 다운로드 완료");
                 };
 
-                return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}} onClick={()=>setShowMedalModal(false)}>
+                return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}} onClick={()=>{setShowMedalModal(false);setMedalDetail(null);}}>
                   <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:14,width:"92%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.6)"}} onClick={e=>e.stopPropagation()}>
                     {/* 헤더 */}
                     <div style={{padding:"16px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:12}}>
@@ -4934,7 +4982,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         navigator.clipboard.writeText(hdr+"\n"+rows.join("\n")).then(()=>flash("메달 내역 클립보드 복사 완료"));
                       }} style={{...S.btn(C.blue,"#fff"),fontSize:11,padding:"5px 12px"}}>📋 복사</button>
                       <button onClick={downloadMedalExcel} style={{...S.btn("#22c55e","#fff"),fontSize:11,padding:"5px 12px"}}>📥 엑셀</button>
-                      <button onClick={()=>setShowMedalModal(false)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer",fontWeight:700}}>✕</button>
+                      <button onClick={()=>{setShowMedalModal(false);setMedalDetail(null);}} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer",fontWeight:700}}>✕</button>
                     </div>
                     {/* 본문 */}
                     <div style={{flex:1,overflow:"auto",padding:"16px 24px"}}>
@@ -4970,7 +5018,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                                 const note=r.subType==="개인전"?(r.participants+"명 참가")
                                   :r.subType==="단체전"?(r.teams+"팀"+(r.teamSize>=4?" (4인팀 포함)":""))
                                   :(r.teams+"팀 (2인1조)");
-                                return <tr key={r.evCode+"_"+r.subType} style={{background:i%2===0?"transparent":"#0d152044"}}>
+                                return <tr key={r.evCode+"_"+r.subType} style={{background:i%2===0?"transparent":"#0d152044",cursor:"pointer",transition:"background .15s"}}
+                                  onClick={()=>setMedalDetail({evCode:r.evCode,subType:r.subType,evName:r.evName,color:r.color,category:r.category,gold:r.gold,silver:r.silver,bronze:r.bronze,perPlace:r.perPlace})}
+                                  onMouseEnter={e=>e.currentTarget.style.background=cc+"18"} onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"transparent":"#0d152044"}>
                                   <td style={{...S.td,fontSize:11,fontWeight:700,color:cc}}>{r.evCode}</td>
                                   <td style={{...S.td,fontSize:10,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.evName}</td>
                                   <td style={{...S.td,fontSize:10,textAlign:"center"}}><span style={{padding:"2px 8px",borderRadius:4,fontSize:9,fontWeight:600,
@@ -4995,6 +5045,128 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       </div>}
                     </div>
                   </div>
+                  {/* ── 메달 세부 참가자 2차 모달 ── */}
+                  {medalDetail&&(()=>{
+                    const md=medalDetail;
+                    const evObj=events.find(e=>e.code===md.evCode);
+                    const validMids=new Set(mM.map(m=>m.id));
+                    let detailContent=null;
+
+                    if(md.subType==="개인전"){
+                      // 실제 인쇄 스타트리스트 기준 — name으로 중복 제거
+                      const slP=getSlPlayers(md.evCode);
+                      const players=slP||getEntryPlayers(md.evCode);
+                      detailContent=<div>
+                        <div style={{fontSize:11,color:C.dim,marginBottom:8}}>개인전 참가자 {players.length}명 → 메달: 🥇{md.gold} 🥈{md.silver} 🥉{md.bronze}</div>
+                        <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+                          {["#","이름","세부소속","소속단체","지역"].map(h=><th key={h} style={{...S.th,fontSize:9,padding:"4px 6px"}}>{h}</th>)}
+                        </tr></thead><tbody>
+                          {players.map((p,i)=><tr key={p.memberId||i} style={{background:i%2===0?"transparent":"#0d152044"}}>
+                            <td style={{...S.td,fontSize:9,color:C.dim}}>{i+1}</td>
+                            <td style={{...S.td,fontSize:10,fontWeight:600}}>{p.name}</td>
+                            <td style={{...S.td,fontSize:9}}>{p.subOrg||"-"}</td>
+                            <td style={{...S.td,fontSize:9}}>{p.orgName||"-"}</td>
+                            <td style={{...S.td,fontSize:9}}>{p.regionName||"-"}</td>
+                          </tr>)}
+                        </tbody></table>
+                      </div>;
+                    } else if(md.subType==="단체전"){
+                      // 스타트리스트 _orgNum 우선 → DB team_entries 폴백
+                      const slT=getSlTeams(md.evCode);
+                      let teams4=[];
+                      if(slT.teamCount>0){
+                        teams4=Object.entries(slT.teamDetail).map(([tn,members])=>({
+                          key:tn,teamNumber:Number(tn),orgName:members[0]?.orgName||"-",regionName:members[0]?.regionName||"-",
+                          memberDetails:members.map(p=>({name:p.name,subOrg:p.subOrg,orgName:p.orgName||"-",regionName:p.regionName||"-"}))
+                        })).sort((a,b)=>a.teamNumber-b.teamNumber);
+                      } else {
+                        const dbT4=getDbTeams(md.evCode,"team");
+                        teams4=dbT4.map(t=>{
+                          const app=t.appId?mAM[t.appId]:null;
+                          return{key:t.appId+"_"+t.teamNumber,teamNumber:t.teamNumber,orgName:app?.org_name||"수동배정",regionName:app?.region_name||"-",
+                            memberDetails:t.members.map(mid=>{const m=memberMap3[mid];const a=memberAppMap3[mid];return m?{name:m.name,subOrg:m.sub_org,orgName:a?.org_name||"-",regionName:a?.region_name||"-"}:null;}).filter(Boolean)};
+                        }).sort((a,b)=>a.teamNumber-b.teamNumber);
+                      }
+                      detailContent=<div>
+                        <div style={{fontSize:11,color:C.dim,marginBottom:8}}>단체전 {teams4.length}팀 → 메달 {md.perPlace}개/등위: 🥇{md.gold} 🥈{md.silver} 🥉{md.bronze}</div>
+                        {teams4.map((t,ti)=><div key={t.key} style={{marginBottom:10,padding:10,borderRadius:8,background:ti%2===0?"#1e293b":"#0f172a",border:"1px solid "+C.border}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                            <span style={{fontSize:12,fontWeight:700,color:md.color}}>팀{t.teamNumber}</span>
+                            <span style={{fontSize:10,color:C.dim}}>{t.orgName} · {t.regionName}</span>
+                            <span style={{fontSize:9,color:"#888"}}>{t.memberDetails.length}명</span>
+                          </div>
+                          <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+                            {t.memberDetails.map((m,mi)=><tr key={mi}>
+                              <td style={{fontSize:9,padding:"2px 6px",color:C.dim,width:20}}>{mi+1}</td>
+                              <td style={{fontSize:10,padding:"2px 6px",fontWeight:600}}>{m.name}</td>
+                              <td style={{fontSize:9,padding:"2px 6px",color:C.dim}}>{m.subOrg||"-"}</td>
+                              <td style={{fontSize:9,padding:"2px 6px",color:C.dim}}>{m.orgName}</td>
+                            </tr>)}
+                          </tbody></table>
+                        </div>)}
+                      </div>;
+                    } else if(md.subType==="혼성팀"){
+                      // 스타트리스트 _mixedTeamNum 우선 → DB 폴백
+                      const slKeys5=Object.keys(startLists).filter(k=>k===md.evCode||k.startsWith(md.evCode+"_"));
+                      let teams5=[];
+                      if(slKeys5.length>0){
+                        const teamMap5={};
+                        slKeys5.forEach(k=>(startLists[k]||[]).forEach(p=>{
+                          if(p.absent) return;
+                          const tn=p._mixedTeamNum||p._orgNum;
+                          if(!tn) return;
+                          const nm=(p.name||"").trim(); if(!nm) return;
+                          if(!teamMap5[tn])teamMap5[tn]={names:new Set(),members:[]};
+                          if(!teamMap5[tn].names.has(nm)){teamMap5[tn].names.add(nm);teamMap5[tn].members.push(p);}
+                        }));
+                        teams5=Object.entries(teamMap5).map(([tn,v])=>({
+                          key:tn,teamNumber:Number(tn),orgName:v.members[0]?.orgName||"-",regionName:v.members[0]?.regionName||"-",
+                          memberDetails:v.members.map(p=>({name:p.name,gender:memberMap3[p.memberId]?.gender||"",subOrg:p.subOrg,orgName:p.orgName||"-",regionName:p.regionName||"-"}))
+                        })).sort((a,b)=>a.teamNumber-b.teamNumber);
+                      } else {
+                        const dbT5=getDbTeams(md.evCode,null);
+                        teams5=dbT5.map(t=>{
+                          const app=t.appId?mAM[t.appId]:null;
+                          return{key:t.appId+"_"+t.teamNumber,teamNumber:t.teamNumber,orgName:app?.org_name||"수동배정",regionName:app?.region_name||"-",
+                            memberDetails:t.members.map(mid=>{const m=memberMap3[mid];const a=memberAppMap3[mid];return m?{name:m.name,gender:m.gender,subOrg:m.sub_org,orgName:a?.org_name||"-",regionName:a?.region_name||"-"}:null;}).filter(Boolean)};
+                        }).sort((a,b)=>a.teamNumber-b.teamNumber);
+                      }
+                      detailContent=<div>
+                        <div style={{fontSize:11,color:C.dim,marginBottom:8}}>혼성팀 {teams5.length}팀 (2인1조) → 메달: 🥇{md.gold} 🥈{md.silver} 🥉{md.bronze}</div>
+                        {teams5.map((t,ti)=><div key={t.key} style={{marginBottom:8,padding:10,borderRadius:8,background:ti%2===0?"#1e293b":"#0f172a",border:"1px solid "+C.border}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                            <span style={{fontSize:12,fontWeight:700,color:md.color}}>팀{t.teamNumber}</span>
+                            <span style={{fontSize:10,color:C.dim}}>{t.orgName} · {t.regionName}</span>
+                          </div>
+                          <div style={{display:"flex",gap:12,paddingLeft:8}}>
+                            {t.memberDetails.map((m,mi)=><div key={mi} style={{fontSize:10}}>
+                              <span style={{fontWeight:600}}>{m.name}</span>
+                              <span style={{fontSize:9,color:C.dim,marginLeft:4}}>{(m.gender==="남"||m.gender==="녀")?m.gender:""}</span>
+                              <span style={{fontSize:8,color:"#888",marginLeft:4}}>{m.subOrg||m.orgName}</span>
+                            </div>)}
+                          </div>
+                        </div>)}
+                      </div>;
+                    }
+
+                    return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10001}} onClick={()=>setMedalDetail(null)}>
+                      <div style={{background:"#1e293b",border:"1px solid "+(md.color||"#475569"),borderRadius:12,width:"80%",maxWidth:700,maxHeight:"75vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.6)"}} onClick={e=>e.stopPropagation()}>
+                        <div style={{padding:"14px 20px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:15,fontWeight:800,color:md.color||C.gold}}>{md.evCode}</span>
+                          <span style={{fontSize:12,color:"#ccc"}}>{md.evName}</span>
+                          <span style={{padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:600,
+                            background:md.subType==="개인전"?"#3b82f622":md.subType==="단체전"?"#8b5cf622":"#10b98122",
+                            color:md.subType==="개인전"?"#3b82f6":md.subType==="단체전"?"#8b5cf6":"#10b981"}}>{md.subType}</span>
+                          <div style={{flex:1}}/>
+                          <span style={{fontSize:11}}>🥇{md.gold} 🥈{md.silver} 🥉{md.bronze} = <b>{md.gold+md.silver+md.bronze}</b></span>
+                          <button onClick={()=>setMedalDetail(null)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer",fontWeight:700,marginLeft:8}}>✕</button>
+                        </div>
+                        <div style={{flex:1,overflow:"auto",padding:"14px 20px"}}>
+                          {detailContent}
+                        </div>
+                      </div>
+                    </div>;
+                  })()}
                 </div>;
               })()}
             </div>;
