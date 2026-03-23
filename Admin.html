@@ -427,6 +427,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [expandedEvCode, setExpandedEvCode]=useState(null); // 참가신청 탭 종목별 상세 열람
   const [showFeeModal, setShowFeeModal]=useState(false); // 참가비 산정 모달
   const [feeExpanded, setFeeExpanded]=useState(null); // 참가비 세부내역 열린 appId
+  const [showMedalModal, setShowMedalModal]=useState(false); // 메달 산정 모달
   const [openPaletteCat, setOpenPaletteCat]=useState(null); // 세션 팔레트 카테고리 드롭다운
   const [paletteViewMode, setPaletteViewMode]=useState("category"); // "category" | "daily"
   // 불참 관리
@@ -4424,6 +4425,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 <span style={{fontSize:11,color:C.dim}}>미사용 시도에서 랜덤 단체 생성 → DB 직접 저장</span>
                 <div style={{flex:1}}/>
                 {evPData&&apps.length>0&&<button style={{...S.btn("#06b6d4","#fff"),fontSize:11,padding:"5px 12px"}} onClick={()=>setShowFeeModal(true)}>💰 참가비 산정</button>}
+                {evPData&&apps.length>0&&<button style={{...S.btn("#f59e0b","#000"),fontSize:11,padding:"5px 12px"}} onClick={()=>setShowMedalModal(true)}>🏅 메달 산정</button>}
               </div>
               {apps.length===0?<div style={{textAlign:"center",padding:60,color:C.dimmer}}><div style={{fontSize:40,marginBottom:12}}>📭</div>접수된 신청이 없습니다</div>:(
             <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
@@ -4708,6 +4710,289 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           </tr>
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                </div>;
+              })()}
+              {/* ── 메달 산정 모달 ── */}
+              {showMedalModal&&evPData&&(()=>{
+                const{allMembers:mM,allEntries:mE,allTeamEntries:mTE,appMap:mAM}=evPData;
+                const memberMap3={};mM.forEach(m=>{memberMap3[m.id]=m;});
+                const memberAppMap3={};mM.forEach(m=>{memberAppMap3[m.id]=mAM[m.application_id];});
+                const CAT_ORD=["소총","소총(SH2)","권총","산탄총","청각"];
+                const catColorMap3={"소총":"#3b82f6","소총(SH2)":"#f59e0b","권총":"#8b5cf6","산탄총":"#10b981","청각":"#ec4899","기타":"#6b7d94"};
+
+                // ── 메달 계산 ──
+                const medalRows=[];
+                events.forEach(ev=>{
+                  const cat=CAT_ORD.includes(ev.category)?ev.category:(ev.category||"기타");
+                  const cc=catColorMap3[cat]||"#6b7d94";
+
+                  if(ev.type==="individual"){
+                    // (A) 개인전 메달
+                    // 스타트리스트 기반 인원수 (없으면 entries에서)
+                    let indCount=0;
+                    const slKeys=Object.keys(startLists).filter(k=>k===ev.code||k.startsWith(ev.code+"_"));
+                    if(slKeys.length>0){
+                      const allSl=[];const seen=new Set();
+                      slKeys.forEach(k=>(startLists[k]||[]).forEach(p=>{if(!p.absent&&!seen.has(p.memberId)){seen.add(p.memberId);allSl.push(p);}}));
+                      indCount=allSl.length;
+                    } else {
+                      const validMids=new Set(mM.map(m=>m.id));
+                      indCount=mE.filter(e=>e.event_code===ev.code&&validMids.has(e.member_id)).length;
+                    }
+                    // 개인전 메달
+                    const indPlaces=Math.min(indCount,3);
+                    if(indPlaces>0){
+                      medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"개인전",
+                        participants:indCount,teams:null,teamSize:null,places:indPlaces,perPlace:1,
+                        gold:indPlaces>=1?1:0,silver:indPlaces>=2?1:0,bronze:indPlaces>=3?1:0});
+                    }
+
+                    // (B) 해당 개인전 종목 내 단체전 메달
+                    const evTE=mTE.filter(t=>t.event_code===ev.code&&t.team_type==="team"&&memberMap3[t.member_id]);
+                    if(evTE.length>0){
+                      const teamGrp={};
+                      evTE.forEach(t=>{const k=t.application_id+"_"+(t.team_number||1);if(!teamGrp[k])teamGrp[k]=new Set();teamGrp[k].add(t.member_id);});
+                      // orgNumOverrides 반영
+                      const evOv3=orgNumOverrides[ev.code]||{};
+                      Object.entries(evOv3).forEach(([mid,tn])=>{
+                        if(tn){const k2="ov_"+tn;if(!teamGrp[k2])teamGrp[k2]=new Set();teamGrp[k2].add(Number(mid));}
+                      });
+                      const teamSizes=Object.values(teamGrp).map(s=>s.size);
+                      const teamCount=teamSizes.length;
+                      const maxSize=Math.max(...teamSizes);
+                      const perPlace=(maxSize>=4&&teamCount>=3)?4:Math.min(maxSize,4);
+                      const tPlaces=Math.min(teamCount,3);
+                      if(tPlaces>0){
+                        medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"단체전",
+                          participants:null,teams:teamCount,teamSize:maxSize,places:tPlaces,perPlace,
+                          gold:tPlaces>=1?perPlace:0,silver:tPlaces>=2?perPlace:0,bronze:tPlaces>=3?perPlace:0});
+                      }
+                    }
+                  } else if(ev.type==="team"){
+                    // 순수 단체전 종목 (PT1, PT2, PT3)
+                    const evTE2=mTE.filter(t=>t.event_code===ev.code&&memberMap3[t.member_id]);
+                    const teamGrp2={};
+                    evTE2.forEach(t=>{const k=t.application_id+"_"+(t.team_number||1);if(!teamGrp2[k])teamGrp2[k]=new Set();teamGrp2[k].add(t.member_id);});
+                    const teamSizes2=Object.values(teamGrp2).map(s=>s.size);
+                    const teamCount2=teamSizes2.length;
+                    if(teamCount2>0){
+                      const maxSize2=Math.max(...teamSizes2);
+                      const perPlace2=(maxSize2>=4&&teamCount2>=3)?4:Math.min(maxSize2,4);
+                      const tPlaces2=Math.min(teamCount2,3);
+                      medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"단체전",
+                        participants:null,teams:teamCount2,teamSize:maxSize2,places:tPlaces2,perPlace:perPlace2,
+                        gold:tPlaces2>=1?perPlace2:0,silver:tPlaces2>=2?perPlace2:0,bronze:tPlaces2>=3?perPlace2:0});
+                    }
+                  } else if(ev.type==="mixed"){
+                    // 혼성팀
+                    const evTE3=mTE.filter(t=>t.event_code===ev.code&&memberMap3[t.member_id]);
+                    const teamGrp3={};
+                    evTE3.forEach(t=>{const k=t.application_id+"_"+(t.team_number||1);if(!teamGrp3[k])teamGrp3[k]=new Set();teamGrp3[k].add(t.member_id);});
+                    // mixedTeamOverrides 반영
+                    const mxOv=mixedTeamOverrides[ev.code]||{};
+                    Object.entries(mxOv).forEach(([mid,tn])=>{
+                      if(tn){const k3="mxov_"+tn;if(!teamGrp3[k3])teamGrp3[k3]=new Set();teamGrp3[k3].add(Number(mid));}
+                    });
+                    const teamCount3=Object.keys(teamGrp3).length;
+                    if(teamCount3>0){
+                      const mxPlaces=Math.min(teamCount3,3);
+                      medalRows.push({evCode:ev.code,evName:ev.name,category:cat,color:cc,subType:"혼성팀",
+                        participants:null,teams:teamCount3,teamSize:2,places:mxPlaces,perPlace:2,
+                        gold:mxPlaces>=1?2:0,silver:mxPlaces>=2?2:0,bronze:mxPlaces>=3?2:0});
+                    }
+                  }
+                });
+
+                // 카테고리 그룹
+                const catGrpMedal={};
+                medalRows.forEach(r=>{if(!catGrpMedal[r.category])catGrpMedal[r.category]=[];catGrpMedal[r.category].push(r);});
+                const catKeys3=[...CAT_ORD.filter(c=>catGrpMedal[c]),...Object.keys(catGrpMedal).filter(c=>!CAT_ORD.includes(c))];
+
+                // 총합
+                const totalGold=medalRows.reduce((s,r)=>s+r.gold,0);
+                const totalSilver=medalRows.reduce((s,r)=>s+r.silver,0);
+                const totalBronze=medalRows.reduce((s,r)=>s+r.bronze,0);
+                const totalAll=totalGold+totalSilver+totalBronze;
+
+                // ── Excel 다운로드 함수 ──
+                const downloadMedalExcel=async()=>{
+                  const tName=selectedT?.name||"대회";
+                  const wb=new ExcelJS.Workbook();wb.creator="KSFD 대회관리시스템";wb.created=new Date();
+                  const borderThin={top:{style:"thin",color:{argb:"FFD0D0D0"}},bottom:{style:"thin",color:{argb:"FFD0D0D0"}},left:{style:"thin",color:{argb:"FFD0D0D0"}},right:{style:"thin",color:{argb:"FFD0D0D0"}}};
+                  const borderMed={top:{style:"medium",color:{argb:"FF333333"}},bottom:{style:"medium",color:{argb:"FF333333"}},left:{style:"medium",color:{argb:"FF333333"}},right:{style:"medium",color:{argb:"FF333333"}}};
+                  const fillHdr={type:"pattern",pattern:"solid",fgColor:{argb:"FF1E3A5F"}};
+                  const fillStripe={type:"pattern",pattern:"solid",fgColor:{argb:"FFF8FAFB"}};
+                  const fillTitle={type:"pattern",pattern:"solid",fgColor:{argb:"FF0A1929"}};
+                  const fillGold={type:"pattern",pattern:"solid",fgColor:{argb:"FFFFFCEB"}};
+                  const fillSilver={type:"pattern",pattern:"solid",fgColor:{argb:"FFF5F5F5"}};
+                  const fillBronze={type:"pattern",pattern:"solid",fgColor:{argb:"FFFFF0E6"}};
+                  const fillCatHdr={type:"pattern",pattern:"solid",fgColor:{argb:"FFEEF4FF"}};
+                  const fillTotal={type:"pattern",pattern:"solid",fgColor:{argb:"FF0C2D4A"}};
+                  const fontHdr={bold:true,size:10,color:{argb:"FFFFFFFF"},name:"맑은 고딕"};
+                  const fontBody={size:10,name:"맑은 고딕"};
+                  const fontBold={bold:true,size:10,name:"맑은 고딕"};
+                  const fontTitle={bold:true,size:14,color:{argb:"FFFFFFFF"},name:"맑은 고딕"};
+                  const fontGrand={bold:true,size:11,color:{argb:"FFFFFFFF"},name:"맑은 고딕"};
+                  const fontCat={bold:true,size:11,name:"맑은 고딕"};
+                  const alignC={horizontal:"center",vertical:"middle"};
+                  const alignR={horizontal:"right",vertical:"middle"};
+                  const alignL={horizontal:"left",vertical:"middle"};
+                  const numFmt="#,##0";
+
+                  const ws=wb.addWorksheet("메달 산정",{properties:{defaultRowHeight:20}});
+                  ws.columns=[{width:5},{width:12},{width:36},{width:10},{width:10},{width:10},{width:10},{width:10},{width:10},{width:10},{width:10}];
+                  // 제목
+                  ws.mergeCells("A1:K1");
+                  const r1=ws.getRow(1);r1.height=38;
+                  const c1=ws.getCell("A1");c1.value="🏅 "+tName+" 메달 소요 산정";c1.font={...fontTitle,size:16};c1.fill=fillTitle;c1.alignment=alignC;c1.border=borderMed;
+                  // 요약
+                  ws.mergeCells("A2:K2");
+                  const r2=ws.getRow(2);r2.height=24;
+                  const c2=ws.getCell("A2");
+                  c2.value="금메달 "+totalGold+"개  |  은메달 "+totalSilver+"개  |  동메달 "+totalBronze+"개  |  합계 "+totalAll+"개";
+                  c2.font={bold:true,size:11,color:{argb:"FFB8860B"},name:"맑은 고딕"};c2.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFFFBE6"}};c2.alignment=alignC;c2.border=borderThin;
+                  ws.getRow(3).height=6;
+                  // 헤더
+                  const hdr=["#","종목코드","종목명","유형","참가","팀수","🥇 금","🥈 은","🥉 동","소계","비고"];
+                  const hr=ws.getRow(4);hr.height=24;
+                  hdr.forEach((h,ci)=>{const cell=hr.getCell(ci+1);cell.value=h;cell.font=fontHdr;cell.fill=fillHdr;cell.alignment=alignC;cell.border=borderMed;});
+
+                  let ri=5;
+                  catKeys3.forEach(cat=>{
+                    const rows=catGrpMedal[cat];
+                    const catG=rows.reduce((s,r)=>s+r.gold,0),catS=rows.reduce((s,r)=>s+r.silver,0),catB=rows.reduce((s,r)=>s+r.bronze,0);
+                    // 카테고리 헤더
+                    ws.mergeCells(ri,1,ri,5);
+                    const catRow=ws.getRow(ri);catRow.height=22;
+                    const catCell=catRow.getCell(1);catCell.value="■ "+cat;catCell.font=fontCat;catCell.fill=fillCatHdr;catCell.alignment=alignL;catCell.border=borderThin;
+                    for(let ci=2;ci<=5;ci++){catRow.getCell(ci).fill=fillCatHdr;catRow.getCell(ci).border=borderThin;}
+                    catRow.getCell(6).value=rows.length+"종목";catRow.getCell(6).font={...fontBody,color:{argb:"FF888888"}};catRow.getCell(6).fill=fillCatHdr;catRow.getCell(6).alignment=alignC;catRow.getCell(6).border=borderThin;
+                    const catMedalCells=[[7,catG,fillGold],[8,catS,fillSilver],[9,catB,fillBronze]];
+                    catMedalCells.forEach(([ci,v,f])=>{const c=catRow.getCell(ci);c.value=v;c.font=fontBold;c.fill=f;c.alignment=alignC;c.border=borderThin;c.numFmt=numFmt;});
+                    catRow.getCell(10).value=catG+catS+catB;catRow.getCell(10).font=fontBold;catRow.getCell(10).fill=fillCatHdr;catRow.getCell(10).alignment=alignC;catRow.getCell(10).border=borderThin;catRow.getCell(10).numFmt=numFmt;
+                    catRow.getCell(11).fill=fillCatHdr;catRow.getCell(11).border=borderThin;
+                    ri++;
+                    // 데이터 행
+                    rows.forEach((r,idx)=>{
+                      const row=ws.getRow(ri);row.height=19;
+                      const isStripe=idx%2===1;
+                      const sf=isStripe?fillStripe:null;
+                      const note=r.subType==="개인전"?(r.participants+"명 참가"):r.subType==="단체전"?(r.teams+"팀 (최대"+r.teamSize+"인)"):(r.teams+"팀 (2인1조)");
+                      const vals=[idx+1,r.evCode,r.evName,r.subType,r.participants||"",r.teams||"",r.gold,r.silver,r.bronze,r.gold+r.silver+r.bronze,note];
+                      vals.forEach((v,ci)=>{
+                        const cell=row.getCell(ci+1);cell.value=v;
+                        cell.font=ci===1?{...fontBold,color:{argb:"FF1E3A5F"}}:ci>=6&&ci<=9?fontBold:fontBody;
+                        cell.alignment=ci<=2||ci===10?alignL:alignC;
+                        if(ci===6)cell.fill=fillGold; else if(ci===7)cell.fill=fillSilver; else if(ci===8)cell.fill=fillBronze; else if(sf)cell.fill=sf;
+                        cell.border=borderThin;
+                        if(ci>=4&&ci<=9&&typeof v==="number")cell.numFmt=numFmt;
+                      });
+                      ri++;
+                    });
+                  });
+                  // 합계
+                  ri++;
+                  const tRow=ws.getRow(ri);tRow.height=28;
+                  ws.mergeCells(ri,1,ri,6);
+                  const tLabel=tRow.getCell(1);tLabel.value="합   계";tLabel.font=fontGrand;tLabel.fill=fillTotal;tLabel.alignment=alignC;tLabel.border=borderMed;
+                  for(let ci=2;ci<=6;ci++){tRow.getCell(ci).fill=fillTotal;tRow.getCell(ci).border=borderMed;}
+                  [[7,totalGold],[8,totalSilver],[9,totalBronze],[10,totalAll]].forEach(([ci,v])=>{
+                    const c=tRow.getCell(ci);c.value=v;c.font={...fontGrand,size:13};c.fill=fillTotal;c.alignment=alignC;c.border=borderMed;c.numFmt=numFmt;
+                  });
+                  tRow.getCell(11).fill=fillTotal;tRow.getCell(11).border=borderMed;
+                  // 인쇄
+                  ws.pageSetup={paperSize:9,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:0.4,right:0.4,top:0.5,bottom:0.5,header:0.3,footer:0.3}};
+                  ws.headerFooter={oddFooter:"&C&P / &N 페이지"};
+                  const buf=await wb.xlsx.writeBuffer();
+                  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+                  const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=tName+"_메달산정.xlsx";a.click();URL.revokeObjectURL(url);
+                  flash("메달 산정 엑셀 다운로드 완료");
+                };
+
+                return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}} onClick={()=>setShowMedalModal(false)}>
+                  <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:14,width:"92%",maxWidth:960,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.6)"}} onClick={e=>e.stopPropagation()}>
+                    {/* 헤더 */}
+                    <div style={{padding:"16px 24px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{fontSize:18,fontWeight:800,color:"#f59e0b"}}>🏅 메달 소요 산정</div>
+                      <div style={{fontSize:12,color:C.dim}}>{medalRows.length}개 항목</div>
+                      <div style={{flex:1}}/>
+                      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                        <span style={{fontSize:13}}>🥇 <b style={{color:"#eab308"}}>{totalGold}</b></span>
+                        <span style={{fontSize:13}}>🥈 <b style={{color:"#94a3b8"}}>{totalSilver}</b></span>
+                        <span style={{fontSize:13}}>🥉 <b style={{color:"#d97706"}}>{totalBronze}</b></span>
+                        <span style={{fontSize:14,fontWeight:800,color:"#f59e0b",marginLeft:4}}>= {totalAll}개</span>
+                      </div>
+                      <button onClick={()=>{
+                        const hdr="종목코드\t종목명\t유형\t참가\t팀수\t금\t은\t동\t소계\t비고";
+                        const rows=medalRows.map(r=>{
+                          const note=r.subType==="개인전"?r.participants+"명":r.subType==="단체전"?r.teams+"팀("+r.teamSize+"인)":r.teams+"팀(2인)";
+                          return [r.evCode,r.evName,r.subType,r.participants||"",r.teams||"",r.gold,r.silver,r.bronze,r.gold+r.silver+r.bronze,note].join("\t");
+                        });
+                        rows.push(["합계","","","","",totalGold,totalSilver,totalBronze,totalAll,""].join("\t"));
+                        navigator.clipboard.writeText(hdr+"\n"+rows.join("\n")).then(()=>flash("메달 내역 클립보드 복사 완료"));
+                      }} style={{...S.btn(C.blue,"#fff"),fontSize:11,padding:"5px 12px"}}>📋 복사</button>
+                      <button onClick={downloadMedalExcel} style={{...S.btn("#22c55e","#fff"),fontSize:11,padding:"5px 12px"}}>📥 엑셀</button>
+                      <button onClick={()=>setShowMedalModal(false)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer",fontWeight:700}}>✕</button>
+                    </div>
+                    {/* 본문 */}
+                    <div style={{flex:1,overflow:"auto",padding:"16px 24px"}}>
+                      {/* 요약 카드 */}
+                      <div style={{display:"flex",gap:16,marginBottom:16,flexWrap:"wrap"}}>
+                        {[["🥇 금메달",totalGold,"#eab308","#eab30822"],["🥈 은메달",totalSilver,"#94a3b8","#94a3b822"],["🥉 동메달",totalBronze,"#d97706","#d9770622"],["📦 합계",totalAll,"#f59e0b","#f59e0b22"]].map(([label,cnt,clr,bg])=>
+                          <div key={label} style={{flex:1,minWidth:120,padding:"14px 18px",borderRadius:10,background:bg,border:"1px solid "+clr+"44",textAlign:"center"}}>
+                            <div style={{fontSize:11,color:clr,fontWeight:600,marginBottom:4}}>{label}</div>
+                            <div style={{fontSize:28,fontWeight:800,color:clr,lineHeight:1}}>{cnt}<span style={{fontSize:12,fontWeight:400}}>개</span></div>
+                          </div>
+                        )}
+                      </div>
+                      {/* 카테고리별 테이블 */}
+                      {catKeys3.map(cat=>{
+                        const rows=catGrpMedal[cat];
+                        const cc=catColorMap3[cat]||C.dim;
+                        const catG=rows.reduce((s,r)=>s+r.gold,0),catS=rows.reduce((s,r)=>s+r.silver,0),catB=rows.reduce((s,r)=>s+r.bronze,0);
+                        return <div key={cat} style={{marginBottom:16}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                            <span style={{width:10,height:10,borderRadius:5,background:cc}}/>
+                            <span style={{fontSize:13,fontWeight:700,color:cc}}>{cat}</span>
+                            <span style={{fontSize:10,color:C.dim}}>{rows.length}종목</span>
+                            <div style={{flex:1}}/>
+                            <span style={{fontSize:10}}>🥇{catG} 🥈{catS} 🥉{catB} = <b style={{color:cc}}>{catG+catS+catB}</b></span>
+                          </div>
+                          <table style={{width:"100%",borderCollapse:"collapse"}}>
+                            <thead><tr>
+                              {["종목코드","종목명","유형","참가","팀수","🥇 금","🥈 은","🥉 동","소계","비고"].map(h=>
+                                <th key={h} style={{...S.th,fontSize:9,padding:"5px 6px"}}>{h}</th>)}
+                            </tr></thead>
+                            <tbody>
+                              {rows.map((r,i)=>{
+                                const note=r.subType==="개인전"?(r.participants+"명 참가")
+                                  :r.subType==="단체전"?(r.teams+"팀"+(r.teamSize>=4?" (4인팀 포함)":""))
+                                  :(r.teams+"팀 (2인1조)");
+                                return <tr key={r.evCode+"_"+r.subType} style={{background:i%2===0?"transparent":"#0d152044"}}>
+                                  <td style={{...S.td,fontSize:11,fontWeight:700,color:cc}}>{r.evCode}</td>
+                                  <td style={{...S.td,fontSize:10,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.evName}</td>
+                                  <td style={{...S.td,fontSize:10,textAlign:"center"}}><span style={{padding:"2px 8px",borderRadius:4,fontSize:9,fontWeight:600,
+                                    background:r.subType==="개인전"?"#3b82f622":r.subType==="단체전"?"#8b5cf622":"#10b98122",
+                                    color:r.subType==="개인전"?"#3b82f6":r.subType==="단체전"?"#8b5cf6":"#10b981"}}>{r.subType}</span></td>
+                                  <td style={{...S.td,fontSize:10,textAlign:"center"}}>{r.participants||"-"}</td>
+                                  <td style={{...S.td,fontSize:10,textAlign:"center"}}>{r.teams||"-"}</td>
+                                  <td style={{...S.td,fontSize:12,fontWeight:700,textAlign:"center",background:"#eab30811",color:"#eab308"}}>{r.gold||"-"}</td>
+                                  <td style={{...S.td,fontSize:12,fontWeight:700,textAlign:"center",background:"#94a3b811",color:"#94a3b8"}}>{r.silver||"-"}</td>
+                                  <td style={{...S.td,fontSize:12,fontWeight:700,textAlign:"center",background:"#d9770611",color:"#d97706"}}>{r.bronze||"-"}</td>
+                                  <td style={{...S.td,fontSize:11,fontWeight:700,textAlign:"center",color:"#fff"}}>{r.gold+r.silver+r.bronze}</td>
+                                  <td style={{...S.td,fontSize:9,color:C.dim}}>{note}</td>
+                                </tr>;
+                              })}
+                            </tbody>
+                          </table>
+                        </div>;
+                      })}
+                      {medalRows.length===0&&<div style={{textAlign:"center",padding:40,color:C.dimmer}}>
+                        <div style={{fontSize:36,marginBottom:8}}>🏅</div>
+                        참가 데이터가 없어 메달을 산정할 수 없습니다
+                      </div>}
                     </div>
                   </div>
                 </div>;
