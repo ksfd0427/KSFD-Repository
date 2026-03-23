@@ -15,6 +15,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Noto Sans KR', sans-serif; background: #0a0f18; color: #c8d6e5; }
@@ -427,6 +428,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [showFeeModal, setShowFeeModal]=useState(false); // 참가비 산정 모달
   const [feeExpanded, setFeeExpanded]=useState(null); // 참가비 세부내역 열린 appId
   const [openPaletteCat, setOpenPaletteCat]=useState(null); // 세션 팔레트 카테고리 드롭다운
+  const [paletteViewMode, setPaletteViewMode]=useState("category"); // "category" | "daily"
   // 불참 관리
   const [absentModal, setAbsentModal]=useState(null); // {idx, name, evCode, sessionKey} or null
   const [absentReason, setAbsentReason]=useState("");
@@ -4498,6 +4500,153 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         rows.push("합계\t\t\t\t\t\t"+grandTotal);
                         navigator.clipboard.writeText(hdr+"\n"+rows.join("\n")).then(()=>flash("참가비 내역 클립보드 복사 완료"));
                       }} style={{...S.btn(C.blue,"#fff"),fontSize:11,padding:"5px 12px"}}>📋 복사</button>
+                      <button onClick={async()=>{
+                        const tName=selectedT?.name||"대회";
+                        const wb=new ExcelJS.Workbook();
+                        wb.creator="KSFD 대회관리시스템";
+                        wb.created=new Date();
+                        // ── 공통 스타일 ──
+                        const borderThin={top:{style:"thin",color:{argb:"FFD0D0D0"}},bottom:{style:"thin",color:{argb:"FFD0D0D0"}},left:{style:"thin",color:{argb:"FFD0D0D0"}},right:{style:"thin",color:{argb:"FFD0D0D0"}}};
+                        const borderMed={top:{style:"medium",color:{argb:"FF333333"}},bottom:{style:"medium",color:{argb:"FF333333"}},left:{style:"medium",color:{argb:"FF333333"}},right:{style:"medium",color:{argb:"FF333333"}}};
+                        const fillHdr={type:"pattern",pattern:"solid",fgColor:{argb:"FF1E3A5F"}};
+                        const fillSubHdr={type:"pattern",pattern:"solid",fgColor:{argb:"FFF0F4FA"}};
+                        const fillStripe={type:"pattern",pattern:"solid",fgColor:{argb:"FFF8FAFB"}};
+                        const fillTotal={type:"pattern",pattern:"solid",fgColor:{argb:"FFEAF4FE"}};
+                        const fillGrand={type:"pattern",pattern:"solid",fgColor:{argb:"FF0C2D4A"}};
+                        const fillTitle={type:"pattern",pattern:"solid",fgColor:{argb:"FF0A1929"}};
+                        const fillNote={type:"pattern",pattern:"solid",fgColor:{argb:"FFFFFBE6"}};
+                        const fillSubtotal={type:"pattern",pattern:"solid",fgColor:{argb:"FFF5F0FF"}};
+                        const fontHdr={bold:true,size:10,color:{argb:"FFFFFFFF"},name:"맑은 고딕"};
+                        const fontBody={size:10,name:"맑은 고딕"};
+                        const fontBold={bold:true,size:10,name:"맑은 고딕"};
+                        const fontTitle={bold:true,size:14,color:{argb:"FFFFFFFF"},name:"맑은 고딕"};
+                        const fontNote={size:9,color:{argb:"FF8B6914"},name:"맑은 고딕"};
+                        const fontGrand={bold:true,size:11,color:{argb:"FFFFFFFF"},name:"맑은 고딕"};
+                        const numFmt="#,##0";
+                        const wonFmt="#,##0\"원\"";
+                        const alignC={horizontal:"center",vertical:"middle"};
+                        const alignR={horizontal:"right",vertical:"middle"};
+                        const alignL={horizontal:"left",vertical:"middle"};
+
+                        // ════════════════════════════════════════
+                        // 시트1: 단체별 참가비
+                        // ════════════════════════════════════════
+                        const ws1=wb.addWorksheet("단체별 참가비",{properties:{defaultRowHeight:20}});
+                        ws1.columns=[{width:5},{width:30},{width:10},{width:12},{width:16},{width:18},{width:20},{width:16}];
+                        // 제목
+                        ws1.mergeCells("A1:H1");
+                        const r1=ws1.getRow(1);r1.height=36;
+                        const c1=ws1.getCell("A1");c1.value="💰 "+tName+" 참가비 산정";c1.font={...fontTitle,size:16};c1.fill=fillTitle;c1.alignment={...alignC,wrapText:false};c1.border=borderMed;
+                        // 단가 안내
+                        ws1.mergeCells("A2:H2");
+                        const r2=ws1.getRow(2);r2.height=22;
+                        const c2=ws1.getCell("A2");c2.value="📌 10M 사격장 종목: "+FEE_10M.toLocaleString()+"원/건  |  25M·50M·산탄총 사격장 종목: "+FEE_OTHER.toLocaleString()+"원/건  |  개인전 + 혼성팀 종목 등록 기준";
+                        c2.font=fontNote;c2.fill=fillNote;c2.alignment=alignC;c2.border=borderThin;
+                        // 빈 행
+                        ws1.getRow(3).height=6;
+                        // 헤더
+                        const hdr1=["#","단체명","지역","10M 건수","10M 참가비","기타 건수","기타 참가비","합계"];
+                        const hr1=ws1.getRow(4);hr1.height=24;
+                        hdr1.forEach((h,ci)=>{const cell=hr1.getCell(ci+1);cell.value=h;cell.font=fontHdr;cell.fill=fillHdr;cell.alignment=alignC;cell.border=borderMed;});
+                        // 데이터
+                        let rowIdx1=5;
+                        feeList.forEach((f,i)=>{
+                          const allE=f.players.flatMap(p=>p.entries).filter(e=>e.fee>0);
+                          const e10=allE.filter(e=>e.cat==="10M");const eO=allE.filter(e=>e.cat!=="10M");
+                          const total=getAppTotal(f);
+                          const row=ws1.getRow(rowIdx1);row.height=20;
+                          const vals=[i+1,f.orgName,f.regionName,e10.length,e10.reduce((s,e)=>s+e.fee,0),eO.length,eO.reduce((s,e)=>s+e.fee,0),total];
+                          const isStripe=i%2===1;
+                          vals.forEach((v,ci)=>{
+                            const cell=row.getCell(ci+1);cell.value=v;cell.font=ci===7?fontBold:fontBody;
+                            cell.alignment=ci<=2?alignL:ci===7?alignR:alignC;
+                            if(isStripe)cell.fill=fillStripe;
+                            cell.border=borderThin;
+                            if(ci===4||ci===6||ci===7)cell.numFmt=wonFmt;
+                            if(ci===3||ci===5)cell.numFmt=numFmt;
+                          });
+                          rowIdx1++;
+                        });
+                        // 합계 행
+                        const t10=feeList.reduce((s,f)=>{const a=f.players.flatMap(p=>p.entries).filter(e=>e.fee>0&&e.cat==="10M");return s+a.reduce((ss,e)=>ss+e.fee,0);},0);
+                        const tOther=feeList.reduce((s,f)=>{const a=f.players.flatMap(p=>p.entries).filter(e=>e.fee>0&&e.cat!=="10M");return s+a.reduce((ss,e)=>ss+e.fee,0);},0);
+                        const t10Cnt=feeList.reduce((s,f)=>s+f.players.flatMap(p=>p.entries).filter(e=>e.fee>0&&e.cat==="10M").length,0);
+                        const tOCnt=feeList.reduce((s,f)=>s+f.players.flatMap(p=>p.entries).filter(e=>e.fee>0&&e.cat!=="10M").length,0);
+                        rowIdx1++;
+                        const tRow1=ws1.getRow(rowIdx1);tRow1.height=26;
+                        const tVals=["","합   계","",t10Cnt,t10,tOCnt,tOther,grandTotal];
+                        tVals.forEach((v,ci)=>{
+                          const cell=tRow1.getCell(ci+1);cell.value=v;cell.font=fontGrand;cell.fill=fillGrand;cell.alignment=ci<=2?alignC:ci===7?alignR:alignC;cell.border=borderMed;
+                          if(ci===4||ci===6||ci===7)cell.numFmt=wonFmt;
+                          if(ci===3||ci===5)cell.numFmt=numFmt;
+                        });
+                        // 인쇄 설정
+                        ws1.pageSetup={paperSize:9,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:0.4,right:0.4,top:0.5,bottom:0.5,header:0.3,footer:0.3}};
+                        ws1.headerFooter={oddFooter:"&C&P / &N 페이지"};
+
+                        // ════════════════════════════════════════
+                        // 시트2: 개인별 세부내역
+                        // ════════════════════════════════════════
+                        const ws2=wb.addWorksheet("개인별 세부내역",{properties:{defaultRowHeight:18}});
+                        ws2.columns=[{width:5},{width:26},{width:8},{width:10},{width:14},{width:10},{width:38},{width:8},{width:12},{width:14}];
+                        // 제목
+                        ws2.mergeCells("A1:J1");
+                        const r2_1=ws2.getRow(1);r2_1.height=34;
+                        const c2_1=ws2.getCell("A1");c2_1.value="📋 "+tName+" 참가비 세부내역";c2_1.font={...fontTitle,size:14};c2_1.fill=fillTitle;c2_1.alignment=alignC;c2_1.border=borderMed;
+                        // 빈 행
+                        ws2.getRow(2).height=6;
+                        // 헤더
+                        const hdr2=["#","단체명","지역","선수명","세부소속","종목코드","종목명","유형","사격장","참가비"];
+                        const hr2=ws2.getRow(3);hr2.height=22;
+                        hdr2.forEach((h,ci)=>{const cell=hr2.getCell(ci+1);cell.value=h;cell.font=fontHdr;cell.fill=fillHdr;cell.alignment=alignC;cell.border=borderMed;});
+                        // 데이터
+                        let rowIdx2=4,seq2=0,orgColorIdx=0;
+                        const orgColors=["FFF8FAFB","FFFFFFFF"];
+                        feeList.forEach((f,fi)=>{
+                          const orgFill={type:"pattern",pattern:"solid",fgColor:{argb:orgColors[fi%2]}};
+                          f.players.forEach(p=>{
+                            p.entries.filter(e=>e.fee>0).forEach(e=>{
+                              seq2++;
+                              const evObj=events.find(ev=>ev.code===e.code);
+                              const row=ws2.getRow(rowIdx2);row.height=18;
+                              const vals=[seq2,f.orgName,f.regionName,p.name,p.subOrg||"",e.code,evObj?.name||e.code,e.type,e.cat,e.fee];
+                              vals.forEach((v,ci)=>{
+                                const cell=row.getCell(ci+1);cell.value=v;
+                                cell.font=ci===0?{...fontBody,color:{argb:"FF999999"}}:ci===5?{...fontBold,color:{argb:"FF1E3A5F"}}:fontBody;
+                                cell.alignment=ci<=1||ci===4||ci===6?alignL:ci===9?alignR:alignC;
+                                cell.fill=orgFill;cell.border=borderThin;
+                                if(ci===9)cell.numFmt=wonFmt;
+                              });
+                              rowIdx2++;
+                            });
+                          });
+                          // 소계 행
+                          const appTotal=getAppTotal(f);
+                          const subRow=ws2.getRow(rowIdx2);subRow.height=20;
+                          ws2.mergeCells(rowIdx2,1,rowIdx2,9);
+                          const scLabel=subRow.getCell(1);scLabel.value="▸ "+f.orgName+" 소계 ("+f.players.length+"명)";scLabel.font={...fontBold,color:{argb:"FF6B46C1"}};scLabel.fill=fillSubtotal;scLabel.alignment=alignR;scLabel.border=borderThin;
+                          for(let ci=2;ci<=9;ci++){const c=subRow.getCell(ci);c.fill=fillSubtotal;c.border=borderThin;}
+                          const scVal=subRow.getCell(10);scVal.value=appTotal;scVal.font={...fontBold,color:{argb:"FF6B46C1"}};scVal.fill=fillSubtotal;scVal.alignment=alignR;scVal.numFmt=wonFmt;scVal.border=borderThin;
+                          rowIdx2++;
+                        });
+                        // 빈 행
+                        rowIdx2++;
+                        // 합계 행
+                        const gRow=ws2.getRow(rowIdx2);gRow.height=26;
+                        ws2.mergeCells(rowIdx2,1,rowIdx2,9);
+                        const gLabel=gRow.getCell(1);gLabel.value="합   계 ("+feeList.length+"개 단체 · "+seq2+"건)";gLabel.font=fontGrand;gLabel.fill=fillGrand;gLabel.alignment=alignR;gLabel.border=borderMed;
+                        for(let ci=2;ci<=9;ci++){const c=gRow.getCell(ci);c.fill=fillGrand;c.border=borderMed;}
+                        const gVal=gRow.getCell(10);gVal.value=grandTotal;gVal.font={...fontGrand,size:13};gVal.fill=fillGrand;gVal.alignment=alignR;gVal.numFmt=wonFmt;gVal.border=borderMed;
+                        // 인쇄 설정
+                        ws2.pageSetup={paperSize:9,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:0.4,right:0.4,top:0.5,bottom:0.5,header:0.3,footer:0.3}};
+                        ws2.headerFooter={oddFooter:"&C&P / &N 페이지"};
+                        // 다운로드
+                        const buf=await wb.xlsx.writeBuffer();
+                        const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+                        const url=URL.createObjectURL(blob);
+                        const a=document.createElement("a");a.href=url;a.download=tName+"_참가비산정.xlsx";a.click();URL.revokeObjectURL(url);
+                        flash("참가비 엑셀 다운로드 완료");
+                      }} style={{...S.btn("#22c55e","#fff"),fontSize:11,padding:"5px 12px"}}>📥 엑셀</button>
                       <button onClick={()=>{setShowFeeModal(false);setFeeExpanded(null);}} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer",fontWeight:700}}>✕</button>
                     </div>
                     {/* 본문 */}
@@ -5275,6 +5424,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       <div style={{fontSize:9,color:C.dim}}>
                         <span style={{color:"#ef4444"}}>●</span>미생성 <span style={{color:"#fbbf24"}}>●</span>생성 <span style={{color:"#4ade80"}}>●</span>완료 <span style={{color:"#888"}}>○</span>사대미배정
                       </div>
+                      <div style={{display:"flex",gap:0,marginLeft:8}}>
+                        <button onClick={()=>setPaletteViewMode("category")} style={{fontSize:10,padding:"3px 10px",borderRadius:"5px 0 0 5px",cursor:"pointer",border:"1px solid "+(paletteViewMode==="category"?C.gold+"66":C.border),background:paletteViewMode==="category"?C.gold+"22":"transparent",color:paletteViewMode==="category"?C.gold:C.dim,fontWeight:paletteViewMode==="category"?700:400}}>📂 종목별</button>
+                        <button onClick={()=>setPaletteViewMode("daily")} style={{fontSize:10,padding:"3px 10px",borderRadius:"0 5px 5px 0",cursor:"pointer",border:"1px solid "+(paletteViewMode==="daily"?C.blue+"66":C.border),borderLeft:"none",background:paletteViewMode==="daily"?C.blue+"22":"transparent",color:paletteViewMode==="daily"?C.blue:C.dim,fontWeight:paletteViewMode==="daily"?700:400}}>📅 일차별</button>
+                      </div>
                       <div style={{flex:1}}/>
                       {sessions.some(s=>!s.virtual)&&<>
                         <button style={{...S.btn(C.blue,C.bg),fontSize:10,padding:"4px 10px"}} onClick={generateAllStartLists}>🔀 전체 생성</button>
@@ -5282,7 +5435,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       </>}
                     </div>
                     {/* ── 카테고리 드롭다운 그룹 ── */}
-                    {(()=>{
+                    {paletteViewMode==="category"&&(()=>{
                       // 종목을 evCode 그룹 → 카테고리 그룹으로
                       const evGroups=[];
                       sessions.forEach(s=>{
@@ -5364,6 +5517,117 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             </>}
                           </div>;
                         })}
+                      </div>;
+                    })()}
+                    {/* ── 일차별 드롭다운 그룹 ── */}
+                    {paletteViewMode==="daily"&&(()=>{
+                      const catColorMap2={"소총":"#3b82f6","소총(SH2)":"#f59e0b","권총":"#8b5cf6","산탄총":"#10b981","청각":"#ec4899","기타":"#6b7d94"};
+                      // 시간표(schedData)에서 종목→일차 매핑
+                      const evDayMap2={};
+                      schedData.forEach(d=>{d.rows.forEach(r=>{
+                        if(r.event_code&&r.type==="prelim"&&!evDayMap2[r.event_code]) evDayMap2[r.event_code]=d.day;
+                      });});
+                      // 사대배정(laneAssign)에서도 일차 정보 보완
+                      Object.keys(laneAssign).forEach(dayKey=>{
+                        const da=laneAssign[dayKey]||{};
+                        Object.keys(da).forEach(k=>{
+                          const a=da[k],p=evKeyParse(k);
+                          if(a&&a.lanes&&a.lanes.length>0&&!evDayMap2[p.evCode]) evDayMap2[p.evCode]=Number(dayKey);
+                        });
+                      });
+                      // evGroup 빌드
+                      const evGroups2=[];
+                      sessions.forEach(s=>{
+                        let g=evGroups2.find(x=>x.evCode===s.evCode);
+                        if(!g){const ev=events.find(e=>e.code===s.evCode);g={evCode:s.evCode,evName:s.evName,category:ev?.category||s.category||"기타",sortOrder:ev?.sort_order||0,relays:[]};evGroups2.push(g);}
+                        g.relays.push(s);
+                      });
+                      evGroups2.forEach(g=>g.relays.sort((a,b)=>a.relay-b.relay));
+                      // 일차별 그룹
+                      const dayGroups2={};const unassigned2=[];
+                      evGroups2.forEach(g=>{
+                        const day=evDayMap2[g.evCode];
+                        if(day){if(!dayGroups2[day])dayGroups2[day]=[];dayGroups2[day].push(g);}
+                        else unassigned2.push(g);
+                      });
+                      const days2=Object.keys(dayGroups2).map(Number).sort((a,b)=>a-b);
+                      const startDate2=selectedT?.start_date;
+                      const dLabel2=(dayNum)=>{
+                        if(!startDate2) return dayNum+"일차";
+                        const d=new Date(startDate2);d.setDate(d.getDate()+dayNum-1);
+                        return dayNum+"일차 ("+(d.getMonth()+1)+"/"+(d.getDate())+")";
+                      };
+                      const dayClr2=["","#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#ec4899"];
+                      const renderEvBtn2=(g)=>{
+                        const cc=catColorMap2[g.category]||C.dim;
+                        const cnt=evCountMap[g.evCode]||0;
+                        const ev=events.find(e=>e.code===g.evCode);
+                        const unit=ev?.type==="mixed"?"팀":"명";
+                        const isVirtual=g.relays.length===1&&g.relays[0].virtual;
+                        const isEvSel=selEvCode===g.evCode;
+                        const realSessions2=g.relays.filter(s=>!s.virtual);
+                        const sts2=realSessions2.map(s=>getSessionStatus(s.key));
+                        const evSt2=sts2.length===0?-1:sts2.every(s=>s===2)?2:sts2.some(s=>s===0)?0:1;
+                        const evStClr=evSt2===2?"#4ade80":evSt2===1?"#fbbf24":evSt2===0?"#ef4444":"#888";
+                        return <div key={g.evCode} style={{display:"inline-flex",flexDirection:"column",position:"relative"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,cursor:"pointer",
+                            border:"1px solid "+(isEvSel?cc:C.border),background:isEvSel?cc+"22":"transparent",
+                            fontSize:11,fontWeight:isEvSel?700:400,color:isEvSel?cc:C.dim}}
+                            onClick={()=>{
+                              if(isVirtual){setSelectedEvCode(g.relays[0].key);return;}
+                              if(g.relays.length===1){setSelectedEvCode(isEvSel?null:g.relays[0].key);return;}
+                              setOpenPaletteCat(openPaletteCat==="day_"+g.evCode?null:"day_"+g.evCode);
+                            }}>
+                            <span style={{width:6,height:6,borderRadius:3,background:isVirtual?"#888":evStClr,display:"inline-block"}}/>
+                            <b style={{color:cc}}>{g.evCode}</b>
+                            <span style={{fontSize:9,opacity:.6}}>{cnt}{unit}</span>
+                            {g.relays.length>1&&!isVirtual&&<span style={{fontSize:8,opacity:.4}}>▼</span>}
+                          </div>
+                          {openPaletteCat==="day_"+g.evCode&&g.relays.length>1&&<>
+                            <div onClick={()=>setOpenPaletteCat(null)} style={{position:"fixed",inset:0,zIndex:90}}/>
+                            <div style={{position:"absolute",top:"100%",left:0,marginTop:4,zIndex:91,background:C.card,border:"1px solid "+cc+"44",borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,.5)",padding:6,minWidth:160}}>
+                              {g.relays.map(r=>{
+                                const isSel=selectedEvCode===r.key;
+                                const st=getSessionStatus(r.key);
+                                const stClr=st===2?"#4ade80":st===1?"#fbbf24":"#ef4444";
+                                return <button key={r.key} onClick={()=>{setSelectedEvCode(isSel?null:r.key);setOpenPaletteCat(null);}} style={{
+                                  display:"flex",alignItems:"center",gap:4,width:"100%",padding:"4px 10px",borderRadius:5,fontSize:10,fontWeight:isSel?700:400,cursor:"pointer",
+                                  background:isSel?cc+"33":"transparent",color:isSel?cc:"#aaa",border:"none",textAlign:"left",marginBottom:2
+                                }}>
+                                  {relayLabel(r.evCode||selEvCode,r.relay)} <span style={{opacity:.5}}>({r.laneCount})</span>
+                                  <span style={{width:6,height:6,borderRadius:3,background:stClr,display:"inline-block"}}/>
+                                </button>;
+                              })}
+                            </div>
+                          </>}
+                        </div>;
+                      };
+                      return <div>
+                        {days2.map(day=>{
+                          const dc=dayClr2[day]||C.dim;
+                          const dayEvs=dayGroups2[day].sort((a,b)=>a.sortOrder-b.sortOrder);
+                          const totalCnt=dayEvs.reduce((s,g)=>s+(evCountMap[g.evCode]||0),0);
+                          const hasSelected=dayEvs.some(g=>g.evCode===selEvCode);
+                          return <div key={day} style={{marginBottom:8}}>
+                            <div style={{fontSize:11,fontWeight:700,color:hasSelected?C.gold:dc,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{padding:"2px 8px",borderRadius:4,background:dc+"22",border:"1px solid "+dc+"44",fontSize:11}}>{dLabel2(day)}</span>
+                              <span style={{fontSize:9,color:C.dim,fontWeight:400}}>{dayEvs.length}종목 · {totalCnt}건</span>
+                            </div>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:4,paddingLeft:4}}>
+                              {dayEvs.map(g=>renderEvBtn2(g))}
+                            </div>
+                          </div>;
+                        })}
+                        {unassigned2.length>0&&<div style={{marginTop:days2.length>0?8:0}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{padding:"2px 8px",borderRadius:4,background:"#88888822",border:"1px solid #88888844",fontSize:11}}>미배정</span>
+                            <span style={{fontSize:9,color:C.dim,fontWeight:400}}>{unassigned2.length}종목</span>
+                          </div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:4,paddingLeft:4}}>
+                            {unassigned2.sort((a,b)=>a.sortOrder-b.sortOrder).map(g=>renderEvBtn2(g))}
+                          </div>
+                        </div>}
+                        {days2.length===0&&unassigned2.length===0&&<div style={{fontSize:12,color:C.dimmer,padding:12}}>시간표에 배정된 종목이 없습니다</div>}
                       </div>;
                     })()}
                   </div>
