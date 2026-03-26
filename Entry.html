@@ -112,7 +112,8 @@ const MAP_PATHS = {
   KR27: `M632.1 518.2l-1-0.3-1.3 0.1 0 1.1-0.1 1.4-1.3 3.4 0 1-0.4 1.6-3.1 1.8-7.8-2-4.4-0.4-1.9 1.5-1.9 3.4-1.1 0.9-1.2-1.1-1.7-1.1-2.4-1.9-1.6-3.1-2-2-2.1-0.8-0.8-3.1 1.9-2.6 2 0 2.2-0.4 0.6-1.5 0.2-1.7-1.2-0.5-1.3-0.2 1.5-3.3 2.3-2.5-0.8-7.6 6.4-5.3 8.6-1.2 7.1-0.5 5.5 4 1.7 3-0.1 1.3-0.6 1.2 0 4.2 1.1 1.6 1.5 1.3 0.2 2.6 0.1 2.9-0.7 2.6-2.1 2.2z`,
 };
 
-const STEP_LABELS = ["대회 선택", "지역 선택", "선수단 정보", "종목별 등록", "총기 등록", "확인"];
+const STEP_LABELS_BASE = ["대회 선택", "지역 선택", "선수단 정보", "종목별 등록", "총기 등록", "확인"];
+const STEP_LABELS_LEAGUE = ["대회 선택", "지역 선택", "선수단 정보", "종목별 등록", "리그전 등록", "총기 등록", "확인"];
 
 const TOURNAMENTS = [
   { id: 1, name: "제38회 전국장애인사격선수권대회", date: "2026년 03월 14일(토) ~ 03월 16일(월)", venue: "창원국제사격장", status: 1, regPeriod: "2/10~3/7" },
@@ -198,6 +199,8 @@ function TournamentRegistration() {
   const [individualEvents, setIndividualEvents] = useState({});
   const [teamComps, setTeamComps] = useState({});
   const [teamUnion, setTeamUnion] = useState({});
+  const [leagueComps, setLeagueComps] = useState({}); // {"league-R1": [memberId1, memberId2], ...}
+  const [leagueUnion, setLeagueUnion] = useState({}); // {"league-R1": {checked:bool, memo:""}, ...}
   const [dropdownSlot, setDropdownSlot] = useState(null);
   const [dropdownPos, setDropdownPos] = useState(null);
   const openDropdown = (key, e) => {
@@ -229,6 +232,7 @@ function TournamentRegistration() {
   const [sessionStatuses, setSessionStatuses] = useState({}); // {"R1_1":"scheduled",...}
   const [noFinalEvents, setNoFinalEvents] = useState([]); // ["P1","R4",...] 결선 없는 종목
   const [medalMatchEvents, setMedalMatchEvents] = useState([]); // ["R10","P6",...] 결정전 종목
+  const [slSessionKeys, setSlSessionKeys] = useState([]); // DB에 존재하는 startlist session_key 목록
   const [dropdownKey, setDropdownKey] = useState(null); // 드롭다운 열린 세션 키
   const [viewType, setViewType] = useState(null); // "startlist"|"prelim"|"final"|"team"|"final_sl"|"bronze_sl"|"gold_sl"|"bronze"|"gold"
   const [resultData, setResultData] = useState([]);
@@ -283,6 +287,20 @@ function TournamentRegistration() {
       })
     : PAIR_EVENTS;
 
+  // ===== 리그전 여부 판별 + 동적 스텝 =====
+  const isLeague = React.useMemo(() => {
+    if (!selectedTournament) return false;
+    try { const m = JSON.parse(localStorage.getItem("ksfd_league") || "{}"); return !!m[selectedTournament]; } catch(e) { return false; }
+  }, [selectedTournament]);
+  const STEP_LABELS = isLeague ? STEP_LABELS_LEAGUE : STEP_LABELS_BASE;
+  // 스텝 인덱스 매핑 (리그전 유무에 따라 총기/확인 단계 번호가 다름)
+  const STEP_EVENT = 3;
+  const STEP_LEAGUE = isLeague ? 4 : -1;
+  const STEP_GUN = isLeague ? 5 : 4;
+  const STEP_CONFIRM = isLeague ? 6 : 5;
+  // 개인전이 있는 종목 목록 (리그전 등록에서 사용)
+  const leagueEligibleEvents = activeIndividualEvents;
+
   // ===== 엑셀 중간저장 내보내기 =====
   const exportToExcel = async () => {
     const wb = XLSX.utils.book_new();
@@ -306,6 +324,12 @@ function TournamentRegistration() {
       return { 팀키: key, 슬롯: slots.map(s => s ?? "").join(","), 연합: u.checked ? "Y" : "N", 연합메모: u.memo || "" };
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tRows.length ? tRows : [{ 팀키: "", 슬롯: "", 연합: "", 연합메모: "" }]), "팀구성");
+    // 4-1) 리그전
+    const lgRows = Object.entries(leagueComps).map(([key, slots]) => {
+      const u = leagueUnion[key] || { checked: false, memo: "" };
+      return { 팀키: key, 슬롯: (slots||[]).map(s => s ?? "").join(","), 연합: u.checked ? "Y" : "N", 연합메모: u.memo || "" };
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lgRows.length ? lgRows : [{ 팀키: "", 슬롯: "", 연합: "", 연합메모: "" }]), "리그전");
     // 5) 총기
     const fRows = [];
     Object.entries(firearms).forEach(([mid, arr]) => {
@@ -381,7 +405,7 @@ function TournamentRegistration() {
               if (r["지역인덱스"] !== undefined && r["지역인덱스"] !== "") setSelectedRegion(Number(r["지역인덱스"]));
               if (r["단체명"] !== undefined) setOrgName(String(r["단체명"]));
               const savedStep = r["단계"] != null ? Number(r["단계"]) : 0;
-              setTimeout(() => setStep(Math.max(1, Math.min(savedStep, 4))), 200);
+              setTimeout(() => setStep(Math.max(1, Math.min(savedStep, 6))), 200);
             }
           }
           // 2) 선수단
@@ -421,6 +445,20 @@ function TournamentRegistration() {
             });
             setTeamComps(tObj);
             setTeamUnion(uObj);
+          }
+          // 4-1) 리그전
+          const lgSheet = wb.Sheets["리그전"];
+          if (lgSheet) {
+            const lgR = XLSX.utils.sheet_to_json(lgSheet);
+            const lcObj = {}, luObj = {};
+            lgR.forEach(r => {
+              if (r["팀키"]) {
+                lcObj[r["팀키"]] = String(r["슬롯"] || "").split(",").map(s => s === "" || s === "null" ? null : Number(s));
+                luObj[r["팀키"]] = { checked: r["연합"] === "Y", memo: String(r["연합메모"] || "") };
+              }
+            });
+            setLeagueComps(lcObj);
+            setLeagueUnion(luObj);
           }
           // 5) 총기
           const fSheet = wb.Sheets["총기"];
@@ -518,6 +556,29 @@ function TournamentRegistration() {
       if (teamRows.length > 0) {
         const { error: teamErr } = await supabase.from("team_entries").insert(teamRows);
         if (teamErr) throw new Error("팀 등록 실패: " + teamErr.message);
+      }
+
+      // 4-1. 리그전 등록
+      if (isLeague) {
+        const leagueRows = [];
+        Object.entries(leagueComps).forEach(([k, slots]) => {
+          if (!k.startsWith("league-") || !slots || slots.filter(s => s !== null).length < 2) return;
+          const eventCode = k.replace("league-", "");
+          const union = leagueUnion[k];
+          slots.forEach((sid, idx) => {
+            if (sid !== null && memberIdMap[sid]) {
+              leagueRows.push({
+                application_id: appId, event_code: eventCode, team_type: "league",
+                team_number: 1, member_id: memberIdMap[sid], slot_order: idx,
+                is_union: union?.checked || false, union_memo: union?.memo || null
+              });
+            }
+          });
+        });
+        if (leagueRows.length > 0) {
+          const { error: lgErr } = await supabase.from("team_entries").insert(leagueRows);
+          if (lgErr) throw new Error("리그전 등록 실패: " + lgErr.message);
+        }
       }
 
       // 5. 총기 등록
@@ -618,6 +679,8 @@ function TournamentRegistration() {
     setIndividualEvents({});
     setTeamComps({});
     setTeamUnion({});
+    setLeagueComps({});
+    setLeagueUnion({});
     setFirearms({});
   };
 
@@ -653,6 +716,8 @@ function TournamentRegistration() {
     setIndividualEvents(newIE);
     setTeamComps(newTC);
     setTeamUnion({});
+    setLeagueComps({});
+    setLeagueUnion({});
     setFirearms({});
   };
 
@@ -795,7 +860,7 @@ function TournamentRegistration() {
 
   // ═══ 시간표/기록지 페이지 ═══
   if (page === "schedule") {
-    const ongoingTournaments = activeTournaments.filter(t => t.status === 3);
+    const ongoingTournaments = adminMode ? activeTournaments : activeTournaments.filter(t => t.status === 3);
 
     const loadSchedule = async (tid) => {
       setScheduleTournament(tid);
@@ -854,6 +919,17 @@ function TournamentRegistration() {
           const { data: evData } = await supabase.from("tournament_events")
             .select("*").eq("tournament_id", tid).order("sort_order");
           if (evData) setDbEvents(evData);
+
+          // 스타트리스트 session_key 목록 로드 (25M 조별 드랍다운용)
+          const { data: slKeyData } = await supabase
+            .from("tournament_startlists")
+            .select("session_key")
+            .eq("tournament_id", tid);
+          if (slKeyData) {
+            setSlSessionKeys([...new Set(slKeyData.map(r => r.session_key))]);
+          } else {
+            setSlSessionKeys([]);
+          }
         }
       } catch (e) { console.log("시간표 로드 실패:", e); }
       setScheduleLoading(false);
@@ -917,7 +993,7 @@ function TournamentRegistration() {
     };
 
     // 세션 뷰 열기 (통합)
-    const openSessionView = async (sessionKey, type, eventCode) => {
+    const openSessionView = async (sessionKey, type, eventCode, category) => {
       // 같은 세션+타입이면 닫기
       if (slSession === sessionKey && viewType === type) {
         setSlSession(null); setViewType(null); setDropdownKey(null);
@@ -928,6 +1004,24 @@ function TournamentRegistration() {
       setDropdownKey(null);
       if (type === "startlist") {
         await loadStartlist(sessionKey);
+      } else if (type.startsWith("startlist:")) {
+        // 25M 조별 스타트리스트: startlist:1 → eventCode + "_1"
+        // loadStartlist를 호출하면 slSession이 덮어씌워지므로 직접 로드
+        const relayNum = type.split(":")[1];
+        const relayKey = eventCode + "_" + relayNum;
+        setSlData([]); setSlLoading(true);
+        try {
+          if (supabase) {
+            const { data } = await supabase
+              .from("tournament_startlists")
+              .select("*")
+              .eq("tournament_id", scheduleTournament)
+              .eq("session_key", relayKey)
+              .order("sort_order");
+            if (data) setSlData(data);
+          }
+        } catch (e) { console.log("조별 스타트리스트 로드 실패:", e); }
+        setSlLoading(false);
       } else if (type === "final_sl") {
         // 결선 스타트리스트: session_key = eventCode + "_final"
         setSlData([]); setSlLoading(true);
@@ -991,7 +1085,20 @@ function TournamentRegistration() {
       ]},
     };
 
-    const renderSessionBtn = (sessionKey, eventCode) => {
+    // 25M 종목의 조 번호 목록 구하기 (DB startlist session_key에서)
+    const getEventRelays = (eventCode) => {
+      const prefix = eventCode + "_";
+      const relays = [];
+      slSessionKeys.forEach(sk => {
+        if (sk.startsWith(prefix)) {
+          const suffix = sk.slice(prefix.length);
+          if (/^\d+$/.test(suffix)) relays.push(suffix);
+        }
+      });
+      return relays.sort((a, b) => Number(a) - Number(b));
+    };
+
+    const renderSessionBtn = (sessionKey, eventCode, category) => {
       const status = sessionStatuses[sessionKey] || "scheduled";
       const cfg = SESSION_STATUS_CONFIG[status];
       const isOpen = slSession === sessionKey;
@@ -1001,8 +1108,41 @@ function TournamentRegistration() {
       const isMedalMatch = medalMatchEvents.includes(eventCode) || evInfo?.final_format === "medal_match";
       const isMixedType = evInfo?.type === "mixed";
 
+      // 25M 조 목록
+      const is25M = category === "25M";
+      const relays25M = is25M ? getEventRelays(eventCode) : [];
+      const hasMultiRelay = relays25M.length > 1;
+
       if (status === "scheduled") {
-        return <button onClick={() => openSessionView(sessionKey, "startlist", eventCode)} style={{
+        // 25M 다조: 드랍다운으로 조 선택
+        if (hasMultiRelay) {
+          const items = relays25M.map(r => ({ key: "startlist:" + r, label: "📋 " + r + "조 스타트리스트" }));
+          return <div style={{ position: "relative", display: "inline-block" }}>
+            <button onClick={(e) => { e.stopPropagation(); setDropdownKey(ddOpen ? null : sessionKey); }}
+              style={{
+                padding: "4px 8px", borderRadius: 5, border: "1px solid " + (isOpen ? "#c9a84c" : "#334466"),
+                background: isOpen ? "#c9a84c22" : "transparent", color: isOpen ? "#c9a84c" : "#6688aa",
+                fontSize: 10, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap"
+              }}>{isOpen ? "▲ 닫기" : "📋 명단 ▼"}</button>
+            {ddOpen && <div style={{
+              position: "absolute", left: 0, top: "100%", marginTop: 4, zIndex: 999,
+              background: "#1a2744", border: "1px solid #334466", borderRadius: 8,
+              padding: 4, minWidth: 170, boxShadow: "0 8px 24px rgba(0,0,0,.6)"
+            }} onClick={e => e.stopPropagation()}>
+              {items.map(item => (
+                <div key={item.key} onClick={() => openSessionView(sessionKey, item.key, eventCode, category)}
+                  style={{ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderRadius: 4, color: "#dde6f0",
+                    background: viewType === item.key && slSession === sessionKey ? "#334466" : "transparent" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334466"}
+                  onMouseLeave={e => e.currentTarget.style.background = viewType === item.key && slSession === sessionKey ? "#334466" : "transparent"}>
+                  {item.label}
+                </div>
+              ))}
+            </div>}
+          </div>;
+        }
+        // 기본: 단순 명단 버튼
+        return <button onClick={() => openSessionView(sessionKey, "startlist", eventCode, category)} style={{
           padding: "4px 8px", borderRadius: 5, border: "1px solid " + (isOpen ? "#c9a84c" : "#334466"),
           background: isOpen ? "#c9a84c22" : "transparent", color: isOpen ? "#c9a84c" : "#6688aa",
           fontSize: 10, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap"
@@ -1010,11 +1150,11 @@ function TournamentRegistration() {
       }
 
       // 종목 유형에 따라 항목 필터링
-      const items = cfg.items(eventCode, sessionKey).filter(item => {
+      let items = cfg.items(eventCode, sessionKey).filter(item => {
         // 결선 없음: 본선+단체만
-        if (isNoFinal) return ["prelim","team"].includes(item.key);
+        if (isNoFinal) return ["prelim","startlist","team"].includes(item.key);
         // 결정전 종목: 본선 + bronze/gold 관련만
-        if (isMedalMatch) return ["prelim","bronze_sl","gold_sl","bronze","gold"].includes(item.key);
+        if (isMedalMatch) return ["prelim","startlist","bronze_sl","gold_sl","bronze","gold"].includes(item.key);
         // 일반 결선 종목: 본선 + 결선 + 단체
         if (["bronze_sl","gold_sl","bronze","gold"].includes(item.key)) return false;
         // 혼성팀: 단체전 제거
@@ -1022,10 +1162,25 @@ function TournamentRegistration() {
         return true;
       });
 
+      // 25M 다조: "startlist" 항목을 조별 항목으로 교체
+      if (hasMultiRelay) {
+        const newItems = [];
+        items.forEach(item => {
+          if (item.key === "startlist") {
+            relays25M.forEach(r => {
+              newItems.push({ key: "startlist:" + r, label: "📋 " + r + "조 스타트리스트" });
+            });
+          } else {
+            newItems.push(item);
+          }
+        });
+        items = newItems;
+      }
+
       // 항목이 1개뿐이면 단순 버튼
       if (items.length === 1) {
         const item = items[0];
-        return <button onClick={() => openSessionView(sessionKey, item.key, eventCode)} style={{
+        return <button onClick={() => openSessionView(sessionKey, item.key, eventCode, category)} style={{
           padding: "4px 8px", borderRadius: 5, border: "1px solid " + cfg.color + "88",
           background: isOpen && viewType === item.key ? cfg.color + "22" : "transparent", color: cfg.color,
           fontSize: 10, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap"
@@ -1046,7 +1201,7 @@ function TournamentRegistration() {
           padding: 4, minWidth: 170, boxShadow: "0 8px 24px rgba(0,0,0,.6)"
         }} onClick={e => e.stopPropagation()}>
           {items.map(item => (
-            <div key={item.key} onClick={() => openSessionView(sessionKey, item.key, eventCode)}
+            <div key={item.key} onClick={() => openSessionView(sessionKey, item.key, eventCode, category)}
               style={{ padding: "8px 12px", fontSize: 12, cursor: "pointer", borderRadius: 4, color: "#dde6f0",
                 background: viewType === item.key && slSession === sessionKey ? "#334466" : "transparent" }}
               onMouseEnter={e => e.currentTarget.style.background = "#334466"}
@@ -1322,6 +1477,11 @@ function TournamentRegistration() {
       const evCode = row.event_code;
       const evName = row.content || evCode;
       if (viewType === "startlist") return renderStartlistContent("📋 " + evName + " 스타트리스트");
+      if (viewType && viewType.startsWith("startlist:")) {
+        const relayNum = viewType.split(":")[1];
+        const evInfo = dbEvents?.find(e => e.code === evCode);
+        return renderStartlistContent("📋 " + (evInfo?.name || evCode) + " " + relayNum + "조 스타트리스트");
+      }
       if (viewType === "final_sl") return renderStartlistContent("📋 " + evCode + " 결선 스타트리스트");
       if (viewType === "bronze_sl") return renderStartlistContent("🥉 " + evCode + " 3/4위 결정전 명단");
       if (viewType === "gold_sl") return renderStartlistContent("🥇 " + evCode + " 1/2위 결정전 명단");
@@ -1355,31 +1515,35 @@ function TournamentRegistration() {
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
               <button onClick={() => setPage("landing")} style={{ background: "none", border: "1px solid #334466", borderRadius: 8, color: "#8899aa", padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>← 돌아가기</button>
               <h2 style={{ fontSize: 22, fontWeight: 800, color: "#e8dcc8", margin: 0 }}>기록지 및 스타트리스트</h2>
+              {adminMode && <span style={{ fontSize: 11, fontWeight: 700, color: "#c9a84c", background: "#c9a84c22", border: "1px solid #c9a84c44", borderRadius: 6, padding: "3px 10px", whiteSpace: "nowrap" }}>🔓 관리자: 전체 대회</span>}
             </div>
             {ongoingTournaments.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 20px", color: "#667788" }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>현재 진행 중인 대회가 없습니다</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>{adminMode ? "등록된 대회가 없습니다" : "현재 진행 중인 대회가 없습니다"}</div>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {ongoingTournaments.map(t => (
+                {ongoingTournaments.map(t => {
+                  const st = STATUS_MAP[t.status] || STATUS_MAP[3];
+                  return (
                   <button key={t.id} onClick={() => loadSchedule(t.id)} style={{
                     display: "flex", alignItems: "center", gap: 16, padding: 0, background: cardBg, border: "1px solid " + borderC,
                     borderRadius: 12, cursor: "pointer", overflow: "hidden", textAlign: "left", width: "100%",
                   }}>
-                    <div style={{ width: 70, minHeight: 70, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "#4a90d922", borderRight: "1px solid #4a90d933" }}>
-                      <div style={{ width: 10, height: 10, borderRadius: 3, background: "#4a90d9", boxShadow: "0 0 8px #4a90d988" }} />
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#4a90d9" }}>진행중</span>
+                    <div style={{ width: 70, minHeight: 70, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: st.bg, borderRight: `1px solid ${st.color}33` }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: st.color, boxShadow: t.status <= 2 ? `0 0 8px ${st.color}88` : "none" }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
                     </div>
                     <div style={{ flex: 1, padding: "12px 16px 12px 0" }}>
                       <div style={{ fontSize: 16, fontWeight: 700, color: "#e8dcc8" }}>{t.name}</div>
                       <div style={{ fontSize: 12, color: "#8899aa", marginTop: 4 }}>📅 {t.date}</div>
                       <div style={{ fontSize: 12, color: "#8899aa" }}>📍 {t.venue}</div>
                     </div>
-                    <div style={{ padding: "0 16px", color: "#4a90d9", fontSize: 18 }}>→</div>
+                    <div style={{ padding: "0 16px", color: st.color, fontSize: 18 }}>→</div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1467,14 +1631,14 @@ function TournamentRegistration() {
                                 </div>
                               )}
                               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: bgColor }}>
-                                {sessionKey && renderSessionBtn(sessionKey, row.event_code)}
+                                {sessionKey && renderSessionBtn(sessionKey, row.event_code, row.category)}
                                 <div style={{ flex: 1, color: isPET ? "#8899aa" : "#e8dcc8", fontStyle: isPET ? "italic" : "normal", fontWeight: isPET ? 400 : 600, fontSize: 14 }}>
                                   {isPET ? "🏋️ " : ""}{row.content || row.event_code}
                                 </div>
                               </div>
                               <div style={{ display: "flex", gap: 16, padding: "4px 12px 10px", background: bgColor }}>
                                 <span style={{ color: "#b0c4de", fontFamily: "monospace", fontWeight: 600, fontSize: 13 }}>{row.time_slot || row.time || ""}</span>
-                                {(row.participant_count || row.count) ? <span style={{ color: "#8899aa", fontSize: 12 }}>{row.participant_count || row.count}명</span> : null}
+                                {(row.participant_count || row.count) ? <span style={{ color: "#8899aa", fontSize: 12 }}>{String(row.participant_count || row.count).replace(/명$/, "")}명</span> : null}
                                 {row.remark ? <span style={{ color: "#667788", fontSize: 12 }}>{row.remark}</span> : null}
                               </div>
                               {isSlOpen && renderExpanded(sessionKey, row)}
@@ -1507,12 +1671,12 @@ function TournamentRegistration() {
                                 {showCat && <td rowSpan={spans[ri]} style={{ ...tdSt, textAlign: "center", fontWeight: 700, fontSize: 12, color: cc, borderRight: "3px solid " + cc + "44" }}>{row.category}</td>}
                                 <td style={{ ...tdSt, textAlign: "left", paddingLeft: 12, color: isPET ? "#8899aa" : "#e8dcc8", fontStyle: isPET ? "italic" : "normal", fontWeight: isPET ? 400 : 600 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={e => e.stopPropagation()}>
-                                    {sessionKey && renderSessionBtn(sessionKey, row.event_code)}
+                                    {sessionKey && renderSessionBtn(sessionKey, row.event_code, row.category)}
                                     <span>{isPET ? "🏋️ " : ""}{row.content || row.event_code}</span>
                                   </div>
                                 </td>
                                 <td style={{ ...tdSt, textAlign: "center", color: "#b0c4de", fontFamily: "monospace", fontWeight: 600 }}>{row.time_slot || row.time || ""}</td>
-                                <td style={{ ...tdSt, textAlign: "center", color: "#8899aa" }}>{row.participant_count || row.count || ""}{(row.participant_count || row.count) ? "명" : ""}</td>
+                                <td style={{ ...tdSt, textAlign: "center", color: "#8899aa" }}>{(row.participant_count || row.count) ? String(row.participant_count || row.count).replace(/명$/, "") + "명" : ""}</td>
                                 <td style={{ ...tdSt, textAlign: "center", color: "#667788", fontSize: 12 }}>{row.remark || ""}</td>
                               </tr>
                               {isSlOpen && (
@@ -1576,6 +1740,8 @@ function TournamentRegistration() {
                 setIndividualEvents({});
                 setTeamComps({});
                 setTeamUnion({});
+                setLeagueComps({});
+                setLeagueUnion({});
                 setFirearms({});
               }}
               style={{
@@ -1743,6 +1909,35 @@ function TournamentRegistration() {
             )}
           </div>
 
+          {/* 3-1. 리그전 등록 현황 (인쇄) */}
+          {isLeague && (() => {
+            const allLg = Object.entries(leagueComps).filter(([, slots]) => slots && slots.filter(s => s !== null).length === 2);
+            if (allLg.length === 0) return null;
+            return (
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ ...ds, fontSize: 15, fontWeight: 700, marginBottom: 8, borderBottom: "2px solid #111", paddingBottom: 4 }}>🏆 리그전 등록 ({allLg.length}종목)</div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr>{["종목","선수1","선수2","연합"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {allLg.map(([key, slots]) => {
+                      const evCode = key.replace("league-", "");
+                      const names = slots.filter(s => s !== null).map(id => members.find(mm => mm.id === id)?.name || "?");
+                      const union = leagueUnion[key];
+                      return (
+                        <tr key={key}>
+                          <td style={{ ...td, fontWeight: 700 }}>{evCode}</td>
+                          <td style={td}>{names[0] || "-"}</td>
+                          <td style={td}>{names[1] || "-"}</td>
+                          <td style={tdL}>{union?.checked ? "연합: " + (union.memo || "-") : "-"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
           {/* 4. 총기 등록 현황 */}
           {(() => {
             const allGuns = players.flatMap(p => (firearms[p.id] || []).map(g => ({ ...g, playerName: p.name })));
@@ -1809,7 +2004,7 @@ function TournamentRegistration() {
           ← {showEntryChoice ? "대회 선택" : step > 0 ? "이전 단계" : "돌아가기"}
         </button>
         <h1 style={{ ...styles.headerTitle, fontSize: isMobile ? 16 : 22 }}>대회 참가신청</h1>
-        {step >= 1 && step < 5 && (
+        {step >= 1 && step < STEP_CONFIRM && (
           <div style={{ marginLeft: "auto", position: "relative" }}>
             <button onClick={() => setShowSaveMenu(v => !v)} style={{ background: "none", border: "1px solid #3d5278", color: "#8899aa", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
               💾 저장 ▾
@@ -2712,8 +2907,180 @@ function TournamentRegistration() {
         );
       })()}
 
-      {/* Step 4: Firearm Registration */}
-      {step === 4 && (() => {
+      {/* Step 4 (리그전): League Registration */}
+      {step === STEP_LEAGUE && isLeague && (() => {
+        const players = members.filter(m => m.role === "선수");
+        // 개인전에 등록된 종목만 리그전 대상
+        const registeredEvCodes = Object.entries(individualEvents).filter(([, ids]) => ids.length > 0).map(([code]) => code);
+        const leagueEvents = leagueEligibleEvents.filter(ev => registeredEvCodes.includes(ev.code));
+
+        const setLeagueSlot = (key, slotIdx, memberId) => {
+          setLeagueComps(prev => {
+            const curr = [...(prev[key] || [null, null])];
+            curr[slotIdx] = memberId;
+            return { ...prev, [key]: curr };
+          });
+          setDropdownSlot(null);
+        };
+        const removeLeagueSlot = (key, slotIdx) => {
+          setLeagueComps(prev => {
+            const curr = [...(prev[key] || [null, null])];
+            curr[slotIdx] = null;
+            return { ...prev, [key]: curr };
+          });
+        };
+        const handleLeagueDrop = (key, slotIdx, e) => {
+          e.preventDefault();
+          const mid = parseInt(e.dataTransfer.getData("memberId"));
+          if (!mid) return;
+          const slots = leagueComps[key] || [null, null];
+          if (slots.includes(mid)) return;
+          setLeagueSlot(key, slotIdx, mid);
+        };
+
+        // 카테고리별 그룹
+        const CAT_ORD = ["소총", "소총(SH2)", "권총", "산탄총", "청각"];
+        const catGrp = {};
+        leagueEvents.forEach(ev => {
+          const cat = CAT_ORD.includes(ev.cat) ? ev.cat : (ev.cat || "기타");
+          if (!catGrp[cat]) catGrp[cat] = [];
+          catGrp[cat].push(ev);
+        });
+        const catKeys = [...CAT_ORD.filter(c => catGrp[c]), ...Object.keys(catGrp).filter(c => !CAT_ORD.includes(c))];
+        const catClr = { "소총": "#3b82f6", "소총(SH2)": "#f59e0b", "권총": "#8b5cf6", "산탄총": "#10b981", "청각": "#ec4899" };
+        const filledCount = Object.entries(leagueComps).filter(([, slots]) => slots && slots.filter(s => s !== null).length === 2).length;
+
+        return (
+          <div style={{ padding: isMobile ? "16px 14px" : "24px", maxWidth: 800, margin: "0 auto" }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: "#f59e0b" }}>🏆 리그전 등록</div>
+            <div style={{ fontSize: 12, color: "#8899aa", marginBottom: 16, lineHeight: 1.6 }}>
+              개인전에 등록된 종목마다 <b style={{ color: "#f59e0b" }}>2인 1팀</b>을 구성합니다.<br />
+              성별 제한 없음 · 시도별 1팀 · 타시도 연합 시 체크박스를 활성화하세요.
+            </div>
+            {leagueEvents.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#556677" }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🏆</div>
+                개인전에 등록된 종목이 없습니다.<br />이전 단계에서 개인전 종목을 먼저 등록해주세요.
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 11, color: "#8899aa", marginBottom: 12 }}>
+                  등록 현황: <b style={{ color: "#f59e0b" }}>{filledCount}</b> / {leagueEvents.length} 종목
+                </div>
+                {catKeys.map(cat => {
+                  const evs = catGrp[cat];
+                  const cc = catClr[cat] || "#6b7d94";
+                  return (
+                    <div key={cat} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: cc, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 4, background: cc, display: "inline-block" }} />
+                        {cat} ({evs.length}종목)
+                      </div>
+                      {evs.map(ev => {
+                        const lgKey = "league-" + ev.code;
+                        const slots = leagueComps[lgKey] || [null, null];
+                        const eligible = players.filter(p => (individualEvents[ev.code] || []).includes(p.id));
+                        const union = leagueUnion[lgKey] || { checked: false, memo: "" };
+                        const isFilled = slots.filter(s => s !== null).length === 2;
+
+                        return (
+                          <div key={ev.code} style={{
+                            marginBottom: 8, padding: 12, borderRadius: 10,
+                            background: isFilled ? "#f59e0b0a" : "#0d1520",
+                            border: "1px solid " + (isFilled ? "#f59e0b44" : "#2a3a5c"),
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: cc }}>{ev.code}</span>
+                              <span style={{ fontSize: 11, color: "#8899aa", flex: 1 }}>{ev.name}</span>
+                              {isFilled && <span style={{ fontSize: 10, color: "#f59e0b", fontWeight: 600 }}>✓ 완료</span>}
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                              {[0, 1].map(idx => {
+                                const mid = slots[idx];
+                                const player = mid ? members.find(m => m.id === mid) : null;
+                                const isOpen = dropdownSlot === `${lgKey}-${idx}`;
+                                const usedIds = slots.filter(s => s !== null);
+                                const avail = eligible.filter(p => !usedIds.includes(p.id));
+                                return (
+                                  <div key={idx} style={{ position: "relative", flex: 1, minWidth: 100 }}>
+                                    <div
+                                      onClick={e => { e.stopPropagation(); if (!player) { if (isOpen) setDropdownSlot(null); else openDropdown(`${lgKey}-${idx}`, e); } }}
+                                      onDragOver={e => e.preventDefault()}
+                                      onDrop={e => handleLeagueDrop(lgKey, idx, e)}
+                                      style={{
+                                        borderRadius: 6, padding: "6px 10px",
+                                        border: player ? "1px solid #f59e0b" : "1px dashed #3d5278",
+                                        background: player ? "#f59e0b" : "#0d1520",
+                                        display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                                        cursor: player ? "default" : "pointer", minHeight: 34,
+                                      }}
+                                    >
+                                      {player ? (
+                                        <>
+                                          <span style={{ fontSize: 11, fontWeight: 600, color: "#000" }}>{player.name}</span>
+                                          <span style={{ fontSize: 9, color: "#333" }}>{player.gender}</span>
+                                          <span onClick={e => { e.stopPropagation(); removeLeagueSlot(lgKey, idx); }}
+                                            style={{ marginLeft: 4, cursor: "pointer", fontSize: 12, color: "#666", fontWeight: 700 }}>✕</span>
+                                        </>
+                                      ) : (
+                                        <span style={{ fontSize: 10, color: "#556677" }}>선수 {idx + 1}</span>
+                                      )}
+                                    </div>
+                                    {isOpen && avail.length > 0 && dropdownPos && ReactDOM.createPortal(
+                                      <div style={{
+                                        position: "fixed", top: dropdownPos.top, bottom: dropdownPos.bottom,
+                                        left: dropdownPos.left, width: Math.max(dropdownPos.width, 140),
+                                        background: "#1a2744", border: "1px solid #c9a84c", borderRadius: 6,
+                                        boxShadow: "0 8px 24px rgba(0,0,0,0.5)", zIndex: 9999, maxHeight: 180, overflow: "auto",
+                                      }}>
+                                        {avail.map(p => (
+                                          <div key={p.id} onClick={() => setLeagueSlot(lgKey, idx, p.id)}
+                                            style={{ padding: "7px 10px", cursor: "pointer", fontSize: 11, color: "#e8dcc8", borderBottom: "1px solid #2a3a5c" }}
+                                            onMouseEnter={e => e.currentTarget.style.background = "#c9a84c33"}
+                                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                            {p.name} <span style={{ color: "#888", fontSize: 9 }}>{p.gender}</span>
+                                          </div>
+                                        ))}
+                                      </div>, document.body
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* 연합 체크 */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11, color: "#8899aa" }}>
+                                <input type="checkbox" checked={union.checked}
+                                  onChange={e => setLeagueUnion(prev => ({ ...prev, [lgKey]: { ...union, checked: e.target.checked } }))}
+                                  style={{ accentColor: "#f59e0b", width: 14, height: 14 }} />
+                                타시도 연합
+                              </label>
+                              {union.checked && (
+                                <input
+                                  placeholder="연합 선수 시도/이름 (예: 경기 홍길동)"
+                                  value={union.memo}
+                                  onChange={e => setLeagueUnion(prev => ({ ...prev, [lgKey]: { ...union, memo: e.target.value } }))}
+                                  style={{
+                                    flex: 1, minWidth: 160, padding: "4px 8px", borderRadius: 4,
+                                    background: "#0d1520", border: "1px solid #3d5278", color: "#e8dcc8", fontSize: 11,
+                                  }}
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Step: Firearm Registration */}
+      {step === STEP_GUN && (() => {
         const players = members.filter(m => m.role === "선수");
         const GUN_TYPES = ["공기소총", "공기권총"];
         const addFirearm = (memberId) => {
@@ -2828,7 +3195,7 @@ function TournamentRegistration() {
       })()}
 
       {/* Step 5: Confirmation */}
-      {step === 5 && (() => {
+      {step === STEP_CONFIRM && (() => {
         const players = members.filter(m => m.role === "선수");
         const staffs = members.filter(m => m.role !== "선수");
         const tournament = activeTournaments.find(t => t.id === selectedTournament);
@@ -2955,6 +3322,35 @@ function TournamentRegistration() {
                 )}
               </div>
 
+              {/* 3-1. 리그전 등록 현황 */}
+              {isLeague && (() => {
+                const allLeague = Object.entries(leagueComps).filter(([, slots]) => slots && slots.filter(s => s !== null).length === 2);
+                if (allLeague.length === 0) return null;
+                return (
+                  <div style={styles.formGroup}>
+                    <SectionTitle>🏆 리그전 등록 ({allLeague.length}종목)</SectionTitle>
+                    {allLeague.map(([key, slots]) => {
+                      const evCode = key.replace("league-", "");
+                      const ev = activeIndividualEvents.find(e => e.code === evCode);
+                      const union = leagueUnion[key];
+                      return (
+                        <div key={key} style={{ padding: "4px 0", borderBottom: "1px solid #1e2f4a22", fontSize: 13 }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                            <span style={{ color: "#f59e0b", fontWeight: 700 }}>{evCode}</span>
+                            <span style={{ color: "#e8dcc8", fontSize: 12 }}>
+                              {slots.filter(s => s !== null).map(id => members.find(mm => mm.id === id)?.name).filter(Boolean).join(" · ")}
+                            </span>
+                          </div>
+                          {union?.checked && (
+                            <div style={{ fontSize: 11, color: "#cc8844", marginTop: 2, paddingLeft: 8 }}>타시도 연합: {union.memo || "(메모 없음)"}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               {/* 4. 총기 등록 현황 */}
               <div style={styles.formGroup}>
                 <SectionTitle>총기 등록 현황 ({totalGuns}정)</SectionTitle>
@@ -3011,11 +3407,13 @@ function TournamentRegistration() {
       <div style={styles.bottomBar}>
         {step === 0 && selectedTournament && !showEntryChoice && (() => {
           const t = activeTournaments.find(t => t.id === selectedTournament);
-          const canApply = t?.status === 1;
+          const canApply = adminMode || t?.status === 1;
           let msg = "";
-          if (t.status === 2) msg = `${t.regPeriod} 기간에 참가신청이 가능합니다.`;
-          else if (t.status === 3) msg = "이미 진행중인 대회입니다.";
-          else if (t.status === 4) msg = "이미 종료된 대회입니다.";
+          if (!adminMode) {
+            if (t.status === 2) msg = `${t.regPeriod} 기간에 참가신청이 가능합니다.`;
+            else if (t.status === 3) msg = "이미 진행중인 대회입니다.";
+            else if (t.status === 4) msg = "이미 종료된 대회입니다.";
+          }
           return (
             <div style={styles.selectedDisplay}>
               {canApply
@@ -3040,31 +3438,36 @@ function TournamentRegistration() {
             종목별 등록
           </div>
         )}
-        {step === 4 && (
+        {step === STEP_LEAGUE && (
+          <div style={styles.selectedDisplay}>
+            🏆 리그전 등록
+          </div>
+        )}
+        {step === STEP_GUN && (
           <div style={styles.selectedDisplay}>
             총기 등록
           </div>
         )}
-        {step === 5 && (
+        {step === STEP_CONFIRM && (
           <div style={styles.selectedDisplay}>
             <strong style={{ color: "#c9a84c" }}>참가신청 확인</strong>
           </div>
         )}
         {step === 0 && !selectedTournament && <div />}
         {step === 1 && !selectedRegion && <div />}
-        {step < 5 && !showEntryChoice && (
+        {step < STEP_CONFIRM && !showEntryChoice && (
         <button
           style={{
             ...styles.nextBtn,
             ...(step === 2 && step2HasError ? { background: "linear-gradient(135deg, #cc4444, #992222)" } : {}),
-            opacity: (step === 0 && selectedTournament && activeTournaments.find(t => t.id === selectedTournament)?.status === 1) || (step === 1 && selectedRegion) || step >= 2 ? 1 : 0.4,
-            cursor: (step === 0 && selectedTournament && activeTournaments.find(t => t.id === selectedTournament)?.status === 1) || (step === 1 && selectedRegion) || step >= 2 ? "pointer" : "not-allowed",
+            opacity: (step === 0 && selectedTournament && (adminMode || activeTournaments.find(t => t.id === selectedTournament)?.status === 1)) || (step === 1 && selectedRegion) || step >= 2 ? 1 : 0.4,
+            cursor: (step === 0 && selectedTournament && (adminMode || activeTournaments.find(t => t.id === selectedTournament)?.status === 1)) || (step === 1 && selectedRegion) || step >= 2 ? "pointer" : "not-allowed",
           }}
-          disabled={step === 0 ? (!selectedTournament || activeTournaments.find(t => t.id === selectedTournament)?.status !== 1) : step === 1 ? !selectedRegion : false}
+          disabled={step === 0 ? (!selectedTournament || (!adminMode && activeTournaments.find(t => t.id === selectedTournament)?.status !== 1)) : step === 1 ? !selectedRegion : false}
           onClick={() => {
             if (step === 0 && selectedTournament) {
               const t = activeTournaments.find(t => t.id === selectedTournament);
-              if (t.status !== 1) {
+              if (!adminMode && t.status !== 1) {
                 if (t.status === 2) alert(`${t.regPeriod} 기간에 참가신청이 가능합니다.`);
                 else if (t.status === 3) alert("이미 진행중인 대회입니다.");
                 else if (t.status === 4) alert("이미 종료된 대회입니다.");
@@ -3101,8 +3504,9 @@ function TournamentRegistration() {
               });
               setStep(3);
             }
-            else if (step === 3) setStep(4);
-            else if (step === 4) setStep(5);
+            else if (step === 3) setStep(isLeague ? STEP_LEAGUE : STEP_GUN);
+            else if (step === STEP_LEAGUE) setStep(STEP_GUN);
+            else if (step === STEP_GUN) setStep(STEP_CONFIRM);
           }}
         >
           다음 단계 →

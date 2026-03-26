@@ -1265,10 +1265,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const v={...editTVal}; delete v.created_at; delete v.updated_at;
       Object.keys(v).forEach(k=>{if(v[k]==="")v[k]=null;});
       if(v.year)v.year=Number(v.year); if(v.status)v.status=Number(v.status);
-      // check_national_record는 DB에 컬럼이 없을 수 있으므로 localStorage에 저장
+      // check_national_record, is_league는 localStorage에 저장 (DB 컬럼 없을 수 있음)
       const cnr=!!v.check_national_record; delete v.check_national_record;
+      const isLg=!!v.is_league; delete v.is_league;
       if(v.id){const id=v.id; delete v.id; const{error}=await sb.from("tournaments").update(v).eq("id",id); if(error) throw new Error(error.message);
         try{const m=JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");m[id]=cnr;localStorage.setItem("ksfd_cnr",JSON.stringify(m));}catch(e){}
+        try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");m[id]=isLg;localStorage.setItem("ksfd_league",JSON.stringify(m));}catch(e){}
         flash("대회 수정 완료");}
       else{
         delete v.id;
@@ -1276,6 +1278,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         if(error) throw new Error(error.message);
         const tId=newT?.id;
         if(tId){try{const m=JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");m[tId]=cnr;localStorage.setItem("ksfd_cnr",JSON.stringify(m));}catch(e){}}
+        if(tId){try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");m[tId]=isLg;localStorage.setItem("ksfd_league",JSON.stringify(m));}catch(e){}}
         flash("대회 등록 완료"+(tId?" (종목 메뉴에서 프리셋을 불러오세요)":""));
       }
       setEditT(null); loadT();
@@ -3426,7 +3429,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     if(!yr||yr<2000||yr>2100){flash("올바른 연도를 입력하세요.","error");return;}
     if(tournaments.some(t=>t.year===yr)){flash(yr+"년 대회 묶음이 이미 존재합니다.","error");return;}
     // 빈 연도 묶음: 바로 새 대회 등록 모달 열기
-    setEditT("new");setEditTVal({name:"",year:yr,venue:"",start_date:"",end_date:"",reg_start:"",reg_end:"",reg_period:"",status:1,description:"",check_national_record:false});
+    setEditT("new");setEditTVal({name:"",year:yr,venue:"",start_date:"",end_date:"",reg_start:"",reg_end:"",reg_period:"",status:1,description:"",check_national_record:false,is_league:false});
   };
   // 연도별 그룹핑 (내림차순)
   const [collapsedYears, setCollapsedYears]=useState({});
@@ -3466,7 +3469,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     <span style={{fontSize:16,fontWeight:800,color:C.gold}}>{year}년</span>
                     <span style={{fontSize:11,color:C.dim}}>({items.length}개 대회)</span>
                     <div style={{flex:1}}/>
-                    <button style={{...S.btn(C.gold,C.bg),fontSize:11,padding:"4px 12px"}} onClick={e=>{e.stopPropagation();setEditT("new");setEditTVal({name:"",year,venue:"",start_date:"",end_date:"",reg_start:"",reg_end:"",reg_period:"",status:1,description:"",check_national_record:false});}}>+ 대회 추가</button>
+                    <button style={{...S.btn(C.gold,C.bg),fontSize:11,padding:"4px 12px"}} onClick={e=>{e.stopPropagation();setEditT("new");setEditTVal({name:"",year,venue:"",start_date:"",end_date:"",reg_start:"",reg_end:"",reg_period:"",status:1,description:"",check_national_record:false,is_league:false});}}>+ 대회 추가</button>
                     <button style={{...S.sm(C.red),fontSize:11,padding:"4px 10px"}} onClick={e=>{e.stopPropagation();deleteYear(year);}}>연도 삭제</button>
                   </div>
                   {/* 대회 카드 목록 */}
@@ -3481,7 +3484,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           <div style={{fontSize:11,color:C.dim}}>{t.venue&&<span>{t.venue} · </span>}{t.start_date&&<span>{t.start_date} ~ {t.end_date}</span>}{t.reg_period&&<span> · 접수: {t.reg_period}</span>}</div>
                         </div>
                         <button style={S.btn(C.border,"#8899aa")} onClick={()=>openT(t)}>상세</button>
-                        <button style={S.sm(C.blue)} onClick={()=>{setEditT(t);const cnrMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");}catch(e){return {};}})();setEditTVal({...t,check_national_record:!!cnrMap[t.id]});}}>수정</button>
+                        <button style={S.sm(C.blue)} onClick={()=>{setEditT(t);const cnrMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");}catch(e){return {};}})();const lgMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_league")||"{}");}catch(e){return {};}})();setEditTVal({...t,check_national_record:!!cnrMap[t.id],is_league:!!lgMap[t.id]});}}>수정</button>
                         <button style={S.sm(C.red)} onClick={()=>deleteT(t.id)}>삭제</button>
                       </div>
                     ))}
@@ -3638,6 +3641,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           <input type="checkbox" checked={!!editTVal.check_national_record} onChange={e=>setEditTVal({...editTVal,check_national_record:e.target.checked})} style={{accentColor:C.gold,cursor:"pointer",width:16,height:16}}/>
           <label style={{fontSize:12,color:"#e8dcc8",fontWeight:600,cursor:"pointer"}} onClick={()=>setEditTVal({...editTVal,check_national_record:!editTVal.check_national_record})}>전국장애인체육대회 여부</label>
           <span style={{fontSize:10,color:C.dim}}>(활성화 시 대회신 기록 대조 포함)</span>
+        </div>
+        <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          <input type="checkbox" checked={!!editTVal.is_league} onChange={e=>setEditTVal({...editTVal,is_league:e.target.checked})} style={{accentColor:"#f59e0b",cursor:"pointer",width:16,height:16}}/>
+          <label style={{fontSize:12,color:"#e8dcc8",fontWeight:600,cursor:"pointer"}} onClick={()=>setEditTVal({...editTVal,is_league:!editTVal.is_league})}>🏆 리그전 대회</label>
+          <span style={{fontSize:10,color:C.dim}}>(참가신청 시 리그전 등록 단계 추가)</span>
         </div>
         {/* 후원사 로고 (선택사항) */}
         <div style={{marginBottom:10}}>
