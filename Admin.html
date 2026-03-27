@@ -48,7 +48,7 @@
       body * { visibility:hidden; }
       /* 기존 print-overlay (기록지 등) */
       .print-overlay, .print-overlay * { visibility:visible; }
-      .print-overlay { position:absolute; inset:0; background:#fff; overflow:visible; }
+      .print-overlay { position:absolute !important; inset:0; background:#fff !important; overflow:visible !important; height:auto !important; }
       /* 참가신청 확인서 */
       .cert-print-view, .cert-print-view * { visibility:visible !important; color:#111 !important; color-adjust:exact; -webkit-print-color-adjust:exact; }
       .cert-print-view { position:absolute !important; top:0 !important; left:0 !important; width:100% !important; height:auto !important; background:#fff !important; overflow:visible !important; z-index:99999; display:block !important; }
@@ -57,7 +57,7 @@
       .cert-print-view table { page-break-inside:avoid; }
       .cert-print-view .no-print { display:none !important; }
       /* 공통 */
-      .print-page { width:100%; margin:0; padding:5mm 6mm 10mm; box-shadow:none; page-break-after:always; }
+      .print-page { width:100%; margin:0; padding:5mm 6mm 10mm; box-shadow:none; min-height:auto !important; page-break-after:always; }
       .print-page:last-of-type { page-break-after:auto; }
       .print-bar { display:none; }
       .no-print { display:none !important; }
@@ -149,18 +149,18 @@ const getEventCfg = (code, resultFormat) => {
 const DEFAULT_EVENTS = [
   { code:"R1", name:"R1 공기소총 입사 남자 SH1", category:"소총", type:"individual", gender:"남", team_size:1, sort_order:1, result_format:"rifle", final_format:"final" },
   { code:"R2", name:"R2 공기소총 입사 여자 SH1", category:"소총", type:"individual", gender:"여", team_size:1, sort_order:2, result_format:"rifle", final_format:"final" },
-  { code:"R3", name:"R3 공기소총 복사 혼성 SH1", category:"소총", type:"individual", gender:"혼", team_size:1, sort_order:3, result_format:"rifle", final_format:"final" },
-  { code:"R4", name:"R4 공기소총 입사 혼성 SH2", category:"소총(SH2)", type:"individual", gender:"혼", team_size:1, sort_order:4, result_format:"rifle", final_format:"final" },
+  { code:"R3", name:"R3 공기소총 복사 혼성 SH1", category:"소총", type:"individual", gender:"혼", team_size:1, sort_order:3, result_format:"rifle", final_format:"final", league_eligible:true },
+  { code:"R4", name:"R4 공기소총 입사 혼성 SH2", category:"소총(SH2)", type:"individual", gender:"혼", team_size:1, sort_order:4, result_format:"rifle", final_format:"final", league_eligible:true },
   { code:"R5", name:"R5 공기소총 복사 혼성 SH2", category:"소총(SH2)", type:"individual", gender:"혼", team_size:1, sort_order:5, result_format:"rifle", final_format:"final" },
-  { code:"R6", name:"R6 50m소총 복사 혼성 SH1", category:"소총", type:"individual", gender:"혼", team_size:1, sort_order:6, result_format:"rifle", final_format:"final" },
+  { code:"R6", name:"R6 50m소총 복사 혼성 SH1", category:"소총", type:"individual", gender:"혼", team_size:1, sort_order:6, result_format:"rifle", final_format:"final", league_eligible:true },
   { code:"R7", name:"R7 50m소총 3자세 남자 SH1", category:"소총", type:"individual", gender:"남", team_size:1, sort_order:7, result_format:"threePos", final_format:"final_3pos" },
   { code:"R8", name:"R8 50m소총 3자세 여자 SH1", category:"소총", type:"individual", gender:"여", team_size:1, sort_order:8, result_format:"threePos", final_format:"final_3pos" },
-  { code:"R9", name:"R9 50m소총 복사 혼성 SH2", category:"소총(SH2)", type:"individual", gender:"혼", team_size:1, sort_order:9, result_format:"rifle", final_format:"final" },
+  { code:"R9", name:"R9 50m소총 복사 혼성 SH2", category:"소총(SH2)", type:"individual", gender:"혼", team_size:1, sort_order:9, result_format:"rifle", final_format:"final", league_eligible:true },
   { code:"P1", name:"P1 공기권총 남자 SH1", category:"권총", type:"individual", gender:"남", team_size:1, sort_order:10, result_format:"pistol", final_format:"final" },
   { code:"P2", name:"P2 공기권총 여자 SH1", category:"권총", type:"individual", gender:"여", team_size:1, sort_order:11, result_format:"pistol", final_format:"final" },
   { code:"P3", name:"P3 25m권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:12, result_format:"pistol", final_format:"final" },
-  { code:"P4", name:"P4 50m권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:13, result_format:"pistol", final_format:"final" },
-  { code:"P5", name:"P5 스탠다드공기권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:14, result_format:"p5", final_format:"final" },
+  { code:"P4", name:"P4 50m권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:13, result_format:"pistol", final_format:"final", league_eligible:true },
+  { code:"P5", name:"P5 스탠다드공기권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:14, result_format:"p5", final_format:"final", league_eligible:true },
   { code:"R10", name:"R10 공기소총 복사 혼성팀 SH1", category:"소총", type:"mixed", gender:"혼", team_size:2, sort_order:15, result_format:"mixedRifle", final_format:"medal_match" },
   { code:"R11", name:"R11 공기소총 복사 혼성팀 SH2", category:"소총(SH2)", type:"mixed", gender:"혼", team_size:2, sort_order:16, result_format:"mixedRifle", final_format:"medal_match" },
   { code:"P6", name:"P6 공기권총 혼성팀 SH1", category:"권총", type:"mixed", gender:"혼", team_size:2, sort_order:17, result_format:"mixedPistol", final_format:"medal_match" },
@@ -415,6 +415,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [slEditMode, setSlEditMode]=useState(false); // 편집모드 토글
   const [slDragOver, setSlDragOver]=useState(null); // 드래그 호버 위치 인덱스
   const [slPrint, setSlPrint]=useState(null); // null 또는 evCode
+  const [slPrintAll, setSlPrintAll]=useState(false); // 전체 스타트리스트 인쇄
+  const [slPrintAllSel, setSlPrintAllSel]=useState(new Set()); // 선택된 세션키 Set
+  const [slPrintAllReady, setSlPrintAllReady]=useState(false); // 선택 완료 → 인쇄 모드
   // ── 단체번호 수동 오버라이드 ──
   const [orgNumOverrides, setOrgNumOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
   const [teamDropdown, setTeamDropdown]=useState(null); // {memberId, evCode, rect:{top,left}, currentNum}
@@ -428,6 +431,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [showFeeModal, setShowFeeModal]=useState(false); // 참가비 산정 모달
   const [feeExpanded, setFeeExpanded]=useState(null); // 참가비 세부내역 열린 appId
   const [showMedalModal, setShowMedalModal]=useState(false); // 메달 산정 모달
+  const [showAllFirearms, setShowAllFirearms]=useState(false); // 총기 전체 열람 모달
+  const [allFirearmsData, setAllFirearmsData]=useState(null); // [{...firearm, memberName, subOrg, regionName, orgName}]
   const [medalDetail, setMedalDetail]=useState(null); // {evCode, subType} - 메달 세부 참가자 2차 모달
   const [openPaletteCat, setOpenPaletteCat]=useState(null); // 세션 팔레트 카테고리 드롭다운
   const [paletteViewMode, setPaletteViewMode]=useState("category"); // "category" | "daily"
@@ -505,6 +510,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [resData, setResData]=useState([]);
   const [resDirty, setResDirty]=useState(false);
   const [teamData, setTeamData]=useState([]);
+  const [leagueData, setLeagueData]=useState([]);
   const [resPrintMode, setResPrintMode]=useState(false);
   const [printZoom, setPrintZoom]=useState(1);
   const [printPages, setPrintPages]=useState(1);
@@ -1124,6 +1130,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       if(!v.result_format) v.result_format="rifle";
       if(!v.final_format) v.final_format="final";
       if(!v.distance) v.distance="10M";
+      // league_eligible → localStorage 저장 (DB 컬럼 없을 수 있음)
+      const leagueElig=!!v.league_eligible; delete v.league_eligible;
+      try{const m=JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");const key=selectedT?.id+"_"+v.code;if(leagueElig)m[key]=true;else delete m[key];localStorage.setItem("ksfd_ev_league",JSON.stringify(m));}catch(e){}
       const doSave=async(obj)=>{
         if(obj.id){
           const id=obj.id; const o={...obj}; delete o.id;
@@ -1204,7 +1213,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const saveEvPreset=async()=>{
     const name=prompt("프리셋 이름을 입력하세요","기본 종목 세트");
     if(!name) return;
-    const evData=events.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format||getEvFmt(e.code),final_format:e.final_format||getEvFinalFmt(e.code),distance:e.distance||evToCategory(e.code)}));
+    const _lgMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");}catch(e){return {};}})();
+    const evData=events.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format||getEvFmt(e.code),final_format:e.final_format||getEvFinalFmt(e.code),distance:e.distance||evToCategory(e.code),league_eligible:!!_lgMap[selectedT?.id+"_"+e.code]}));
     const updated={...evPresets,[name]:{events:evData,savedAt:new Date().toISOString()}};
     await saveEvPresetsToDB(updated);
     setEvPresets(updated);
@@ -1212,7 +1222,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     setEvPresetMenu(false);
   };
   const saveDefaultAsPreset=async()=>{
-    const evData=DEFAULT_EVENTS.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format,final_format:e.final_format,distance:e.distance||"10M"}));
+    const evData=DEFAULT_EVENTS.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format,final_format:e.final_format,distance:e.distance||"10M",league_eligible:!!e.league_eligible}));
     const key="기본 종목 ("+DEFAULT_EVENTS.length+"개)";
     const updated={...evPresets,[key]:{events:evData,savedAt:new Date().toISOString()}};
     await saveEvPresetsToDB(updated);
@@ -1228,7 +1238,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     const toInsert=preset.events.filter(e=>!existingCodes.has(e.code));
     if(toInsert.length===0){flash("모든 종목이 이미 등록되어 있습니다");setEvPresetMenu(false);return;}
     try{
-      const rows=toInsert.map(e=>({...e, tournament_id:selectedT.id}));
+      // league_eligible → localStorage 저장 후 DB insert 데이터에서 제거
+      try{const m=JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");toInsert.forEach(e=>{const key=selectedT.id+"_"+e.code;if(e.league_eligible)m[key]=true;else delete m[key];});localStorage.setItem("ksfd_ev_league",JSON.stringify(m));}catch(e){}
+      const rows=toInsert.map(e=>{const r={...e, tournament_id:selectedT.id};delete r.league_eligible;return r;});
       const{error}=await sb.from("tournament_events").insert(rows);
       if(error) throw new Error(error.message);
       flash("프리셋 '"+name+"' 불러오기 완료 ("+toInsert.length+"개 추가, "+existingCodes.size+"개 기존 유지)");
@@ -1361,7 +1373,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     appTeamEntries.forEach(t=>{const k=t.event_code+"_"+t.team_number; if(!grouped[k])grouped[k]={code:t.event_code,type:t.team_type,num:t.team_number,members:[],isUnion:t.is_union,unionMemo:t.union_memo||""}; grouped[k].members.push(t);});
     Object.entries(grouped).forEach(([k,g])=>{
       g.members.sort((a,b)=>a.slot_order-b.slot_order);
-      const newKey=g.type==="mixed"?"pair-"+g.code+"-"+g.num:"team-"+g.code+"_"+g.num;
+      const newKey=g.type==="mixed"?"pair-"+g.code+"-"+g.num:g.type==="league"?"league-"+g.code:"team-"+g.code+"_"+g.num;
       tc[newKey]={memberIds:g.members.map(m=>m.member_id),isUnion:g.isUnion,unionMemo:g.unionMemo,teamType:g.type};
     });
     setEditTeamComps(tc);
@@ -1412,6 +1424,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           teamNum=parseInt(parts.pop());
           evCode=parts.join("-");
           teamType="mixed";
+        } else if(k.startsWith("league-")){
+          // league-EVCODE
+          evCode=k.replace("league-","");
+          teamNum=1;
+          teamType="league";
         } else if(k.startsWith("team-")){
           // team-EVCODE_NUM
           const inner=k.replace("team-","");
@@ -1500,6 +1517,29 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   };
 
   const appSummary=useMemo(()=>({total:apps.length,pending:apps.filter(a=>a.status==="pending").length,approved:apps.filter(a=>a.status==="approved").length,rejected:apps.filter(a=>a.status==="rejected").length}),[apps]);
+
+  const loadAllFirearms=async()=>{
+    if(!evPData) return;
+    setDbBusy(v=>v+1);
+    try{
+      const mids=evPData.allMembers.map(m=>m.id);
+      if(mids.length===0){setAllFirearmsData([]);setShowAllFirearms(true);return;}
+      const chunks=[];for(let i=0;i<mids.length;i+=500)chunks.push(mids.slice(i,i+500));
+      let allF=[];
+      for(const chunk of chunks){const{data}=await sb.from("firearms").select("*").in("member_id",chunk);if(data)allF=allF.concat(data);}
+      const memberMap={};evPData.allMembers.forEach(m=>{memberMap[m.id]=m;});
+      const enriched=allF.map(f=>{
+        const m=memberMap[f.member_id];
+        const app=m?evPData.appMap[m.application_id]:null;
+        return {...f,memberName:m?.name||"(삭제됨)",subOrg:m?.sub_org||"-",regionName:app?.region_name||"-",orgName:app?.org_name||"-"};
+      });
+      const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+      enriched.sort((a,b)=>{const ai=regionOrd.indexOf(a.regionName),bi=regionOrd.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||a.memberName.localeCompare(b.memberName);});
+      setAllFirearmsData(enriched);
+      setShowAllFirearms(true);
+    }catch(e){flash("총기 데이터 로드 실패: "+e.message,"error");}
+    finally{setDbBusy(v=>v-1);}
+  };
 
   const downloadAppExcel=(app, members, entries, teamEntries, firearms)=>{
     const wb=XLSX.utils.book_new();
@@ -2529,6 +2569,103 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     }
     setTeamData(teams);
   };
+
+  // ── 리그전 자동 계산 (단체전과 동일 구조, 2인 팀) ──
+  const loadLeagueResults=async(evCodeOverride)=>{
+    const ec=evCodeOverride||resEvCode;
+    if(!sb||!selectedT||!ec) return;
+    if(evCodeOverride) setResEvCode(evCodeOverride);
+    setResType("league"); setResDirty(false); setResData([]);
+    // 본선 데이터
+    const{data:prelim}=await sb.from("competition_results").select("*")
+      .eq("tournament_id",selectedT.id).eq("event_code",ec).eq("result_type","prelim")
+      .order("rank",{ascending:true});
+    if(!prelim||prelim.length===0){setLeagueData([]); return;}
+    const cfg=getEventCfg(ec,getEvFmt(ec));
+    // team_entries에서 league 참가자 조회
+    const leagueMembers={}; // {memberId: teamNumber}
+    if(evPData&&evPData.allTeamEntries){
+      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===ec&&t.team_type==="league");
+      const memberMap2={};(evPData.allMembers||[]).forEach(m=>{memberMap2[m.id]=m;});
+      const memberAppMap2={};(evPData.allMembers||[]).forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
+      const teamByApp={};
+      const regionOrder0=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+      evTE.forEach(te=>{
+        if(!memberMap2[te.member_id]) return;
+        const app=memberAppMap2[te.member_id];
+        const k=(te.application_id||"?")+"_"+(te.team_number||1);
+        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:app?.region_name||"-",members:new Set()};
+        teamByApp[k].members.add(te.member_id);
+      });
+      const teamList0=Object.values(teamByApp);
+      teamList0.sort((a,b)=>{const ai=regionOrder0.indexOf(a.regionName),bi=regionOrder0.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
+      teamList0.forEach((t,i)=>{t.members.forEach(mid=>{leagueMembers[mid]=i+1;});});
+    }
+    // 이름 → memberId 매핑
+    const slEntries=[];
+    Object.keys(startLists).forEach(sk=>{
+      const parts=sk.match(/^(.+?)_(\d+)$/);
+      const evCode=parts?parts[1]:sk;
+      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId)slEntries.push(p);});
+    });
+    if(slEntries.length===0&&evPData){
+      const{allMembers,allEntries,appMap}=evPData;
+      const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
+      const memberAppMap2={};allMembers.forEach(m=>{memberAppMap2[m.id]=appMap[m.application_id];});
+      allEntries.filter(e=>e.event_code===ec).forEach(e=>{
+        const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];
+        if(m) slEntries.push({memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"});
+      });
+    }
+    const nameToSL={};slEntries.forEach(p=>{nameToSL[p.name]=p;});
+    const getLeagueNum=(r)=>{
+      const slP=nameToSL[r.name];
+      if(!slP) return null;
+      return leagueMembers[slP.memberId]||null;
+    };
+    // 본선 선수 → 리그 번호로 그룹핑
+    const allPlayers=prelim.filter(r=>r.bib!=="team"&&r.bib!=="sub");
+    // sub_org 보충
+    const needSubOrg=allPlayers.some(r=>!r.sub_org);
+    if(needSubOrg){
+      const subOrgMap={};
+      try{const{data:mems}=await sb.from("members").select("name,sub_org");if(mems) mems.forEach(m=>{if(m.sub_org&&m.sub_org.trim())subOrgMap[m.name]=m.sub_org;});}catch(e){}
+      if(evPData&&evPData.allMembers) evPData.allMembers.forEach(m=>{if(m.sub_org&&m.sub_org.trim()&&!subOrgMap[m.name])subOrgMap[m.name]=m.sub_org;});
+      allPlayers.forEach(r=>{if(!r.sub_org)r.sub_org=subOrgMap[r.name]||"";});
+    }
+    allPlayers.forEach(r=>{r._sub_org=r.sub_org||"";});
+    const groups={};
+    allPlayers.forEach(r=>{
+      const tn=getLeagueNum(r);
+      if(tn===null) return;
+      if(!groups[tn]) groups[tn]=[];
+      groups[tn].push(r);
+    });
+    // 2인 팀 구성
+    const regionOrder=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+    const teams=Object.entries(groups).filter(([,members])=>members.length>=2).map(([teamNum,members])=>{
+      members.sort((a,b)=>parseFloat(b.total||0)-parseFloat(a.total||0));
+      const top2=members.slice(0,2);
+      const teamTotal=top2.reduce((s,m)=>s+parseFloat(m.total||0),0);
+      const parseXC=(v)=>v?(v.includes(",")?v.split(",").reduce((s,x)=>s+(parseInt(x)||0),0):parseInt(v)||0):0;
+      const teamXCount=top2.reduce((s,m)=>s+parseXC(m.x_count),0);
+      const lastSeriesSum=top2.reduce((s,m)=>{const lastS="s"+cfg.series;return s+parseFloat(m[lastS]||0);},0);
+      const allRegions=[...new Set(members.map(m=>m.region).filter(Boolean))];
+      allRegions.sort((a,b)=>{const ai=regionOrder.indexOf(a),bi=regionOrder.indexOf(b);return(ai===-1?99:ai)-(bi===-1?99:bi);});
+      const region=allRegions.length<=1?(allRegions[0]||""):allRegions.join("/");
+      const allSubOrgs=[...new Set(members.map(m=>(m._sub_org||m.sub_org||"").trim()).filter(Boolean))];
+      return {teamNum:Number(teamNum),region,_allRegions:allRegions,_allSubOrgs:allSubOrgs,top2,teamTotal,teamXCount,lastSeriesSum,memberCount:members.length};
+    });
+    teams.sort((a,b)=>{
+      const diff=b.teamTotal-a.teamTotal;
+      if(Math.abs(diff)>0.01) return diff;
+      if(cfg.xcount){const xDiff=b.teamXCount-a.teamXCount;if(xDiff!==0) return xDiff;}
+      return b.lastSeriesSum-a.lastSeriesSum;
+    });
+    teams.forEach((t,i)=>t.rank=i+1);
+    setLeagueData(teams);
+  };
+
   // 단체전 팀명 결정: 전원 동일 세부소속 → 소속명, 같은 시도 → 시도명, 다른 시도 → 시도A/시도B
   const teamDisplayName=(t)=>{
     // 전원 세부소속이 정확히 같으면 해당 소속명 사용
@@ -2615,6 +2752,39 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     }catch(e){flash(e.message,"error");}
     finally{setDbBusy(v=>v-1);}
   };
+  // ── 리그전 DB 저장 ──
+  const leagueSaveToDB=async()=>{
+    if(!sb||!selectedT||!resEvCode||leagueData.length===0) return;
+    setDbBusy(v=>v+1);
+    try{
+      const cfg=getEventCfg(resEvCode,getEvFmt(resEvCode));
+      await sb.from("competition_results").delete().eq("tournament_id",selectedT.id).eq("event_code",resEvCode).eq("result_type","league");
+      let saved=0,failed=0,failMsg="";
+      for(const t of leagueData){
+        const teamRow={tournament_id:selectedT.id,event_code:resEvCode,result_type:"league",
+          rank:t.rank||0,bib:"team",name:teamDisplayName(t),region:t.region||"",sub_org:"",
+          is_team:true,total:cfg.decimal?t.teamTotal.toFixed(1):String(t.teamTotal),
+          x_count:cfg.xcount?String(t.teamXCount):"",remarks:t._remarks||""};
+        for(let s=1;s<=cfg.series;s++){
+          teamRow["s"+s]=String(t.top2.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0));
+        }
+        for(let s=cfg.series+1;s<=12;s++) teamRow["s"+s]="";
+        const{error:e1}=await sb.from("competition_results").insert(teamRow);
+        if(e1){failed++;failMsg=e1.message;} else saved++;
+        for(const m of t.top2){
+          const memRow={tournament_id:selectedT.id,event_code:resEvCode,result_type:"league",
+            rank:0,bib:"sub",name:m.name||"",region:m.region||t.region||"",sub_org:m._sub_org||m.sub_org||"",
+            is_team:true,total:m.total||"",x_count:m.x_count||"",remarks:""};
+          for(let s=1;s<=12;s++) memRow["s"+s]=m["s"+s]||"";
+          const{error:e2}=await sb.from("competition_results").insert(memRow);
+          if(e2){failed++;failMsg=e2.message;} else saved++;
+        }
+      }
+      if(failed>0) flash(saved+"건 저장, "+failed+"건 실패: "+failMsg,"error");
+      else flash("리그전 결과 DB 저장 완료 ("+leagueData.length+"팀, "+saved+"건)");
+    }catch(e){flash(e.message,"error");}
+    finally{setDbBusy(v=>v-1);}
+  };
   const resGetFields=(code,type)=>{
     const cfg=getEventCfg(code,getEvFmt(code));
     const ev=events.find(e=>e.code===code);
@@ -2684,7 +2854,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const resExportCSV=()=>{
     const cfg=getEventCfg(resEvCode,getEvFmt(resEvCode));
     const visible=resData.filter(r=>!r._deleted);
-    const typeLabel={prelim:"본선",final:"결선",team:"단체전",bronze:"3_4위결정전",gold:"1_2위결정전"};
+    const typeLabel={prelim:"본선",final:"결선",team:"단체전",league:"리그전",bronze:"3_4위결정전",gold:"1_2위결정전"};
     const isPrelim=resType==="prelim";
     const fields=resGetFields(resEvCode,resType);
     let csv="\uFEFF"+fields.map(f=>f.l).join(",")+"\n";
@@ -3348,7 +3518,143 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       }).flat()}</tbody></table>;
     };
 
-    const typeLabel2={prelim:"본선",final:"결선",team:"단체전",bronze:"3/4위 결정전",gold:"1/2위 결정전"};
+    // 리그전 테이블 (2인 팀 — renderTeam 기반)
+    const renderLeague=()=>{
+      if(leagueData.length===0) return <p style={{textAlign:"center",color:"#999",padding:"20mm 0"}}>리그전 데이터가 없습니다.</p>;
+      const is3Pos=!!cfg.seriesLabels;
+      const sCols=Array.from({length:cfg.series},(_,i)=>i+1);
+      const sHeaders=cfg.seriesLabels||sCols.map(i=>""+i);
+      const isDotAfterS=(s)=>{
+        if(cfg.seriesLabels) return s===2||s===4||s===cfg.series;
+        return s===cfg.series;
+      };
+      const fmtLeagueTotal=(t)=>{
+        const tv=cfg.decimal?t.teamTotal.toFixed(1):t.teamTotal;
+        return cfg.xcount?(tv+" -"+t.teamXCount+"x"):tv;
+      };
+      const fmtMemberTotal=(m)=>{
+        const tv=cfg.decimal?parseFloat(m.total).toFixed(1):m.total;
+        return cfg.xcount?(tv+(m.x_count?" -"+(typeof m.x_count==="string"&&m.x_count.includes(",")?m.x_count.split(",").reduce((s,v)=>s+(parseInt(v)||0),0):m.x_count)+"x":"")):tv;
+      };
+      const leagueSeriesSum=(t,sIdx)=>{
+        const sum=t.top2.reduce((s,m)=>s+(parseFloat(m["s"+sIdx])||0),0);
+        return cfg.decimal?sum.toFixed(1):sum;
+      };
+      const calcSub=(r,startS)=>{
+        const v1=parseFloat(r["s"+startS])||0,v2=parseFloat(r["s"+(startS+1)])||0;
+        return v1+v2||"";
+      };
+      const leagueSubTotal=(t,startS)=>{
+        const sum=t.top2.reduce((s,m)=>s+(parseFloat(m["s"+startS])||0)+(parseFloat(m["s"+(startS+1)])||0),0);
+        return sum||"";
+      };
+
+      const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
+      const sPad="1px 2px";
+
+      if(is3Pos){
+        // ── 3자세 리그전: 3행 레이아웃 (2인 팀) ──
+        const poses=[{name:"슬사",s1:1,s2:2},{name:"복사",s1:3,s2:4},{name:"입사",s1:5,s2:6}];
+        const hdr3=["순위","소속 / 이름","자세","1","2","소계","합계","비고"];
+        const colW3=hdr3.map(h=>({순위:"24px","소속 / 이름":"1%",자세:"30px","1":"34px","2":"34px",소계:"44px",합계:"84px",비고:null}[h]));
+        return <table style={{tableLayout:"auto",width:"100%"}}><colgroup>
+          {colW3.map((w,i)=><col key={i} style={w?{width:w}:{}}/>)}
+        </colgroup>
+        <thead><tr>
+          {hdr3.map(h=><th key={h} style={{...pTh,whiteSpace:"nowrap",padding:"3px 3px",...(h==="소속 / 이름"||h==="2"?{borderRight:dotBdr}:{})}}>{h}</th>)}
+        </tr></thead>
+        <tbody>{leagueData.map((t,ti)=>{
+          const rows=[];
+          // ── 팀 합산 3행 ──
+          poses.forEach((p,pi)=>{
+            const isFirst=pi===0, isLast=pi===2;
+            const bdrBot=isLast?"1px dashed #888":"1px solid transparent";
+            const tdS={padding:isLast?"2px 4px":"1px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,borderBottom:bdrBot,verticalAlign:isFirst?"bottom":isLast?"top":"middle"};
+            rows.push(<tr key={(t.teamNum||t.region)+"_t"+pi} style={{background:"#f0f0f0"}}>
+              <td style={{...tdS,borderLeft:"1px solid #333",fontWeight:isFirst?800:400,fontSize:isFirst?"10pt":"8.5pt"}}>{isFirst?t.rank:""}</td>
+              <td style={{...tdS,textAlign:"left",paddingLeft:"4px",fontWeight:isFirst?700:400,fontSize:isFirst?"9pt":"8.5pt",borderRight:dotBdr,whiteSpace:"nowrap"}}>{isFirst?teamDisplayName(t):""}</td>
+              <td style={{...tdS,fontWeight:600,fontSize:"7.5pt",color:"#555"}}>{p.name}</td>
+              <td style={{...tdS,fontWeight:700,padding:sPad}}>{leagueSeriesSum(t,p.s1)}</td>
+              <td style={{...tdS,fontWeight:700,padding:sPad,borderRight:dotBdr}}>{leagueSeriesSum(t,p.s2)}</td>
+              <td style={{...tdS,fontWeight:700}}>{leagueSubTotal(t,p.s1)}</td>
+              <td style={{...tdS,fontWeight:isLast?800:400,fontSize:isLast?"10pt":"8.5pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"}}>{isLast?fmtLeagueTotal(t):""}</td>
+              <td style={{...tdS,borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px"}}>{isLast?(fmtRemarks(t._remarks)||""):""}</td>
+            </tr>);
+          });
+          // ── 개인 행 (top2) ──
+          const allM=[...t.top2];
+          allM.forEach((m,mi)=>{
+            const isLastMember=mi===allM.length-1;
+            poses.forEach((p,pi)=>{
+              const isFirst=pi===0, isLast=pi===2;
+              const bdrBot=isLast?(isLastMember?"2px solid #333":"1px dashed #888"):"1px solid transparent";
+              const tdS={padding:isLast?"2px 4px":"1px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,borderBottom:bdrBot,verticalAlign:isFirst?"bottom":isLast?"top":"middle"};
+              rows.push(<tr key={(t.teamNum||t.region)+"_m"+mi+"_"+pi}>
+                <td style={{...tdS,borderLeft:"1px solid #333"}}></td>
+                <td style={{...tdS,textAlign:"left",paddingLeft:"10px",fontSize:"8pt",borderRight:dotBdr,whiteSpace:"nowrap"}}>
+                  {isFirst?<>{m.name}{(m._sub_org||"")?<span style={{marginLeft:3,fontSize:"7pt"}}>[{m._sub_org}]</span>:null}</>:""}
+                </td>
+                <td style={{...tdS,fontWeight:600,fontSize:"7.5pt",color:"#555"}}>{p.name}</td>
+                <td style={{...tdS,padding:sPad}}>{m["s"+p.s1]||""}</td>
+                <td style={{...tdS,padding:sPad,borderRight:dotBdr}}>{m["s"+p.s2]||""}</td>
+                <td style={{...tdS,fontWeight:600}}>{calcSub(m,p.s1)}</td>
+                <td style={{...tdS,fontWeight:isLast?600:400,textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"}}>{isLast?fmtMemberTotal(m):""}</td>
+                <td style={{...tdS,borderRight:"1px solid #333"}}></td>
+              </tr>);
+            });
+          });
+          return rows;
+        }).flat()}</tbody></table>;
+      }
+
+      // ── 일반 리그전 (2인 팀) ──
+      const hdr=["순위","소속 / 이름",...sHeaders,"합계","비고"];
+      const hdrDotLeague=new Set();
+      hdrDotLeague.add("소속 / 이름");
+      if(cfg.seriesLabels){ hdrDotLeague.add(cfg.seriesLabels[1]); hdrDotLeague.add(cfg.seriesLabels[3]); hdrDotLeague.add(cfg.seriesLabels[5]); }
+      else { hdrDotLeague.add(""+cfg.series); }
+
+      const teamCell=(extra={})=>({padding:"2px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,
+        borderTop:"2px solid #333",borderBottom:"1px dashed #888",borderLeft:"none",borderRight:"none",...extra});
+      const memCell=(extra={})=>({padding:"2px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,
+        borderTop:"none",borderBottom:"1px dashed #aaa",borderLeft:"none",borderRight:"none",...extra});
+      const memLastCell=(extra={})=>({padding:"2px 4px",textAlign:"center",fontSize:"8.5pt",fontFamily:F,
+        borderTop:"none",borderBottom:"1px solid #333",borderLeft:"none",borderRight:"none",...extra});
+
+      return <table style={{tableLayout:"auto",width:"100%"}}><colgroup>
+        {hdr.map((h,i)=><col key={i} style={h==="순위"?{width:"24px"}:{}}/>)}
+      </colgroup>
+      <thead><tr>{hdr.map(h=><th key={h} style={{...pTh,whiteSpace:"nowrap",padding:"3px 3px",...(hdrDotLeague.has(h)?{borderRight:dotBdr}:{})}}>{h}</th>)}</tr></thead>
+      <tbody>{leagueData.map((t,ti)=>{
+        const rows=[];
+        // ── 팀 합산 행 ──
+        const tc=[];
+        tc.push(<td key="rank" style={teamCell({borderLeft:"1px solid #333",fontWeight:800,fontSize:"10pt"})}>{t.rank}</td>);
+        tc.push(<td key="reg" style={teamCell({fontWeight:700,fontSize:"9pt",borderRight:dotBdr,whiteSpace:"nowrap"})}>{teamDisplayName(t)}</td>);
+        sCols.forEach(s=>tc.push(<td key={"ts"+s} style={teamCell({fontWeight:700,whiteSpace:"nowrap",padding:sPad,...(isDotAfterS(s)?{borderRight:dotBdr}:{})})}>{leagueSeriesSum(t,s)}</td>));
+        tc.push(<td key="total" style={teamCell({fontWeight:800,fontSize:"10pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"})}>{fmtLeagueTotal(t)}</td>);
+        tc.push(<td key="rem" style={teamCell({borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px",lineHeight:1.2})}>{fmtRemarks(t._remarks)}</td>);
+        rows.push(<tr key={(t.teamNum||t.region)+"_league"} style={{background:"#f0f0f0"}}>{tc}</tr>);
+        // ── 개인 행 (top2) ──
+        const allM=[...t.top2];
+        allM.forEach((m,mi)=>{
+          const mk=mi===allM.length-1?memLastCell:memCell;
+          const mSub=m._sub_org||"";
+          const mc=[];
+          mc.push(<td key="rank" style={mk({borderLeft:"1px solid #333"})}></td>);
+          mc.push(<td key="name" style={mk({paddingLeft:"10px",fontSize:"8pt",textAlign:"left",borderRight:dotBdr,whiteSpace:"nowrap"})}>
+            {m.name}{mSub?<span style={{marginLeft:3,fontSize:"7pt"}}>[{mSub}]</span>:null}
+          </td>);
+          sCols.forEach(s=>mc.push(<td key={"ms"+s} style={mk({whiteSpace:"nowrap",padding:sPad,...(isDotAfterS(s)?{borderRight:dotBdr}:{})})}>{m["s"+s]||""}</td>));
+          mc.push(<td key="total" style={mk({fontWeight:600,textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"})}>{fmtMemberTotal(m)}</td>);
+          mc.push(<td key="rem" style={mk({borderRight:"1px solid #333"})}></td>);
+          rows.push(<tr key={(t.teamNum||t.region)+"_m"+mi}>{mc}</tr>);
+        });
+        return rows;
+      }).flat()}</tbody></table>;
+    };
+
+    const typeLabel2={prelim:"본선",final:"결선",team:"단체전",league:"리그전",bronze:"3/4위 결정전",gold:"1/2위 결정전"};
     const isMixedEv=cfg.mixed||(events.find(e=>e.code===resEvCode)?.type==="mixed");
     const printTypeLabel=isMixedEv&&resType==="prelim"?"본선":(typeLabel2[resType]||resType);
     // 신기록 값 가져오기
@@ -3391,7 +3697,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         </div>{/* close header ref */}
         {/* ═══ 본문 테이블 (자동 zoom) ═══ */}
         <div ref={printTableRef} style={{zoom:printZoom}}>
-        {resType==="team"?renderTeam():resType==="final"?(isFinal3Pos(resEvCode)?renderFinal3Pos():renderFinal()):(resType==="bronze"||resType==="gold"||resType==="prelim")?renderPrelimFinal():renderPrelimFinal()}
+        {resType==="team"?renderTeam():resType==="league"?renderLeague():resType==="final"?(isFinal3Pos(resEvCode)?renderFinal3Pos():renderFinal()):(resType==="bronze"||resType==="gold"||resType==="prelim")?renderPrelimFinal():renderPrelimFinal()}
         </div>{/* close table zoom wrapper */}
         {/* ═══ 하단 (고정 크기) ═══ */}
         <div ref={printFooterRef} style={{marginTop:"5mm",display:"flex",alignItems:"flex-end",fontSize:"8pt"}}>
@@ -3528,7 +3834,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           <button style={{...S.btn(C.gold,C.bg),fontSize:11}} onClick={async()=>{
             await saveMasterEvents(masterEvents);flash("종목 마스터 DB 저장 완료 ("+masterEvents.length+"개)");
           }}>💾 DB 저장</button>
-          <button style={{...S.btn(C.gold,C.bg),fontSize:11}} onClick={()=>{setEditME("new");setEditMEVal({code:"",name:"",category:"소총",type:"individual",gender:"혼",team_size:1,sort_order:masterEvents.length+1,result_format:"rifle",final_format:"final",distance:"10M"});}}>+ 종목 추가</button>
+          <button style={{...S.btn(C.gold,C.bg),fontSize:11}} onClick={()=>{setEditME("new");setEditMEVal({code:"",name:"",category:"소총",type:"individual",gender:"혼",team_size:1,sort_order:masterEvents.length+1,result_format:"rifle",final_format:"final",distance:"10M",league_eligible:false});}}>+ 종목 추가</button>
         </div>
         <div style={{flex:1,overflow:"auto",padding:24}}>
           {masterEvents.length===0?(
@@ -3646,6 +3952,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           <input type="checkbox" checked={!!editTVal.is_league} onChange={e=>setEditTVal({...editTVal,is_league:e.target.checked})} style={{accentColor:"#f59e0b",cursor:"pointer",width:16,height:16}}/>
           <label style={{fontSize:12,color:"#e8dcc8",fontWeight:600,cursor:"pointer"}} onClick={()=>setEditTVal({...editTVal,is_league:!editTVal.is_league})}>🏆 리그전 대회</label>
           <span style={{fontSize:10,color:C.dim}}>(참가신청 시 리그전 등록 단계 추가)</span>
+          <span style={{fontSize:10,color:C.dim}}>(활성화 시 대회신 기록 대조 포함)</span>
         </div>
         {/* 후원사 로고 (선택사항) */}
         <div style={{marginBottom:10}}>
@@ -3700,6 +4007,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             <input type="checkbox" id="me_force_mixed" checked={!!editMEVal.force_mixed} onChange={e=>setEditMEVal({...editMEVal,force_mixed:e.target.checked})} disabled={editMEVal.type==="individual"}/>
             <label htmlFor="me_force_mixed" style={{fontSize:11,color:editMEVal.type==="individual"?"#555":"#e8dcc8",fontWeight:600,cursor:"pointer"}}>강제 혼성 구성</label>
             {editMEVal.type==="individual"&&<span style={{fontSize:9,color:"#555"}}>(팀 종목만 해당)</span>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:20}}>
+            <input type="checkbox" id="me_league_eligible" checked={!!editMEVal.league_eligible} onChange={e=>setEditMEVal({...editMEVal,league_eligible:e.target.checked})}/>
+            <label htmlFor="me_league_eligible" style={{fontSize:11,color:"#e8dcc8",fontWeight:600,cursor:"pointer"}}>🏆 리그전 가능</label>
+            <span style={{fontSize:9,color:"#555"}}>(리그전 대회 시 등록 허용)</span>
           </div>
           <div>
             <label style={{fontSize:11,color:"#6b7d94",fontWeight:600,display:"block",marginBottom:3}}>거리</label>
@@ -3963,11 +4275,209 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     </div>;
   };
 
+  // ─── 전체 스타트리스트 인쇄 ───
+  const getSlPrintSessions=()=>{
+    const orderedSessions=[];
+    const seen=new Set();
+    const seenEvFor25=new Set();
+    schedData.forEach(d=>{
+      d.rows.forEach(r=>{
+        if(r.event_code&&r.type==="prelim"){
+          if(is25MEv(r.event_code)){
+            // 25M: schedData relay="완사"/"급사" → startLists key=evCode+"_1","_2",...
+            if(!seenEvFor25.has(r.event_code)){
+              seenEvFor25.add(r.event_code);
+              const numericKeys=Object.keys(startLists).filter(sk=>sk.startsWith(r.event_code+"_")&&/\d+$/.test(sk)).sort();
+              if(numericKeys.length>0){
+                numericKeys.forEach(sk=>{
+                  if(!seen.has(sk)){
+                    seen.add(sk);
+                    const parts=sk.match(/^(.+?)_(\d+)$/);
+                    orderedSessions.push({evCode:r.event_code,relay:parts?parts[2]:"1",dayNum:d.day});
+                  }
+                });
+              } else {
+                // startLists에 없으면 laneAssign에서 relay 번호 추출
+                const relays=new Set();
+                Object.keys(laneAssign).forEach(dk=>{const da=laneAssign[dk]||{};Object.keys(da).forEach(k=>{const p=evKeyParse(k);if(p.evCode===r.event_code)relays.add(String(da[k].relay));});});
+                [...relays].sort().forEach(rl=>{const sk2=r.event_code+"_"+rl;if(!seen.has(sk2)){seen.add(sk2);orderedSessions.push({evCode:r.event_code,relay:rl,dayNum:d.day});}});
+              }
+            }
+          } else {
+            const sk=r.event_code+"_"+(r.relay||"1");
+            if(!seen.has(sk)){seen.add(sk);orderedSessions.push({evCode:r.event_code,relay:r.relay||"1",dayNum:d.day});}
+          }
+        }
+      });
+    });
+    Object.keys(startLists).forEach(sk=>{
+      if(!seen.has(sk)){
+        const parts=sk.match(/^(.+?)_(\d+)$/);
+        const ec=parts?parts[1]:sk;const rl=parts?parts[2]:"1";
+        seen.add(sk);orderedSessions.push({evCode:ec,relay:rl,dayNum:null});
+      }
+    });
+    return orderedSessions;
+  };
+  const openSlPrintAll=()=>{
+    const sessions=getSlPrintSessions();
+    const available=sessions.filter(s=>{const sk=s.evCode+"_"+s.relay;const list=startLists[sk];return list&&list.length>0;});
+    setSlPrintAllSel(new Set(available.map(s=>s.evCode+"_"+s.relay)));
+    setSlPrintAllReady(false);
+    setSlPrintAll(true);
+  };
+  const closeSlPrintAll=()=>{setSlPrintAll(false);setSlPrintAllReady(false);setSlPrintAllSel(new Set());};
+  const buildTeamNumMap=(evCode)=>{
+    const evOvPrint=orgNumOverrides[evCode]||{};
+    const printTeamNum={};
+    if(evPData&&evPData.allTeamEntries){
+      const memberMap2={};(evPData.allMembers||[]).forEach(m=>{memberMap2[m.id]=m;});
+      const memberAppMap2={};(evPData.allMembers||[]).forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
+      const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===evCode&&t.team_type==="team"&&memberMap2[t.member_id]);
+      const teamByApp={};
+      evTE.forEach(te=>{
+        const app=memberAppMap2[te.member_id];
+        const k=(te.application_id||"?")+"_"+(te.team_number||1);
+        if(!teamByApp[k]) teamByApp[k]={regionName:app?.region_name||"-",teamNumber:te.team_number||1,members:new Set()};
+        teamByApp[k].members.add(te.member_id);
+      });
+      const tl=Object.values(teamByApp);
+      tl.sort((a,b)=>{const ai=regionOrd.indexOf(a.regionName),bi=regionOrd.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
+      tl.forEach((t,i)=>{t.members.forEach(mid=>{printTeamNum[mid]=i+1;});});
+    }
+    return (p)=>{
+      if(!p.memberId) return null;
+      const mid=String(p.memberId);
+      if(evOvPrint[mid]!==undefined) return evOvPrint[mid];
+      return printTeamNum[p.memberId]||null;
+    };
+  };
+  const renderSlPrintAll=()=>{
+    if(!slPrintAll) return null;
+    const allSessions=getSlPrintSessions();
+    const tName=selectedT?.name||"";
+
+    // ── 1단계: 종목 선택 모달 ──
+    if(!slPrintAllReady){
+      const availSessions=allSessions.filter(s=>{const sk=s.evCode+"_"+s.relay;return startLists[sk]&&startLists[sk].length>0;});
+      const unavailSessions=allSessions.filter(s=>{const sk=s.evCode+"_"+s.relay;return !startLists[sk]||startLists[sk].length===0;});
+      const toggleSel=(sk)=>setSlPrintAllSel(p=>{const n=new Set(p);if(n.has(sk))n.delete(sk);else n.add(sk);return n;});
+      const selectAll=()=>setSlPrintAllSel(new Set(availSessions.map(s=>s.evCode+"_"+s.relay)));
+      const selectNone=()=>setSlPrintAllSel(new Set());
+      return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={closeSlPrintAll}>
+        <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:12,padding:24,minWidth:420,maxWidth:560,maxHeight:"80vh",overflow:"auto",boxShadow:"0 8px 32px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:16,fontWeight:700,color:"#fff",marginBottom:16}}>📋 스타트리스트 인쇄 — 종목 선택</div>
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <button onClick={selectAll} style={{padding:"4px 12px",borderRadius:5,border:"1px solid #475569",background:"transparent",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>전체 선택</button>
+            <button onClick={selectNone} style={{padding:"4px 12px",borderRadius:5,border:"1px solid #475569",background:"transparent",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>전체 해제</button>
+            <span style={{flex:1}}/>
+            <span style={{fontSize:12,color:"#94a3b8"}}>{slPrintAllSel.size}/{availSessions.length}개 선택</span>
+          </div>
+          {availSessions.length===0?<div style={{padding:20,textAlign:"center",color:"#666"}}>스타트리스트가 생성된 종목이 없습니다.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:2}}>
+            {allSessions.map(s=>{
+              const sk=s.evCode+"_"+s.relay;
+              const list=startLists[sk];
+              const hasData=list&&list.length>0;
+              const checked=slPrintAllSel.has(sk);
+              const evObj=events.find(e=>e.code===s.evCode);
+              const evName=evObj?.name||s.evCode;
+              const cnt=hasData?list.filter(p=>!p.absent).length:0;
+              return <label key={sk} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:6,cursor:hasData?"pointer":"default",
+                background:checked?"#334155":"transparent",opacity:hasData?1:0.4,border:"1px solid "+(checked?"#6366f1":"transparent")}}>
+                <input type="checkbox" checked={checked} disabled={!hasData} onChange={()=>toggleSel(sk)}
+                  style={{accentColor:"#6366f1",width:15,height:15,cursor:hasData?"pointer":"default"}}/>
+                <span style={{fontSize:12,fontWeight:600,color:hasData?"#e2e8f0":"#666",flex:1}}>{evName} {s.relay}조</span>
+                {hasData?<span style={{fontSize:10,color:"#94a3b8"}}>{cnt}명</span>
+                :<span style={{fontSize:10,color:"#ef4444"}}>데이터 없음</span>}
+              </label>;
+            })}
+          </div>}
+          {unavailSessions.length>0&&availSessions.length>0&&<div style={{marginTop:8,fontSize:10,color:"#666",fontStyle:"italic"}}>
+            * 스타트리스트가 생성되지 않은 종목은 선택할 수 없습니다
+          </div>}
+          <div style={{display:"flex",gap:8,marginTop:16,justifyContent:"flex-end"}}>
+            <button onClick={closeSlPrintAll} style={{padding:"8px 20px",borderRadius:6,border:"1px solid #475569",background:"transparent",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>취소</button>
+            <button onClick={()=>{if(slPrintAllSel.size===0){flash("인쇄할 종목을 선택하세요","error");return;}setSlPrintAllReady(true);}}
+              style={{padding:"8px 24px",borderRadius:6,border:"none",background:"#6366f1",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>인쇄 미리보기 ({slPrintAllSel.size}개)</button>
+          </div>
+        </div>
+      </div>;
+    }
+
+    // ── 2단계: 인쇄 뷰 ──
+    const thSt={border:"1px solid #333",padding:"5px 6px",background:"#e8e8e8",fontWeight:700,fontSize:"11pt",textAlign:"center"};
+    const tdSt={border:"1px solid #333",padding:"4px 6px",fontSize:"13px"};
+    const selected=allSessions.filter(s=>slPrintAllSel.has(s.evCode+"_"+s.relay));
+    return <div className="print-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"#fff",overflow:"auto",color:"#000"}}>
+      <button className="no-print" onClick={closeSlPrintAll} style={{position:"fixed",top:20,right:20,zIndex:10000,padding:"8px 20px",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✕ 닫기</button>
+      <button className="no-print" onClick={()=>setSlPrintAllReady(false)} style={{position:"fixed",top:20,right:180,zIndex:10000,padding:"8px 20px",background:"#475569",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>← 종목 선택</button>
+      <button className="no-print" onClick={()=>window.print()} style={{position:"fixed",top:20,right:100,zIndex:10000,padding:"8px 20px",background:"#d4a843",color:"#000",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>🖨 인쇄</button>
+      {selected.map((sess)=>{
+        const sk=sess.evCode+"_"+sess.relay;
+        const list=startLists[sk];
+        if(!list||!list.length) return null;
+        const evObj=events.find(e=>e.code===sess.evCode);
+        const evName=evObj?.name||sess.evCode;
+        let dayNum=sess.dayNum,time=null;
+        schedData.forEach(d=>{d.rows.forEach(r=>{if(r.type==="prelim"&&r.event_code===sess.evCode){
+          if(is25MEv(sess.evCode)){dayNum=d.day;if(r.time&&!time)time=r.time;}
+          else if(String(r.relay||"1")===String(sess.relay)){dayNum=d.day;if(r.time)time=r.time;}
+        }});});
+        const startDate=selectedT?.start_date;
+        let dateStr="X월 X일";
+        if(dayNum&&startDate){const dt=new Date(startDate);dt.setDate(dt.getDate()+dayNum-1);dateStr=(dt.getMonth()+1)+"월 "+dt.getDate()+"일";}
+        const timeStr=time||(evToCategory(sess.evCode)==="25M"?"00:00 / 00:00":"00:00-00:00");
+        const getTeamNum=buildTeamNumMap(sess.evCode);
+        let seqNum=0;
+        return <div key={sk} className="print-page" style={{maxWidth:800,margin:"0 auto",padding:"12mm 10mm 15mm",background:"#fff",color:"#000"}}>
+          <div className="print-page-header"><span>대한장애인사격연맹</span><span>대회운영관리시스템</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6mm"}}>
+            <div>
+              <div style={{fontSize:"16pt",fontWeight:800,color:"#000",marginBottom:"2mm"}}>{evName} {sess.relay}조</div>
+              <div style={{fontSize:"13pt",color:"#333"}}>{dateStr}　{timeStr}{evToCategory(sess.evCode)==="25M"&&<span style={{fontSize:"9pt",color:"#888",marginLeft:4}}>(완사 / 급사)</span>}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:"11pt",color:"#555"}}>{tName}</div>
+              <div style={{fontSize:"14pt",fontWeight:800,color:"#000",marginTop:"1mm"}}>스타트리스트</div>
+            </div>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",color:"#000"}}>
+            <thead><tr>
+              <th style={{...thSt,width:"36px"}}>순</th>
+              <th style={{...thSt,width:"48px"}}>사대</th>
+              <th style={{...thSt,width:"72px"}}>이름</th>
+              <th style={{...thSt}}>소속</th>
+              <th style={{...thSt,width:"48px"}}>단체</th>
+              <th style={{...thSt,width:"60px"}}>비고</th>
+            </tr></thead>
+            <tbody>
+              {list.filter(p=>!p.absent).map((p,i)=>{
+                seqNum++;
+                const tn=getTeamNum(p);
+                return <tr key={i} style={{background:"#fff"}}>
+                  <td style={{...tdSt,textAlign:"center"}}>{seqNum}</td>
+                  <td style={{...tdSt,textAlign:"center",fontWeight:700}}>{p.lane||"-"}</td>
+                  <td style={{...tdSt,fontWeight:600}}>{p.name}</td>
+                  <td style={{...tdSt}}>{p.subOrg||"-"}</td>
+                  <td style={{...tdSt,textAlign:"center",fontWeight:700,fontSize:"12px"}}>{tn?"단체"+tn:""}</td>
+                  <td style={{...tdSt}}>{p.remark||""}</td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>;
+      })}
+    </div>;
+  };
+
   // ─── 대회 상세 ───
   return (<>
     {renderPrintPreview()}
     {renderSchedPrint()}
     {renderSlPrint()}
+    {renderSlPrintAll()}
     {/* 불참 사유 입력 모달 */}
     {absentModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setAbsentModal(null)}>
       <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:10,padding:24,minWidth:340,maxWidth:400,boxShadow:"0 8px 32px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
@@ -4221,14 +4731,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 </div>
               </div></>}
             </div>
-            <button style={S.btn(C.gold,C.bg)} onClick={()=>{setEditEv("new");setEditEvVal({code:"",name:"",category:"소총",type:"individual",gender:"혼",team_size:1,sort_order:events.length+1,result_format:"rifle",final_format:"final",distance:"10M"});}}>+ 종목 추가</button></>}
+            <button style={S.btn(C.gold,C.bg)} onClick={()=>{setEditEv("new");setEditEvVal({code:"",name:"",category:"소총",type:"individual",gender:"혼",team_size:1,sort_order:events.length+1,result_format:"rifle",final_format:"final",distance:"10M",league_eligible:false});}}>+ 종목 추가</button></>}
           {detailTab==="evp"&&<div style={{fontSize:12,color:C.dim}}>종목별 참가현황 · 조 배정 · 스타트리스트 (DB 실시간 조회)</div>}
           {detailTab==="results"&&<div style={{fontSize:12,color:C.dim}}>종목별 본선 · 결선 · 단체전 경기 결과</div>}
           {detailTab==="absent"&&<div style={{fontSize:12,color:C.dim}}>불참 신청 이력 관리</div>}
           {detailTab==="lanes"&&<><div style={{fontSize:12,color:C.dim}}>세부종목별 사대 배정 · 조 자동 생성 → 시간표 연동</div>
             <div style={{flex:1}}/><button style={S.btn(C.gold,C.bg)} onClick={saveLanes}>💾 저장</button></>}
           {detailTab==="schedule"&&<><div style={{fontSize:12,color:C.dim}}>사대배정 기반 자동 시간표 · 조별 공식훈련(PET) 생성</div>
-            <div style={{flex:1}}/><button style={{...S.btn(schedEditMode?"#f59e0b":"#334155",schedEditMode?"#000":"#e8dcc8"),marginRight:6}} onClick={()=>setSchedEditMode(p=>!p)}>{schedEditMode?"✏️ 편집 ON":"✏️ 편집 OFF"}</button><button style={{...S.btn(C.red,C.bg),marginRight:6}} onClick={()=>{if(!confirm("시간표의 모든 행을 초기화합니다. 계속하시겠습니까?")) return;setSchedData(sd=>sd.map(d=>({...d,rows:[]})));flash("시간표 전체 초기화 완료");}}>🗑 전체 초기화</button><button style={S.btn(C.gold,C.bg)} onClick={saveSched}>💾 저장</button><button style={{...S.btn("#22c55e","#fff"),marginLeft:6}} onClick={publishSched}>📤 게시</button><button style={{...S.btn("#334155","#e8dcc8"),marginLeft:6}} onClick={()=>setSchedPrint(true)}>🖨 인쇄</button></>}
+            <div style={{flex:1}}/><button style={{...S.btn(schedEditMode?"#f59e0b":"#334155",schedEditMode?"#000":"#e8dcc8"),marginRight:6}} onClick={()=>setSchedEditMode(p=>!p)}>{schedEditMode?"✏️ 편집 ON":"✏️ 편집 OFF"}</button><button style={{...S.btn(C.red,C.bg),marginRight:6}} onClick={()=>{if(!confirm("시간표의 모든 행을 초기화합니다. 계속하시겠습니까?")) return;setSchedData(sd=>sd.map(d=>({...d,rows:[]})));flash("시간표 전체 초기화 완료");}}>🗑 전체 초기화</button><button style={S.btn(C.gold,C.bg)} onClick={saveSched}>💾 저장</button><button style={{...S.btn("#22c55e","#fff"),marginLeft:6}} onClick={publishSched}>📤 게시</button><button style={{...S.btn("#334155","#e8dcc8"),marginLeft:6}} onClick={()=>setSchedPrint(true)}>🖨 인쇄</button><button style={{...S.btn("#6366f1","#fff"),marginLeft:6}} onClick={()=>openSlPrintAll()}>📋 전체 스타트리스트</button></>}
         </div>
         <div style={{flex:1,overflow:"auto",padding:24,animation:"fadeIn .2s"}}>
           {/* 참가신청 */}
@@ -4435,6 +4945,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 <div style={{flex:1}}/>
                 {evPData&&apps.length>0&&<button style={{...S.btn("#06b6d4","#fff"),fontSize:11,padding:"5px 12px"}} onClick={()=>setShowFeeModal(true)}>💰 참가비 산정</button>}
                 {evPData&&apps.length>0&&<button style={{...S.btn("#f59e0b","#000"),fontSize:11,padding:"5px 12px"}} onClick={()=>setShowMedalModal(true)}>🏅 메달 산정</button>}
+                {evPData&&apps.length>0&&<button style={{...S.btn("#e67e22","#fff"),fontSize:11,padding:"5px 12px"}} onClick={loadAllFirearms}>🔫 총기 전체</button>}
               </div>
               {apps.length===0?<div style={{textAlign:"center",padding:60,color:C.dimmer}}><div style={{fontSize:40,marginBottom:12}}>📭</div>접수된 신청이 없습니다</div>:(
             <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
@@ -5179,6 +5690,46 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               })()}
             </div>;
           })()}
+          {/* 총기 전체 열람 모달 */}
+          {showAllFirearms&&allFirearmsData&&(()=>{
+            const guns=allFirearmsData;
+            const gunTypeGroups={};guns.forEach(g=>{const t=g.gun_type||"미분류";if(!gunTypeGroups[t])gunTypeGroups[t]=0;gunTypeGroups[t]++;});
+            const regionGroups={};guns.forEach(g=>{const r=g.regionName||"-";if(!regionGroups[r])regionGroups[r]=0;regionGroups[r]++;});
+            return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}} onClick={()=>setShowAllFirearms(false)}>
+              <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:12,width:"90%",maxWidth:900,maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.6)"}} onClick={e=>e.stopPropagation()}>
+                <div style={{padding:"14px 20px",borderBottom:"1px solid #334155",display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{fontSize:16,fontWeight:800,color:"#e67e22"}}>🔫 총기 전체 현황</span>
+                  <span style={{fontSize:12,color:"#94a3b8"}}>{guns.length}정</span>
+                  <div style={{display:"flex",gap:6,marginLeft:12}}>
+                    {Object.entries(gunTypeGroups).map(([t,c])=><span key={t} style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"#334155",color:"#e2e8f0"}}>{t} {c}정</span>)}
+                  </div>
+                  <div style={{flex:1}}/>
+                  <button onClick={()=>setShowAllFirearms(false)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer",fontWeight:700}}>✕</button>
+                </div>
+                <div style={{flex:1,overflow:"auto",padding:"14px 20px"}}>
+                  {guns.length===0?<div style={{textAlign:"center",padding:40,color:C.dimmer}}>등록된 총기가 없습니다</div>
+                  :<table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead><tr>
+                      {["#","지역","소속","선수명","총종","제조사","모델명","총기번호","허가증번호"].map(h=><th key={h} style={{...S.th,fontSize:10,padding:"6px 8px",position:"sticky",top:0,background:"#0f172a",zIndex:1}}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {guns.map((g,i)=><tr key={g.id||i} style={{background:i%2===0?"transparent":"#0d152044"}}>
+                        <td style={{...S.td,fontSize:10,color:C.dim,padding:"4px 6px"}}>{i+1}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px"}}>{g.regionName}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px"}}>{g.subOrg||g.orgName}</td>
+                        <td style={{...S.td,fontSize:10,fontWeight:600,padding:"4px 6px"}}>{g.memberName}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px",color:"#e67e22",fontWeight:600}}>{g.gun_type||"-"}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px"}}>{g.manufacturer||"-"}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px"}}>{g.model||"-"}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px",fontFamily:"monospace"}}>{g.serial_number||"-"}</td>
+                        <td style={{...S.td,fontSize:10,padding:"4px 6px",fontFamily:"monospace"}}>{g.permit_number||"-"}</td>
+                      </tr>)}
+                    </tbody>
+                  </table>}
+                </div>
+              </div>
+            </div>;
+          })()}
           {/* 종목 */}
           {detailTab==="events"&&<div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
             {events.length===0?<div style={{textAlign:"center",padding:"48px 24px",color:C.dimmer}}>
@@ -5195,7 +5746,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 <td style={S.td}><span style={S.badge(ev.gender==="남"?"#3388cc":ev.gender==="여"?"#cc5577":C.gold)}>{ev.gender==="남"?"남성":ev.gender==="여"?"여성":"혼성"}</span></td>
                 <td style={S.td}><span style={S.badge({"10M":"#3b82f6","25M":"#8b5cf6","50M":"#10b981","산탄총":"#f59e0b"}[ev.distance||evToCategory(ev.code)]||C.dim)}>{ev.distance||evToCategory(ev.code)}</span></td>
                 <td style={{...S.td,whiteSpace:"nowrap"}}>
-                  <button style={S.sm(C.blue)} onClick={()=>{setEditEv(ev);setEditEvVal({...ev,result_format:ev.result_format||getEvFmt(ev.code)||"rifle",final_format:ev.final_format||getEvFinalFmt(ev.code)||"final",distance:ev.distance||evToCategory(ev.code)||"10M"});}}>수정</button>
+                  <button style={S.sm(C.blue)} onClick={()=>{setEditEv(ev);const _lgMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");}catch(e){return {};}})();setEditEvVal({...ev,result_format:ev.result_format||getEvFmt(ev.code)||"rifle",final_format:ev.final_format||getEvFinalFmt(ev.code)||"final",distance:ev.distance||evToCategory(ev.code)||"10M",league_eligible:!!_lgMap[selectedT?.id+"_"+ev.code]});}}>수정</button>
                   <button style={S.sm(C.red)} onClick={()=>deleteEvent(ev.id)}>삭제</button>
                 </td>
               </tr>)}
@@ -5472,6 +6023,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     newSL[ss.key]=rows;
                     totalGenerated+=rows.length;
                   } else {
+                    const shuffled=buildStartList(relayParticipants,relayOrgMap);
                     newSL[ss.key]=shuffled.map((p,i)=>({...p,lane:lanes[i]?ss.relay+"-"+lanes[i]:null,absent:false,remark:""}));
                     // 사대보다 인원이 많으면 남은 인원도 추가 (lane=null)
                     if(shuffled.length>lanes.length){
@@ -6327,7 +6879,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                             const stIcon=evSt==="completed"?"✅":evSt==="prelim_done"?"📊":"";
                             return <div key={ev.code} onClick={()=>{
                               setResDayCollapsed(p=>({...p,["cat_"+cat]:false}));
-                              if(resType==="team") loadTeamResults(ev.code); else loadResults(ev.code,resType);
+                              if(resType==="team") loadTeamResults(ev.code); else if(resType==="league") loadLeagueResults(ev.code); else loadResults(ev.code,resType);
                             }} style={{padding:"5px 10px",borderRadius:5,cursor:"pointer",display:"flex",alignItems:"center",gap:6,marginBottom:2,
                               background:isSel?cc+"22":"transparent",border:"1px solid "+(isSel?cc+"66":"transparent")}}>
                               <span style={{width:6,height:6,borderRadius:3,background:cc,flexShrink:0}}/>
@@ -6373,7 +6925,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           for(const dd of schedData){for(const rr of dd.rows){if(rr.event_code===ev.code&&rr.type==="prelim"&&rr.relay){evSt=sessionStatuses[ev.code+"_"+rr.relay]||"scheduled";break;}}if(evSt!=="scheduled")break;}
                           const stIcon=evSt==="completed"?"✅":evSt==="prelim_done"?"📊":"";
                           return <button key={ev.code} onClick={()=>{
-                            if(resType==="team") loadTeamResults(ev.code); else loadResults(ev.code,resType);
+                            if(resType==="team") loadTeamResults(ev.code); else if(resType==="league") loadLeagueResults(ev.code); else loadResults(ev.code,resType);
                           }} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:resEvCode===ev.code?700:400,cursor:"pointer",
                             border:"1px solid "+(resEvCode===ev.code?cc:C.border),
                             background:resEvCode===ev.code?cc+"22":"transparent",color:resEvCode===ev.code?cc:C.dim,
@@ -6391,7 +6943,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     <div style={{fontSize:10,fontWeight:700,color:"#ef4444",padding:"5px 8px"}}>미배정 ({unassigned.length}종목)</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"0 0 0 14px"}}>
                       {unassigned.sort((a,b)=>a.sort_order-b.sort_order).map(ev=>(
-                        <button key={ev.code} onClick={()=>{if(resType==="team") loadTeamResults(ev.code); else loadResults(ev.code,resType);}}
+                        <button key={ev.code} onClick={()=>{if(resType==="team") loadTeamResults(ev.code); else if(resType==="league") loadLeagueResults(ev.code); else loadResults(ev.code,resType);}}
                           style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:resEvCode===ev.code?700:400,cursor:"pointer",
                             border:"1px solid "+(resEvCode===ev.code?C.gold:C.border+"66"),
                             background:resEvCode===ev.code?C.gold+"22":"transparent",color:resEvCode===ev.code?C.gold:C.dimmer}}>{ev.code}</button>
@@ -6445,9 +6997,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     tabs.push(["final","🏆 결선"]);
                   }
                   if(!isMixed) tabs.push(["team","👥 단체전"]);
+                  if(!isMixed){const _lgM=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");}catch(e){return {};}})();if(_lgM[selectedT?.id+"_"+resEvCode]) tabs.push(["league","🏆 리그전"]);}
                   return tabs;
                 })().map(([k,l])=>(
-                  <button key={k} onClick={()=>k==="team"?loadTeamResults():loadResults(resEvCode,k)} style={{
+                  <button key={k} onClick={()=>k==="team"?loadTeamResults():k==="league"?loadLeagueResults():loadResults(resEvCode,k)} style={{
                     padding:"8px 20px",fontSize:13,fontWeight:resType===k?700:400,cursor:"pointer",
                     background:"transparent",border:"none",color:resType===k?C.gold:C.dim,
                     borderBottom:resType===k?"2px solid "+C.gold:"2px solid transparent",marginBottom:-2
@@ -6455,7 +7008,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 ))}
               </div>
               {/* ── 본선/결선 편집 모드 ── */}
-              {resType!=="team"&&<>
+              {resType!=="team"&&resType!=="league"&&<>
               {/* 툴바 */}
               <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
                 <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{events.find(e=>e.code===resEvCode)?.name}</span>
@@ -6690,6 +7243,49 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         <td style={{...S.td,fontSize:11,color:C.dimmer}}>
                           {t.extra?<><span>{t.extra.name}</span><span style={{marginLeft:4}}>{cfg.decimal?parseFloat(t.extra.total).toFixed(1):t.extra.total}</span></>:"—"}
                         </td>
+                        <td style={{...S.td,textAlign:"center",fontWeight:700,color:C.gold,fontSize:13}}>
+                          {cfg.decimal?t.teamTotal.toFixed(1):t.teamTotal}
+                        </td>
+                        {cfg.xcount&&<td style={{...S.td,textAlign:"center"}}>{t.teamXCount}</td>}
+                        <td style={{...S.td,fontSize:10,color:t._remarks?"#d97706":"#666",...(t._remarks?{fontWeight:600}:{})}}>{t._remarks||""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>}
+              </>}
+              {resType==="league"&&<>
+              <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+                <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{events.find(e=>e.code===resEvCode)?.name} — 리그전</span>
+                <span style={{fontSize:12,color:C.dim}}>({leagueData.length}팀)</span>
+                <div style={{flex:1}}/>
+                <button onClick={loadLeagueResults} style={{...S.btn(C.blue,"#fff"),fontSize:11,padding:"5px 12px"}}>🔄 새로고침</button>
+                <button onClick={()=>setResPrintMode(true)} style={{...S.btn("#334155","#e8dcc8"),fontSize:11,padding:"5px 12px"}}>🖨 인쇄</button>
+                {leagueData.length>0&&<button onClick={leagueSaveToDB} style={{...S.btn(C.gold,C.bg),fontSize:12,padding:"6px 16px",fontWeight:700}}>💾 리그전 DB 저장</button>}
+              </div>
+              <div style={{marginBottom:12,padding:"8px 12px",background:"#1a1a2a",borderRadius:6,border:"1px solid #3a3a6a",fontSize:11,color:"#8888cc",lineHeight:1.7}}>
+                ℹ️ 종목별 현황에서 배정된 <b style={{color:"#e8dcc8"}}>리그번호</b> 기준으로 그룹핑합니다. 같은 리그 2인 → 상위 2인 합산 → 동점 시 {cfg.xcount?"X카운트 → ":""}마지막 시리즈 합산으로 순위 결정
+              </div>
+              {leagueData.length===0?<div style={{textAlign:"center",padding:40,color:C.dimmer,fontSize:13}}>본선 데이터가 없거나 같은 리그번호 2인 이상인 팀이 없습니다.</div>
+              :<div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr>
+                    {["순위","소속","인원","1위","2위","팀 총점",cfg.xcount?"X카운트":null,"비고"].filter(Boolean).map(h=>
+                      <th key={h} style={{...S.th,fontSize:10,padding:"6px 8px"}}>{h}</th>
+                    )}
+                  </tr></thead>
+                  <tbody>
+                    {leagueData.map((t,i)=>(
+                      <tr key={t.teamNum||t.region} style={{background:i%2===0?"transparent":"#0d152044"}}>
+                        <td style={{...S.td,textAlign:"center",fontWeight:700,color:t.rank<=3?C.gold:"#e8dcc8"}}>{t.rank}</td>
+                        <td style={{...S.td,fontWeight:600}}>{teamDisplayName(t)}</td>
+                        <td style={{...S.td,textAlign:"center"}}>{t.memberCount}</td>
+                        {t.top2.map((m,mi)=>(
+                          <td key={mi} style={{...S.td,fontSize:11}}>
+                            <span style={{color:"#e8dcc8"}}>{m.name}</span>
+                            <span style={{color:C.dim,marginLeft:4}}>{cfg.decimal?parseFloat(m.total).toFixed(1):m.total}</span>
+                          </td>
+                        ))}
                         <td style={{...S.td,textAlign:"center",fontWeight:700,color:C.gold,fontSize:13}}>
                           {cfg.decimal?t.teamTotal.toFixed(1):t.teamTotal}
                         </td>
@@ -7249,7 +7845,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             };
             const removeLaneFrom=(da,n)=>{
               for(const k of Object.keys(da)){
-                if(da[k]&&da[k].lanes&&da[k].lanes.includes(n)){
+                if(!da[k]||!da[k].lanes||!da[k].lanes.includes(n)) continue;
+                const p=evKeyParse(k);
+                if(evToCategory(p.evCode)===laneRange&&da[k].relay===laneRelay){
                   da[k]={...da[k],lanes:da[k].lanes.filter(x=>x!==n)};
                 }
               }
@@ -7489,25 +8087,27 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const fromOwner=laneOwner(fromN),toOwner=laneOwner(toN);
               if(!fromOwner||fromOwner==="__broken__"){setLaneMoveDrag(null);return;}
               const da={...dayAssign};
-              // from 슬롯에서 제거
+              // from 슬롯에서 제거 (같은 카테고리+릴레이만)
               for(const k of Object.keys(da)){
-                if(da[k]&&da[k].lanes&&da[k].lanes.includes(fromN))
+                const p=evKeyParse(k);
+                if(da[k]&&da[k].lanes&&da[k].lanes.includes(fromN)&&evToCategory(p.evCode)===laneRange&&da[k].relay===laneRelay)
                   da[k]={...da[k],lanes:da[k].lanes.filter(x=>x!==fromN)};
               }
-              // to 슬롯에서 제거 (스왑 시)
+              // to 슬롯에서 제거 (스왑 시, 같은 카테고리+릴레이만)
               let toEvKey=null;
               if(toOwner&&toOwner!=="__broken__"){
                 for(const k of Object.keys(da)){
-                  if(da[k]&&da[k].lanes&&da[k].lanes.includes(toN)){
+                  const p=evKeyParse(k);
+                  if(da[k]&&da[k].lanes&&da[k].lanes.includes(toN)&&evToCategory(p.evCode)===laneRange&&da[k].relay===laneRelay){
                     toEvKey=k;
                     da[k]={...da[k],lanes:da[k].lanes.filter(x=>x!==toN)};
                   }
                 }
               }
-              // from 종목을 to 위치에 배정
+              // from 종목을 to 위치에 배정 (같은 카테고리+릴레이)
               for(const k of Object.keys(da)){
                 const p=evKeyParse(k);
-                if(p.evCode===fromOwner&&da[k].relay===laneRelay){
+                if(p.evCode===fromOwner&&evToCategory(p.evCode)===laneRange&&da[k].relay===laneRelay){
                   da[k]={...da[k],lanes:[...da[k].lanes,toN].sort((a,b)=>a-b)};break;
                 }
               }
@@ -7844,6 +8444,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             :<input style={S.input} type={f.t||"text"} placeholder={f.ph||""} value={editEvVal[f.k]??""} onChange={e=>setEditEvVal({...editEvVal,[f.k]:e.target.value})}/>}
           </div>
         ))}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,marginBottom:6}}>
+          <input type="checkbox" id="ev_league_eligible" checked={!!editEvVal.league_eligible} onChange={e=>setEditEvVal({...editEvVal,league_eligible:e.target.checked})} style={{accentColor:"#f59e0b",cursor:"pointer",width:16,height:16}}/>
+          <label htmlFor="ev_league_eligible" style={{fontSize:12,color:"#e8dcc8",fontWeight:600,cursor:"pointer"}}>🏆 리그전 가능</label>
+          <span style={{fontSize:10,color:C.dim}}>(리그전 대회 시 이 종목 리그전 등록 허용)</span>
+        </div>
         <div style={{display:"flex",gap:8,marginTop:16}}><button style={S.btn(C.gold,C.bg)} onClick={saveEvent}>저장</button><button style={S.btn(C.border,"#8899aa")} onClick={()=>setEditEv(null)}>취소</button></div>
       </div></div>)}
       {/* 신청 상세 모달 */}
@@ -7964,7 +8569,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const names=g.members.map(t=>{const m=appMembers.find(mm=>mm.id===t.member_id);return m?.name||"?";});
                 return <tr key={i} style={{background:i%2===0?"transparent":"#0d152044"}}>
                   <td style={{...dTd,textAlign:"center",fontWeight:700,color:C.gold}}>{g.code}</td>
-                  <td style={{...dTd,textAlign:"center"}}>{g.type==="team"?"단체전":"혼성팀"}</td>
+                  <td style={{...dTd,textAlign:"center"}}>{g.type==="team"?"단체전":g.type==="league"?"🏆 리그전":"혼성팀"}</td>
                   <td style={{...dTd,textAlign:"center"}}>{g.num}</td>
                   <td style={dTd}>{names.join(", ")}</td>
                   <td style={{...dTd,textAlign:"center"}}>{g.isUnion?"O":"-"}</td>
@@ -8172,7 +8777,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       {editAppMode&&detailApp&&(()=>{
         const players=editMembers.filter(m=>m.role==="선수");
         const indEvents=events.filter(e=>e.type==="individual");
-        const eTabs=[{k:"members",l:"👤 선수단 정보"},{k:"events",l:"🎖 종목별 등록"},{k:"firearms",l:"🔫 총기 등록"}];
+        const eTabs=[{k:"members",l:"👤 선수단 정보"},{k:"events",l:"🎖 종목별 등록"}];
+        // 리그전 대회 여부 확인
+        const editIsLeague=(()=>{try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");return !!m[selectedT?.id];}catch(e){return false;}})();
+        if(editIsLeague) eTabs.push({k:"league",l:"🏆 리그전"});
+        eTabs.push({k:"firearms",l:"🔫 총기 등록"});
         const eInput={width:"100%",padding:"8px 12px",background:"#0d1520",border:"1px solid #2a3a5c",borderRadius:6,color:"#e8dcc8",fontSize:13,outline:"none"};
         const eSelect={...eInput,cursor:"pointer"};
         const chipBtn=(active)=>({padding:"5px 14px",borderRadius:6,fontSize:12,fontWeight:600,border:"1px solid "+(active?"#c9a84c":"#2a3a5c"),background:active?"#c9a84c":"#1a2744",color:active?"#1a2744":"#8899aa",cursor:"pointer",transition:"all .15s"});
@@ -8427,6 +9036,86 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     </div>;
                   })}
                 </div>}
+              </div>;
+            })()}
+
+            {/* ── 리그전 탭 ── */}
+            {editAppMode==="league"&&editIsLeague&&(()=>{
+              // 개인전에 등록된 종목 중 리그전 가능 종목만 대상
+              const registeredEvCodes=new Set();
+              Object.values(editIndEntries).forEach(codes=>codes.forEach(c=>registeredEvCodes.add(c)));
+              const _evLgMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");}catch(e){return {};}})();
+              const leagueTargetEvs=indEvents.filter(ev=>registeredEvCodes.has(ev.code)&&!!_evLgMap[selectedT?.id+"_"+ev.code]);
+              const CAT_ORD=["소총","소총(SH2)","권총","산탄총","청각"];
+              const catClr={"소총":"#3b82f6","소총(SH2)":"#f59e0b","권총":"#8b5cf6","산탄총":"#10b981","청각":"#ec4899"};
+              const catGrp={};
+              leagueTargetEvs.forEach(ev=>{const cat=CAT_ORD.includes(ev.category)?ev.category:(ev.category||"기타");if(!catGrp[cat])catGrp[cat]=[];catGrp[cat].push(ev);});
+              const catKeys=[...CAT_ORD.filter(c=>catGrp[c]),...Object.keys(catGrp).filter(c=>!CAT_ORD.includes(c))];
+              const filledCount=Object.entries(editTeamComps).filter(([k,c])=>k.startsWith("league-")&&c.memberIds&&c.memberIds.length===2).length;
+
+              return <div style={{maxWidth:800,margin:"0 auto"}}>
+                <div style={{fontSize:16,fontWeight:700,color:"#f59e0b",marginBottom:4}}>🏆 리그전 등록</div>
+                <p style={{fontSize:12,color:C.dim,marginBottom:14,lineHeight:1.6}}>
+                  개인전에 등록된 종목마다 <b style={{color:"#f59e0b"}}>2인 1팀</b>을 구성합니다. 성별 제한 없음 · 시도별 1팀
+                </p>
+                <div style={{fontSize:11,color:C.dim,marginBottom:12}}>등록 현황: <b style={{color:"#f59e0b"}}>{filledCount}</b> / {leagueTargetEvs.length} 종목</div>
+                {leagueTargetEvs.length===0&&<div style={{textAlign:"center",padding:40,color:C.dim}}>
+                  <div style={{fontSize:32,marginBottom:8}}>🏆</div>개인전에 등록된 종목이 없습니다.<br/>종목별 등록 탭에서 먼저 등록하세요.
+                </div>}
+                {catKeys.map(cat=>{
+                  const evs=catGrp[cat];
+                  const cc=catClr[cat]||C.dim;
+                  return <div key={cat} style={formGroup}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,paddingBottom:8,borderBottom:"1px solid #1e2f4a"}}>
+                      <span style={{width:8,height:8,borderRadius:4,background:cc}}/>
+                      <span style={{fontSize:16,fontWeight:700,color:cc}}>{cat}</span>
+                      <span style={{fontSize:11,color:C.dim}}>{evs.length}종목</span>
+                    </div>
+                    {evs.map(ev=>{
+                      const lgKey="league-"+ev.code;
+                      const comp=editTeamComps[lgKey]||{memberIds:[],isUnion:false,unionMemo:"",teamType:"league"};
+                      const slots=[comp.memberIds[0]||null,comp.memberIds[1]||null];
+                      const registered=Object.entries(editIndEntries).filter(([mid,codes])=>codes.includes(ev.code)).map(([mid])=>parseInt(mid));
+                      const eligible=players.filter(p=>registered.includes(p.id));
+                      const usedIds=slots.filter(Boolean);
+                      const isFilled=usedIds.length===2;
+                      return <div key={ev.code} style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:6,padding:"8px 4px",borderBottom:"1px solid #1e2f4a22",background:isFilled?"#f59e0b08":"transparent"}}>
+                        {/* 종목 정보 */}
+                        <div style={{flex:"1 1 160px",minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+                            <span style={{fontSize:13,fontWeight:700,color:cc}}>{ev.code}</span>
+                            <span style={{fontSize:12,color:"#8899aa"}}>{ev.name.replace(ev.code+" ","")}</span>
+                            {isFilled&&<span style={{fontSize:10,color:"#f59e0b",marginLeft:"auto"}}>✓ 완료</span>}
+                          </div>
+                        </div>
+                        {/* 2인 슬롯 */}
+                        <div style={{flex:"0 0 auto",minWidth:260,maxWidth:340}}>
+                          <div style={{display:"flex",gap:6}}>
+                            {[0,1].map(idx=>{
+                              const mid=slots[idx];
+                              const player=mid?editMembers.find(mm=>mm.id===mid):null;
+                              return <div key={idx} style={{flex:1}}>
+                                {player?<div style={{borderRadius:6,padding:"4px 10px",border:"1px solid #f59e0b",background:"#f59e0b",display:"flex",alignItems:"center",justifyContent:"center",gap:4,fontSize:12,fontWeight:600,lineHeight:"22px"}}>
+                                  <span style={{color:"#000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{player.name}</span>
+                                  <button onClick={()=>{const n=[...slots];n[idx]=null;setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:n.filter(Boolean),teamType:"league"}}));}} style={{background:"none",border:"none",color:"#00000066",fontSize:12,cursor:"pointer",padding:0,flexShrink:0}}>✕</button>
+                                </div>
+                                :<select style={{...eSelect,fontSize:11,padding:"4px 6px"}} value="" onChange={e=>{if(e.target.value){const n=[...slots];n[idx]=parseInt(e.target.value);setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:n.filter(Boolean),teamType:"league"}}));}}}>
+                                  <option value="">선수{idx+1}</option>
+                                  {eligible.filter(p=>!usedIds.includes(p.id)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>}
+                              </div>;
+                            })}
+                          </div>
+                          <label style={{display:"flex",alignItems:"center",gap:5,marginTop:5,cursor:"pointer"}}>
+                            <input type="checkbox" checked={comp.isUnion} onChange={e=>setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,isUnion:e.target.checked,teamType:"league"}}))} style={{accentColor:"#f59e0b",width:14,height:14}}/>
+                            <span style={{fontSize:11,color:"#8899aa"}}>타시도 연합</span>
+                          </label>
+                          {comp.isUnion&&<input placeholder="연합 선수 시도/이름" value={comp.unionMemo||""} onChange={e=>setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,unionMemo:e.target.value,teamType:"league"}}))} style={{...eInput,fontSize:11,padding:"4px 8px",marginTop:4}}/>}
+                        </div>
+                      </div>;
+                    })}
+                  </div>;
+                })}
               </div>;
             })()}
 

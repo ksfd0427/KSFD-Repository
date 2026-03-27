@@ -298,8 +298,14 @@ function TournamentRegistration() {
   const STEP_LEAGUE = isLeague ? 4 : -1;
   const STEP_GUN = isLeague ? 5 : 4;
   const STEP_CONFIRM = isLeague ? 6 : 5;
-  // 개인전이 있는 종목 목록 (리그전 등록에서 사용)
-  const leagueEligibleEvents = activeIndividualEvents;
+  // 개인전 중 리그전 가능 종목만 필터 (localStorage에서 종목별 league_eligible 확인)
+  const leagueEligibleEvents = React.useMemo(() => {
+    if (!isLeague) return [];
+    try {
+      const m = JSON.parse(localStorage.getItem("ksfd_ev_league") || "{}");
+      return activeIndividualEvents.filter(ev => !!m[selectedTournament + "_" + ev.code]);
+    } catch(e) { return []; }
+  }, [isLeague, selectedTournament, activeIndividualEvents]);
 
   // ===== 엑셀 중간저장 내보내기 =====
   const exportToExcel = async () => {
