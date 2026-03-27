@@ -1575,10 +1575,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     }
     // 3. 임원 명단
     if(staffs.length>0){
-      const sData=[["번호","성명","성별","직책","세부소속"]];
-      staffs.forEach((s,i)=>sData.push([i+1,s.name,s.gender,s.role,s.sub_org||"-"]));
+      const sData=[["번호","성명","성별","생년월일","직책","세부소속"]];
+      staffs.forEach((s,i)=>sData.push([i+1,s.name,s.gender,s.dob,s.role,s.sub_org||"-"]));
       const ws3=XLSX.utils.aoa_to_sheet(sData);
-      ws3["!cols"]=[{wch:6},{wch:12},{wch:6},{wch:10},{wch:16}];
+      ws3["!cols"]=[{wch:6},{wch:12},{wch:6},{wch:14},{wch:10},{wch:16}];
       XLSX.utils.book_append_sheet(wb,ws3,"임원명단");
     }
     // 4. 개인전 종목

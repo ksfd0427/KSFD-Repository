@@ -339,7 +339,7 @@ function TournamentRegistration() {
     // 5) 총기
     const fRows = [];
     Object.entries(firearms).forEach(([mid, arr]) => {
-      (arr || []).forEach(f => fRows.push({ 선수ID: mid, 총기종류: f.gun_type || "", 제조사: f.manufacturer || "", 모델: f.model || "", 총기번호: f.serial_number || "", 허가증번호: f.permit_number || "" }));
+      (arr || []).forEach(f => fRows.push({ 선수ID: mid, 총기종류: f.type || f.gun_type || "", 제조사: f.maker || f.manufacturer || "", 모델: f.model || "", 총기번호: f.serial || f.serial_number || "", 허가증번호: f.permit || f.permit_number || "" }));
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fRows.length ? fRows : [{ 선수ID: "", 총기종류: "", 제조사: "", 모델: "", 총기번호: "", 허가증번호: "" }]), "총기");
 
@@ -389,7 +389,7 @@ function TournamentRegistration() {
     }
   };
 
-  // ===== 엑셀 중간저장 불러오기 =====
+  // ===== 엑셀 불러오기 (중간저장 + Admin 내보내기 양식 호환) =====
   const importFromExcel = () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -401,87 +401,222 @@ function TournamentRegistration() {
       reader.onload = (evt) => {
         try {
           const wb = XLSX.read(evt.target.result, { type: "array" });
-          // 1) 기본정보
-          const infoSheet = wb.Sheets["기본정보"];
-          if (infoSheet) {
-            const info = XLSX.utils.sheet_to_json(infoSheet);
-            if (info[0]) {
-              const r = info[0];
-              if (r["대회ID"] !== undefined && r["대회ID"] !== "") setSelectedTournament(Number(r["대회ID"]));
-              if (r["지역인덱스"] !== undefined && r["지역인덱스"] !== "") setSelectedRegion(Number(r["지역인덱스"]));
-              if (r["단체명"] !== undefined) setOrgName(String(r["단체명"]));
-              const savedStep = r["단계"] != null ? Number(r["단계"]) : 0;
-              setTimeout(() => setStep(Math.max(1, Math.min(savedStep, 6))), 200);
+          const isAdminFormat = !!wb.Sheets["신청요약"] && !wb.Sheets["기본정보"];
+
+          if (isAdminFormat) {
+            // ── Admin 내보내기 엑셀 파싱 ──
+            // 1) 신청요약 → 지역, 단체명
+            const sumSheet = wb.Sheets["신청요약"];
+            if (sumSheet) {
+              const raw = XLSX.utils.sheet_to_json(sumSheet, { header: 1 });
+              const valMap = {};
+              raw.forEach(row => { if (row[0] && row[1] !== undefined) valMap[String(row[0]).trim()] = String(row[1]).trim(); });
+              const regionName = valMap["소속 시/도"] || "";
+              const orgN = valMap["신청 단체명"] || "";
+              if (orgN) setOrgName(orgN);
+              if (regionName) {
+                const rKey = Object.keys(REGIONS).find(k => REGIONS[k].name === regionName);
+                if (rKey) setSelectedRegion(rKey);
+              }
             }
-          }
-          // 2) 선수단
-          const memSheet = wb.Sheets["선수단"];
-          if (memSheet) {
-            const mRows = XLSX.utils.sheet_to_json(memSheet);
-            if (mRows.length) {
-              setMembers(mRows.map(r => ({
-                id: Number(r["내부ID"]), name: String(r["이름"] || ""), dob: String(r["생년월일"] || ""),
-                role: String(r["역할"] || ""), subOrg: String(r["세부소속"] || ""), subOrgMode: String(r["소속구분"] || ""),
-                gender: String(r["성별"] || ""), events: r["종목분류"] ? String(r["종목분류"]).split(",").filter(Boolean) : []
-              })));
+            // 2) 선수명단 + 임원명단 → members
+            const newMembers = [];
+            let mid = 1;
+            const nameToId = {}; // name → id (동명이인 대비: name+subOrg)
+            const pSheet = wb.Sheets["선수명단"];
+            if (pSheet) {
+              XLSX.utils.sheet_to_json(pSheet).forEach(r => {
+                const name = String(r["성명"] || "").trim();
+                if (!name) return;
+                const classType = String(r["종별"] || "").trim();
+                const initEvents = classType && classType !== "-" ? [classType] : [];
+                const m = { id: mid, name, dob: String(r["생년월일"] || ""), role: "선수", subOrg: String(r["세부소속"] || ""), subOrgMode: r["세부소속"] ? "org" : "", gender: String(r["성별"] || ""), events: initEvents };
+                newMembers.push(m);
+                nameToId[name] = mid;
+                mid++;
+              });
             }
-          }
-          // 3) 개인종목
-          const evSheet = wb.Sheets["개인종목"];
-          if (evSheet) {
-            const eRows = XLSX.utils.sheet_to_json(evSheet);
+            const sSheet = wb.Sheets["임원명단"];
+            if (sSheet) {
+              XLSX.utils.sheet_to_json(sSheet).forEach(r => {
+                const name = String(r["성명"] || "").trim();
+                if (!name) return;
+                const role = String(r["직책"] || "임원");
+                const m = { id: mid, name, dob: String(r["생년월일"] || ""), role, subOrg: String(r["세부소속"] || ""), subOrgMode: r["세부소속"] ? "org" : "", gender: String(r["성별"] || ""), events: [] };
+                newMembers.push(m);
+                nameToId[name] = mid;
+                mid++;
+              });
+            }
+            if (newMembers.length > 0) setMembers(newMembers);
+            // 3) 개인전종목 → individualEvents + member events 태깅
             const evObj = {};
-            eRows.forEach(r => {
-              if (r["종목코드"] && r["선수IDs"]) {
-                evObj[r["종목코드"]] = String(r["선수IDs"]).split(",").filter(Boolean).map(Number);
-              }
-            });
+            const eSheet = wb.Sheets["개인전종목"];
+            if (eSheet) {
+              XLSX.utils.sheet_to_json(eSheet).forEach(r => {
+                const code = String(r["종목코드"] || "").trim();
+                const pName = String(r["선수명"] || "").trim();
+                if (!code || !pName) return;
+                const mId = nameToId[pName];
+                if (!mId) return;
+                if (!evObj[code]) evObj[code] = [];
+                if (!evObj[code].includes(mId)) evObj[code].push(mId);
+                // events 카테고리 태깅 (종목코드 → 카테고리)
+                const allEvDefs = [...INDIVIDUAL_EVENTS, ...PAIR_EVENTS];
+                const evDef = allEvDefs.find(e => e.code === code);
+                const cat = evDef ? evDef.cat : null;
+                const mem = newMembers.find(m => m.id === mId);
+                if (mem && cat && !mem.events.includes(cat)) mem.events.push(cat);
+              });
+            }
             setIndividualEvents(evObj);
-          }
-          // 4) 팀구성
-          const teamSheet = wb.Sheets["팀구성"];
-          if (teamSheet) {
-            const tRows = XLSX.utils.sheet_to_json(teamSheet);
-            const tObj = {}, uObj = {};
-            tRows.forEach(r => {
-              if (r["팀키"]) {
-                tObj[r["팀키"]] = String(r["슬롯"] || "").split(",").map(s => s === "" || s === "null" ? null : Number(s));
-                uObj[r["팀키"]] = { checked: r["연합"] === "Y", memo: String(r["연합메모"] || "") };
-              }
-            });
+            // 4) 단체전/혼성팀 → teamComps, teamUnion, leagueComps, leagueUnion
+            const tObj = {}, uObj = {}, lcObj = {}, luObj = {};
+            const tSheet = wb.Sheets["단체전_혼성팀"];
+            if (tSheet) {
+              XLSX.utils.sheet_to_json(tSheet).forEach(r => {
+                const code = String(r["종목코드"] || "").trim();
+                const type = String(r["유형"] || "").trim();
+                const teamNum = Number(r["팀번호"] || 1);
+                const pName = String(r["선수명"] || "").trim();
+                const slotOrder = Number(r["순서"] || 1) - 1;
+                const isUnion = r["연합여부"] === "O";
+                const unionMemo = String(r["연합메모"] || "");
+                if (!code || !pName) return;
+                const mId = nameToId[pName];
+                if (!mId) return;
+                const isLeagueType = type === "league";
+                const isMixed = type === "mixed";
+                const isTeam = type === "team";
+                let key;
+                if (isLeagueType) key = "league-" + code;
+                else if (isMixed) key = "pair-" + code + "-" + teamNum;
+                else key = "team-" + code;
+                const target = isLeagueType ? lcObj : tObj;
+                const unionTarget = isLeagueType ? luObj : uObj;
+                if (!target[key]) target[key] = [];
+                while (target[key].length <= slotOrder) target[key].push(null);
+                target[key][slotOrder] = mId;
+                unionTarget[key] = { checked: isUnion, memo: unionMemo };
+                // 팀 종목도 카테고리 태깅
+                const allEvDefs2 = [...INDIVIDUAL_EVENTS, ...PAIR_EVENTS];
+                const evDef2 = allEvDefs2.find(e => e.code === code);
+                const cat2 = evDef2 ? evDef2.cat : null;
+                const mem2 = newMembers.find(m => m.id === mId);
+                if (mem2 && cat2 && !mem2.events.includes(cat2)) mem2.events.push(cat2);
+              });
+            }
             setTeamComps(tObj);
             setTeamUnion(uObj);
-          }
-          // 4-1) 리그전
-          const lgSheet = wb.Sheets["리그전"];
-          if (lgSheet) {
-            const lgR = XLSX.utils.sheet_to_json(lgSheet);
-            const lcObj = {}, luObj = {};
-            lgR.forEach(r => {
-              if (r["팀키"]) {
-                lcObj[r["팀키"]] = String(r["슬롯"] || "").split(",").map(s => s === "" || s === "null" ? null : Number(s));
-                luObj[r["팀키"]] = { checked: r["연합"] === "Y", memo: String(r["연합메모"] || "") };
-              }
-            });
             setLeagueComps(lcObj);
             setLeagueUnion(luObj);
-          }
-          // 5) 총기
-          const fSheet = wb.Sheets["총기"];
-          if (fSheet) {
-            const fRows = XLSX.utils.sheet_to_json(fSheet);
+            // 5) 총기 (Admin: "총기등록", 중간저장: "총기")
             const fObj = {};
-            fRows.forEach(r => {
-              if (r["선수ID"]) {
-                const mid = String(r["선수ID"]);
-                if (!fObj[mid]) fObj[mid] = [];
-                fObj[mid].push({ gun_type: r["총기종류"] || "", manufacturer: r["제조사"] || "", model: r["모델"] || "", serial_number: r["총기번호"] || "", permit_number: r["허가증번호"] || "" });
-              }
-            });
+            const fSheet = wb.Sheets["총기등록"] || wb.Sheets["총기"];
+            if (fSheet) {
+              XLSX.utils.sheet_to_json(fSheet).forEach(r => {
+                const pName = String(r["선수명"] || "").trim();
+                if (!pName) return;
+                const mId = nameToId[pName];
+                if (!mId) return;
+                const k = String(mId);
+                if (!fObj[k]) fObj[k] = [];
+                const fId = (fObj[k] || []).length + 1;
+                fObj[k].push({ id: fId, type: r["총종"] || r["총기종류"] || "", maker: r["제조사"] || "", model: r["모델명"] || r["모델"] || "", serial: r["총기번호"] || "", permit: r["허가증번호"] || "" });
+              });
+            }
             setFirearms(fObj);
+            // members 반영 (events 태깅 포함)
+            setMembers([...newMembers]);
+            setShowEntryChoice(false);
+            setTimeout(() => setStep(2), 200);
+            alert("Admin 엑셀 불러오기 완료!\n선수단 " + newMembers.length + "명 · 개인종목 " + Object.keys(evObj).length + "개 · 총기 " + Object.values(fObj).reduce((s, a) => s + a.length, 0) + "정\n\n선수단 확인 단계(2단계)로 이동합니다.");
+
+          } else {
+            // ── 기존 중간저장 엑셀 파싱 ──
+            // 1) 기본정보
+            const infoSheet = wb.Sheets["기본정보"];
+            if (infoSheet) {
+              const info = XLSX.utils.sheet_to_json(infoSheet);
+              if (info[0]) {
+                const r = info[0];
+                if (r["대회ID"] !== undefined && r["대회ID"] !== "") setSelectedTournament(Number(r["대회ID"]));
+                if (r["지역인덱스"] !== undefined && r["지역인덱스"] !== "") setSelectedRegion(String(r["지역인덱스"]));
+                if (r["단체명"] !== undefined) setOrgName(String(r["단체명"]));
+                const savedStep = r["단계"] != null ? Number(r["단계"]) : 0;
+                setTimeout(() => setStep(Math.max(1, Math.min(savedStep, 6))), 200);
+              }
+            }
+            // 2) 선수단
+            const memSheet = wb.Sheets["선수단"];
+            if (memSheet) {
+              const mRows = XLSX.utils.sheet_to_json(memSheet);
+              if (mRows.length) {
+                setMembers(mRows.map(r => ({
+                  id: Number(r["내부ID"]), name: String(r["이름"] || ""), dob: String(r["생년월일"] || ""),
+                  role: String(r["역할"] || ""), subOrg: String(r["세부소속"] || ""), subOrgMode: String(r["소속구분"] || ""),
+                  gender: String(r["성별"] || ""), events: r["종목분류"] ? String(r["종목분류"]).split(",").filter(Boolean) : []
+                })));
+              }
+            }
+            // 3) 개인종목
+            const evSheet = wb.Sheets["개인종목"];
+            if (evSheet) {
+              const eRows = XLSX.utils.sheet_to_json(evSheet);
+              const evObj = {};
+              eRows.forEach(r => {
+                if (r["종목코드"] && r["선수IDs"]) {
+                  evObj[r["종목코드"]] = String(r["선수IDs"]).split(",").filter(Boolean).map(Number);
+                }
+              });
+              setIndividualEvents(evObj);
+            }
+            // 4) 팀구성
+            const teamSheet = wb.Sheets["팀구성"];
+            if (teamSheet) {
+              const tRows = XLSX.utils.sheet_to_json(teamSheet);
+              const tObj = {}, uObj = {};
+              tRows.forEach(r => {
+                if (r["팀키"]) {
+                  tObj[r["팀키"]] = String(r["슬롯"] || "").split(",").map(s => s === "" || s === "null" ? null : Number(s));
+                  uObj[r["팀키"]] = { checked: r["연합"] === "Y", memo: String(r["연합메모"] || "") };
+                }
+              });
+              setTeamComps(tObj);
+              setTeamUnion(uObj);
+            }
+            // 4-1) 리그전
+            const lgSheet = wb.Sheets["리그전"];
+            if (lgSheet) {
+              const lgR = XLSX.utils.sheet_to_json(lgSheet);
+              const lcObj = {}, luObj = {};
+              lgR.forEach(r => {
+                if (r["팀키"]) {
+                  lcObj[r["팀키"]] = String(r["슬롯"] || "").split(",").map(s => s === "" || s === "null" ? null : Number(s));
+                  luObj[r["팀키"]] = { checked: r["연합"] === "Y", memo: String(r["연합메모"] || "") };
+                }
+              });
+              setLeagueComps(lcObj);
+              setLeagueUnion(luObj);
+            }
+            // 5) 총기
+            const fSheet = wb.Sheets["총기"];
+            if (fSheet) {
+              const fRows = XLSX.utils.sheet_to_json(fSheet);
+              const fObj = {};
+              fRows.forEach(r => {
+                if (r["선수ID"]) {
+                  const mid = String(r["선수ID"]);
+                  if (!fObj[mid]) fObj[mid] = [];
+                  const fId2 = (fObj[mid] || []).length + 1;
+                  fObj[mid].push({ id: fId2, type: r["총기종류"] || "", maker: r["제조사"] || "", model: r["모델"] || "", serial: r["총기번호"] || "", permit: r["허가증번호"] || "" });
+                }
+              });
+              setFirearms(fObj);
+            }
+            setShowEntryChoice(false);
+            alert("불러오기 완료! 저장된 단계로 이동합니다.");
           }
-          setShowEntryChoice(false);
-          alert("불러오기 완료! 저장된 단계로 이동합니다.");
         } catch (err) {
           console.error(err);
           alert("파일을 읽는 중 오류가 발생했습니다: " + err.message);
@@ -3176,7 +3311,7 @@ function TournamentRegistration() {
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                             <span style={{ fontSize: 13, fontWeight: 600, color: "#6b7d94", width: 80, flexShrink: 0 }}>허가증번호 <span style={{color:"#cc4444"}}>*</span></span>
-                            <input type="text" placeholder="허가증번호" value={gun.permit}
+                            <input type="text" placeholder="예) OO경찰서 제 00000000호" value={gun.permit}
                               onChange={e => updateFirearm(p.id, gun.id, "permit", e.target.value)}
                               style={{ ...styles.formInput, flex: 1, fontSize: 13, padding: "6px 10px" }} />
                           </div>
