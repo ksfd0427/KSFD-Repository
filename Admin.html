@@ -268,11 +268,6 @@ function App() {
         if(error&&(error.message.includes("does not exist")||error.code==="42P01")){
           setMigrationSQL(true);
         }
-        // is_league 컬럼 존재 확인
-        const{error:e2}=await sb.from("tournaments").select("is_league").limit(1);
-        if(e2&&(e2.message.includes("is_league")||e2.message.includes("does not exist"))){
-          setMigrationSQL(true);
-        }
       }catch(e){}
     })();
   },[sb]);
