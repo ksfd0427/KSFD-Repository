@@ -252,6 +252,7 @@ function TournamentRegistration() {
             id: t.id, name: t.name,
             date: t.start_date && t.end_date ? `${t.start_date} ~ ${t.end_date}` : "",
             venue: t.venue || "", status: t.status,
+            is_league: !!t.is_league,
             regPeriod: t.reg_period ? t.reg_period.replace(/\d{4}[\.\-\/]/g, "").trim() : ""
           })));
         }
@@ -290,8 +291,12 @@ function TournamentRegistration() {
   // ===== 리그전 여부 판별 + 동적 스텝 =====
   const isLeague = React.useMemo(() => {
     if (!selectedTournament) return false;
+    // 1) DB에서 is_league 확인 (우선)
+    const tObj = (dbTournaments || []).find(t => t.id === selectedTournament);
+    if (tObj && tObj.is_league) return true;
+    // 2) localStorage 폴백 (하위 호환)
     try { const m = JSON.parse(localStorage.getItem("ksfd_league") || "{}"); return !!m[selectedTournament]; } catch(e) { return false; }
-  }, [selectedTournament]);
+  }, [selectedTournament, dbTournaments]);
   const STEP_LABELS = isLeague ? STEP_LABELS_LEAGUE : STEP_LABELS_BASE;
   // 스텝 인덱스 매핑 (리그전 유무에 따라 총기/확인 단계 번호가 다름)
   const STEP_EVENT = 3;
@@ -430,7 +435,8 @@ function TournamentRegistration() {
                 if (!name) return;
                 const classType = String(r["종별"] || "").trim();
                 const initEvents = classType && classType !== "-" ? [classType] : [];
-                const m = { id: mid, name, dob: String(r["생년월일"] || ""), role: "선수", subOrg: String(r["세부소속"] || ""), subOrgMode: r["세부소속"] ? "org" : "", gender: String(r["성별"] || ""), events: initEvents };
+                const rawGender = String(r["성별"] || ""); const nGender = rawGender === "녀" ? "여" : rawGender;
+                const m = { id: mid, name, dob: String(r["생년월일"] || ""), role: "선수", subOrg: String(r["세부소속"] || ""), subOrgMode: r["세부소속"] ? "org" : "", gender: nGender, events: initEvents };
                 newMembers.push(m);
                 nameToId[name] = mid;
                 mid++;
@@ -442,7 +448,8 @@ function TournamentRegistration() {
                 const name = String(r["성명"] || "").trim();
                 if (!name) return;
                 const role = String(r["직책"] || "임원");
-                const m = { id: mid, name, dob: String(r["생년월일"] || ""), role, subOrg: String(r["세부소속"] || ""), subOrgMode: r["세부소속"] ? "org" : "", gender: String(r["성별"] || ""), events: [] };
+                const rawGender2 = String(r["성별"] || ""); const nGender2 = rawGender2 === "녀" ? "여" : rawGender2;
+                const m = { id: mid, name, dob: String(r["생년월일"] || ""), role, subOrg: String(r["세부소속"] || ""), subOrgMode: r["세부소속"] ? "org" : "", gender: nGender2, events: [] };
                 newMembers.push(m);
                 nameToId[name] = mid;
                 mid++;
@@ -555,7 +562,7 @@ function TournamentRegistration() {
                 setMembers(mRows.map(r => ({
                   id: Number(r["내부ID"]), name: String(r["이름"] || ""), dob: String(r["생년월일"] || ""),
                   role: String(r["역할"] || ""), subOrg: String(r["세부소속"] || ""), subOrgMode: String(r["소속구분"] || ""),
-                  gender: String(r["성별"] || ""), events: r["종목분류"] ? String(r["종목분류"]).split(",").filter(Boolean) : []
+                  gender: (String(r["성별"] || "") === "녀" ? "여" : String(r["성별"] || "")), events: r["종목분류"] ? String(r["종목분류"]).split(",").filter(Boolean) : []
                 })));
               }
             }

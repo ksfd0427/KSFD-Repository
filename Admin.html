@@ -182,7 +182,7 @@ DROP TABLE IF EXISTS applications CASCADE;
 DROP TABLE IF EXISTS tournament_events CASCADE;
 DROP TABLE IF EXISTS tournaments CASCADE;`;
 
-const SCHEMA_SQL = `CREATE TABLE tournaments (id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, year INT NOT NULL, venue VARCHAR(200), start_date DATE, end_date DATE, reg_start DATE, reg_end DATE, reg_period VARCHAR(100), status SMALLINT DEFAULT 1, description TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW());
+const SCHEMA_SQL = `CREATE TABLE tournaments (id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, year INT NOT NULL, venue VARCHAR(200), start_date DATE, end_date DATE, reg_start DATE, reg_end DATE, reg_period VARCHAR(100), status SMALLINT DEFAULT 1, description TEXT, is_league BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW());
 CREATE TABLE tournament_events (id SERIAL PRIMARY KEY, tournament_id INT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE, code VARCHAR(10) NOT NULL, name VARCHAR(200) NOT NULL, category VARCHAR(20), type VARCHAR(10) DEFAULT 'individual' CHECK (type IN ('individual','team','mixed')), gender VARCHAR(2) DEFAULT '혼', team_size SMALLINT DEFAULT 1, sort_order INT DEFAULT 0, result_format VARCHAR(20) DEFAULT 'rifle', final_format VARCHAR(20) DEFAULT 'final', UNIQUE (tournament_id, code));
 CREATE TABLE applications (id SERIAL PRIMARY KEY, tournament_id INT NOT NULL REFERENCES tournaments(id), region_code VARCHAR(20) NOT NULL, region_name VARCHAR(30) NOT NULL, org_name VARCHAR(100) NOT NULL, status VARCHAR(10) DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), reject_reason TEXT, submitted_at TIMESTAMPTZ DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by UUID);
 CREATE INDEX idx_app_tournament ON applications(tournament_id); CREATE INDEX idx_app_status ON applications(status);
@@ -268,6 +268,11 @@ function App() {
         if(error&&(error.message.includes("does not exist")||error.code==="42P01")){
           setMigrationSQL(true);
         }
+        // is_league 컬럼 존재 확인
+        const{error:e2}=await sb.from("tournaments").select("is_league").limit(1);
+        if(e2&&(e2.message.includes("is_league")||e2.message.includes("does not exist"))){
+          setMigrationSQL(true);
+        }
       }catch(e){}
     })();
   },[sb]);
@@ -293,7 +298,9 @@ ALTER TABLE competition_results DROP CONSTRAINT IF EXISTS competition_results_re
 ALTER TABLE competition_results ADD CONSTRAINT competition_results_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold'));
 
 ALTER TABLE best_records DROP CONSTRAINT IF EXISTS best_records_result_type_check;
-ALTER TABLE best_records ADD CONSTRAINT best_records_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold'));`}
+ALTER TABLE best_records ADD CONSTRAINT best_records_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold'));
+
+ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_league BOOLEAN DEFAULT FALSE;`}
       </code>
       <button onClick={()=>setMigrationSQL(false)} style={{background:"#dc2626",color:"#fff",border:"none",borderRadius:4,padding:"3px 10px",fontSize:11,cursor:"pointer",marginLeft:8}}>닫기</button>
     </div>}
@@ -765,7 +772,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const entryRows=[];
       for(const mr of memberRows){
         const{data:memData,error:memErr}=await sb.from("members").insert({
-          application_id:appId, name:mr.name, gender:mr.gender==="여"?"녀":mr.gender,
+          application_id:appId, name:mr.name, gender:mr.gender,
           dob:mr.dob, role:"선수", sub_org:region+"일반"
         }).select("id").single();
         if(memErr) throw new Error(memErr.message);
@@ -911,7 +918,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const testMembers=allMembers.filter(m=>String(m.id).startsWith("test-m-"));
       for(const m of testMembers){
         const newAppId=oldToNewApp[m.application_id]||m.application_id;
-        const gender=m.gender==="여"?"녀":m.gender;
+        const gender=m.gender==="녀"?"여":m.gender;
         const{data,error}=await sb.from("members").insert({
           application_id:newAppId, name:m.name, gender:gender,
           dob:"1990-01-01", role:"선수", sub_org:m.sub_org||null
@@ -1100,7 +1107,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         sb.from("individual_entries").select("*").in("application_id",appIds).limit(10000),
         sb.from("team_entries").select("*").in("application_id",appIds).limit(10000),
       ]);
-      const newData={allMembers:mR.data||[],allEntries:ieR.data||[],allTeamEntries:teR.data||[],appMap};
+      // gender 정규화: DB에 "녀"로 저장된 데이터 → "여"로 통일
+      const normalizedMembers=(mR.data||[]).map(m=>m.gender==="녀"?{...m,gender:"여"}:m);
+      const newData={allMembers:normalizedMembers,allEntries:ieR.data||[],allTeamEntries:teR.data||[],appMap};
       setEvPData(newData);
       return newData;
     }catch(e){flash("참가 데이터 로드 실패: "+e.message,"error");}
@@ -1277,12 +1286,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const v={...editTVal}; delete v.created_at; delete v.updated_at;
       Object.keys(v).forEach(k=>{if(v[k]==="")v[k]=null;});
       if(v.year)v.year=Number(v.year); if(v.status)v.status=Number(v.status);
-      // check_national_record, is_league는 localStorage에 저장 (DB 컬럼 없을 수 있음)
+      // check_national_record는 localStorage에 저장, is_league는 DB에 저장
       const cnr=!!v.check_national_record; delete v.check_national_record;
-      const isLg=!!v.is_league; delete v.is_league;
+      v.is_league=!!v.is_league;
       if(v.id){const id=v.id; delete v.id; const{error}=await sb.from("tournaments").update(v).eq("id",id); if(error) throw new Error(error.message);
         try{const m=JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");m[id]=cnr;localStorage.setItem("ksfd_cnr",JSON.stringify(m));}catch(e){}
-        try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");m[id]=isLg;localStorage.setItem("ksfd_league",JSON.stringify(m));}catch(e){}
+        try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");m[id]=v.is_league;localStorage.setItem("ksfd_league",JSON.stringify(m));}catch(e){}
         flash("대회 수정 완료");}
       else{
         delete v.id;
@@ -1290,7 +1299,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         if(error) throw new Error(error.message);
         const tId=newT?.id;
         if(tId){try{const m=JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");m[tId]=cnr;localStorage.setItem("ksfd_cnr",JSON.stringify(m));}catch(e){}}
-        if(tId){try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");m[tId]=isLg;localStorage.setItem("ksfd_league",JSON.stringify(m));}catch(e){}}
+        if(tId){try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");m[tId]=v.is_league;localStorage.setItem("ksfd_league",JSON.stringify(m));}catch(e){}}
         flash("대회 등록 완료"+(tId?" (종목 메뉴에서 프리셋을 불러오세요)":""));
       }
       setEditT(null); loadT();
@@ -1316,7 +1325,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           sb.from("individual_entries").select("*").in("application_id",appIds).limit(10000),
           sb.from("team_entries").select("*").in("application_id",appIds).limit(10000),
         ]);
-        setEvPData({allMembers:mR2.data||[],allEntries:ieR2.data||[],allTeamEntries:teR2.data||[],appMap});
+        const normalizedMembers2=(mR2.data||[]).map(m=>m.gender==="녀"?{...m,gender:"여"}:m);
+        setEvPData({allMembers:normalizedMembers2,allEntries:ieR2.data||[],allTeamEntries:teR2.data||[],appMap});
       }
     }catch(e){flash(e.message,"error");}
     finally{setDbBusy(v=>v-1);}
@@ -1326,7 +1336,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     setDetailApp(app);
     try{
       const[mR,ieR,teR]=await Promise.all([sb.from("members").select("*").eq("application_id",app.id).order("id"), sb.from("individual_entries").select("*").eq("application_id",app.id), sb.from("team_entries").select("*").eq("application_id",app.id)]);
-      setAppMembers(mR.data||[]); setAppEntries(ieR.data||[]); setAppTeamEntries(teR.data||[]);
+      setAppMembers((mR.data||[]).map(m=>m.gender==="녀"?{...m,gender:"여"}:m)); setAppEntries(ieR.data||[]); setAppTeamEntries(teR.data||[]);
       const mids=(mR.data||[]).map(m=>m.id);
       if(mids.length>0){const fR=await sb.from("firearms").select("*").in("member_id",mids); setAppFirearms(fR.data||[]);}
       else setAppFirearms([]);
@@ -1399,7 +1409,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const memberIdMap={}; // tempIdx → newId
       for(let i=0;i<editMembers.length;i++){
         const m=editMembers[i];
-        const dbGender=m.gender==="여"?"녀":m.gender;
+        const dbGender=m.gender==="녀"?"여":m.gender;
         const ins={application_id:appId, name:m.name, gender:dbGender, dob:m.dob, role:m.role, sub_org:m.sub_org||null, class_type:m.role==="선수"?(m._events?.[0]||null):null, phone:m.phone||null};
         const{data,error}=await sb.from("members").insert(ins).select("id").single();
         if(error) throw new Error("멤버 저장 실패: "+error.message);
@@ -3790,7 +3800,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           <div style={{fontSize:11,color:C.dim}}>{t.venue&&<span>{t.venue} · </span>}{t.start_date&&<span>{t.start_date} ~ {t.end_date}</span>}{t.reg_period&&<span> · 접수: {t.reg_period}</span>}</div>
                         </div>
                         <button style={S.btn(C.border,"#8899aa")} onClick={()=>openT(t)}>상세</button>
-                        <button style={S.sm(C.blue)} onClick={()=>{setEditT(t);const cnrMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");}catch(e){return {};}})();const lgMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_league")||"{}");}catch(e){return {};}})();setEditTVal({...t,check_national_record:!!cnrMap[t.id],is_league:!!lgMap[t.id]});}}>수정</button>
+                        <button style={S.sm(C.blue)} onClick={()=>{setEditT(t);const cnrMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");}catch(e){return {};}})();setEditTVal({...t,check_national_record:!!cnrMap[t.id],is_league:!!(t.is_league||(()=>{try{return JSON.parse(localStorage.getItem("ksfd_league")||"{}");}catch(e){return {};}})()[t.id])});}}>수정</button>
                         <button style={S.sm(C.red)} onClick={()=>deleteT(t.id)}>삭제</button>
                       </div>
                     ))}
@@ -5660,7 +5670,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           <div style={{display:"flex",gap:12,paddingLeft:8}}>
                             {t.memberDetails.map((m,mi)=><div key={mi} style={{fontSize:10}}>
                               <span style={{fontWeight:600}}>{m.name}</span>
-                              <span style={{fontSize:9,color:C.dim,marginLeft:4}}>{(m.gender==="남"||m.gender==="녀")?m.gender:""}</span>
+                              <span style={{fontSize:9,color:C.dim,marginLeft:4}}>{(m.gender==="남"||m.gender==="여"||m.gender==="녀")?(m.gender==="녀"?"여":m.gender):""}</span>
                               <span style={{fontSize:8,color:"#888",marginLeft:4}}>{m.subOrg||m.orgName}</span>
                             </div>)}
                           </div>
