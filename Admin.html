@@ -9050,7 +9050,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         const indEvents=events.filter(e=>e.type==="individual");
         const eTabs=[{k:"members",l:"👤 선수단 정보"},{k:"events",l:"🎖 종목별 등록"}];
         // 리그전 대회 여부 확인
-        const editIsLeague=(()=>{try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");return !!m[selectedT?.id];}catch(e){return false;}})();
+        const editIsLeague=(()=>{
+          // 1) DB tournaments.is_league
+          if(selectedT?.is_league) return true;
+          // 2) DB tournament_events에 league_eligible=true 종목 존재
+          if(events.some(e=>e.league_eligible)) return true;
+          // 3) localStorage 폴백 (하위 호환)
+          try{const m=JSON.parse(localStorage.getItem("ksfd_league")||"{}");return !!m[selectedT?.id];}catch(e){return false;}
+        })();
         if(editIsLeague) eTabs.push({k:"league",l:"🏆 리그전"});
         eTabs.push({k:"firearms",l:"🔫 총기 등록"});
         const eInput={width:"100%",padding:"8px 12px",background:"#0d1520",border:"1px solid #2a3a5c",borderRadius:6,color:"#e8dcc8",fontSize:13,outline:"none"};
@@ -9316,7 +9323,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const registeredEvCodes=new Set();
               Object.values(editIndEntries).forEach(codes=>codes.forEach(c=>registeredEvCodes.add(c)));
               const _evLgMap=(()=>{try{return JSON.parse(localStorage.getItem("ksfd_ev_league")||"{}");}catch(e){return {};}})();
-              const leagueTargetEvs=indEvents.filter(ev=>registeredEvCodes.has(ev.code)&&!!_evLgMap[selectedT?.id+"_"+ev.code]);
+              // DB league_eligible 우선, localStorage 폴백
+              const dbLgCodes=new Set(events.filter(e=>e.league_eligible).map(e=>e.code));
+              const leagueTargetEvs=indEvents.filter(ev=>registeredEvCodes.has(ev.code)&&(dbLgCodes.has(ev.code)||!!_evLgMap[selectedT?.id+"_"+ev.code]));
               const CAT_ORD=["소총","소총(SH2)","권총","산탄총","청각"];
               const catClr={"소총":"#3b82f6","소총(SH2)":"#f59e0b","권총":"#8b5cf6","산탄총":"#10b981","청각":"#ec4899"};
               const catGrp={};
