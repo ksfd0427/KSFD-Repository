@@ -535,7 +535,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       syncStartlistSessions(updatedSL,[slKey]);
     }
     setMixedTeamDD(null);
-    flash(newTeamNum?"팀"+newTeamNum+" 배정 완료":"팀 배정 해제");
+    flash(newTeamNum?"단체"+newTeamNum+" 배정 완료":"단체 배정 해제");
   };
   // 경기 결과 관리
   const [resEvCode, setResEvCode]=useState(null);
@@ -4243,13 +4243,15 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     if(dayNum&&startDate){const dt=new Date(startDate);dt.setDate(dt.getDate()+dayNum-1);dateStr=(dt.getMonth()+1)+"월 "+dt.getDate()+"일";}
     const timeStr=time||(evToCategory(pEvCode)==="25M"?"00:00 / 00:00":"00:00-00:00");
     // ── team_entries 기반 단체번호 조회 ──
+    const isMixedEv=evObj&&evObj.type==="mixed";
+    const evMixedOv=mixedTeamOverrides[pEvCode]||{};
     const evOvPrint=orgNumOverrides[pEvCode]||{};
     const printTeamNum={};
     if(evPData&&evPData.allTeamEntries){
       const memberMap2={};(evPData.allMembers||[]).forEach(m=>{memberMap2[m.id]=m;});
       const memberAppMap2={};(evPData.allMembers||[]).forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
       const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
-      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===pEvCode&&t.team_type==="team"&&memberMap2[t.member_id]);
+      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===pEvCode&&(isMixedEv?t.team_type==="mixed":t.team_type==="team")&&memberMap2[t.member_id]);
       const teamByApp={};
       evTE.forEach(te=>{
         const app=memberAppMap2[te.member_id];
@@ -4262,8 +4264,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       tl.forEach((t,i)=>{t.members.forEach(mid=>{printTeamNum[mid]=i+1;});});
     }
     const getPrintTeamNum=(p)=>{
-      if(!p.memberId) return p._orgNum||null;
+      if(!p.memberId) return (isMixedEv?p._mixedTeamNum:p._orgNum)||null;
       const mid=String(p.memberId);
+      // 혼성팀: mixedTeamOverrides 우선 → _mixedTeamNum 폴백
+      if(isMixedEv){
+        if(evMixedOv[mid]!==undefined) return evMixedOv[mid];
+        return p._mixedTeamNum||printTeamNum[p.memberId]||printTeamNum[Number(p.memberId)]||printTeamNum[String(p.memberId)]||p._orgNum||null;
+      }
+      // 개인전/단체전: orgNumOverrides 우선
       if(evOvPrint[mid]!==undefined) return evOvPrint[mid];
       return printTeamNum[p.memberId]||printTeamNum[Number(p.memberId)]||printTeamNum[String(p.memberId)]||p._orgNum||null;
     };
@@ -4366,13 +4374,16 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   };
   const closeSlPrintAll=()=>{setSlPrintAll(false);setSlPrintAllReady(false);setSlPrintAllSel(new Set());};
   const buildTeamNumMap=(evCode)=>{
+    const evObj2=events.find(e=>e.code===evCode);
+    const isMixedEv2=evObj2&&evObj2.type==="mixed";
+    const evMixedOv2=mixedTeamOverrides[evCode]||{};
     const evOvPrint=orgNumOverrides[evCode]||{};
     const printTeamNum={};
     if(evPData&&evPData.allTeamEntries){
       const memberMap2={};(evPData.allMembers||[]).forEach(m=>{memberMap2[m.id]=m;});
       const memberAppMap2={};(evPData.allMembers||[]).forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
       const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
-      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===evCode&&t.team_type==="team"&&memberMap2[t.member_id]);
+      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===evCode&&(isMixedEv2?t.team_type==="mixed":t.team_type==="team")&&memberMap2[t.member_id]);
       const teamByApp={};
       evTE.forEach(te=>{
         const app=memberAppMap2[te.member_id];
@@ -4385,8 +4396,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       tl.forEach((t,i)=>{t.members.forEach(mid=>{printTeamNum[mid]=i+1;});});
     }
     return (p)=>{
-      if(!p.memberId) return p._orgNum||null;
+      if(!p.memberId) return (isMixedEv2?p._mixedTeamNum:p._orgNum)||null;
       const mid=String(p.memberId);
+      if(isMixedEv2){
+        if(evMixedOv2[mid]!==undefined) return evMixedOv2[mid];
+        return p._mixedTeamNum||printTeamNum[p.memberId]||printTeamNum[Number(p.memberId)]||printTeamNum[String(p.memberId)]||p._orgNum||null;
+      }
       if(evOvPrint[mid]!==undefined) return evOvPrint[mid];
       return printTeamNum[p.memberId]||printTeamNum[Number(p.memberId)]||printTeamNum[String(p.memberId)]||p._orgNum||null;
     };
@@ -4468,6 +4483,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         if(dayNum&&startDate){const dt=new Date(startDate);dt.setDate(dt.getDate()+dayNum-1);dateStr=(dt.getMonth()+1)+"월 "+dt.getDate()+"일";}
         const timeStr=time||(evToCategory(sess.evCode)==="25M"?"00:00 / 00:00":"00:00-00:00");
         const getTeamNum=buildTeamNumMap(sess.evCode);
+        const isMxEv=evObj&&evObj.type==="mixed";
         let seqNum=0;
         return <div key={sk} className="print-page" style={{maxWidth:800,margin:"0 auto",padding:"12mm 10mm 15mm",background:"#fff",color:"#000"}}>
           <div className="print-page-header"><span>대한장애인사격연맹</span><span>대회운영관리시스템</span></div>
@@ -4510,169 +4526,40 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     </div>;
   };
 
-  // ─── 전체 스타트리스트 스프레드시트 뷰 ───
-  const SlSpreadSheet=()=>{
+  // ─── 전체 스타트리스트 → 엑셀(.xlsx) 다운로드 (HWP 붙여넣기 완벽 호환) ───
+  const downloadSlSpreadExcel=()=>{
     const tName=selectedT?.name||"";
     const allSessions=getSlPrintSessions();
     const sessionList=allSessions.filter(s=>{const sk=s.evCode+"_"+s.relay;return startLists[sk]&&startLists[sk].length>0;});
-    // 셀 선택 상태
-    const [sel,setSel]=useState(null); // {r1,c1,r2,c2}
-    const [dragging,setDragging]=useState(false);
-    const [selCount,setSelCount]=useState(0);
-    // 플랫 행 데이터 구축 (종목 헤더 = null 행)
-    const cols=["종목","조","#","사대","이름","소속","단체","비고"];
-    const flatRows=React.useMemo(()=>{
-      const rows=[];
-      sessionList.forEach(sess=>{
-        const sk=sess.evCode+"_"+sess.relay;
-        const list=startLists[sk];if(!list)return;
-        const evObj=events.find(e=>e.code===sess.evCode);
-        const evName=evObj?.name||sess.evCode;
-        const getTeamNum=buildTeamNumMap(sess.evCode);
-        let dayNum=sess.dayNum,time=null;
-        schedData.forEach(d=>{d.rows.forEach(r=>{if(r.type==="prelim"&&r.event_code===sess.evCode){
-          if(is25MEv(sess.evCode)){dayNum=d.day;if(r.time&&!time)time=r.time;}
-          else if(String(r.relay||"1")===String(sess.relay)){dayNum=d.day;if(r.time)time=r.time;}
-        }});});
-        const active=list.filter(p=>!p.absent);
-        // 섹션 헤더 행
-        rows.push({type:"header",label:evName+" "+sess.relay+"조　"+(dayNum?dayNum+"일차":"")+"　"+(time||"")+" ("+active.length+"명)"});
-        let seq=0;
-        active.forEach(p=>{
-          seq++;
-          const tn=getTeamNum(p);
-          rows.push({type:"data",cells:[evName,sess.relay,seq,p.lane||"-",p.name,p.subOrg||"-",tn!=null?"단체"+tn:"",p.remark||""]});
-        });
+    if(sessionList.length===0){flash("생성된 스타트리스트가 없습니다","error");return;}
+    const rows=[["종목","조","#","사대","이름","소속","단체","비고"]];
+    sessionList.forEach(sess=>{
+      const sk=sess.evCode+"_"+sess.relay;
+      const list=startLists[sk];if(!list)return;
+      const evObj=events.find(e=>e.code===sess.evCode);
+      const evName=evObj?.name||sess.evCode;
+      const getTeamNum=buildTeamNumMap(sess.evCode);
+      let dayNum=sess.dayNum,time=null;
+      schedData.forEach(d=>{d.rows.forEach(r=>{if(r.type==="prelim"&&r.event_code===sess.evCode){
+        if(is25MEv(sess.evCode)){dayNum=d.day;if(r.time&&!time)time=r.time;}
+        else if(String(r.relay||"1")===String(sess.relay)){dayNum=d.day;if(r.time)time=r.time;}
+      }});});
+      const active=list.filter(p=>!p.absent);
+      rows.push([evName+" "+sess.relay+"조  "+(dayNum?dayNum+"일차":"")+"  "+(time||"")+" ("+active.length+"명)","","","","","","",""]);
+      let seq=0;
+      active.forEach(p=>{
+        seq++;
+        const tn=getTeamNum(p);
+        rows.push([evName,sess.relay,seq,p.lane||"-",p.name,p.subOrg||"-",tn!=null?"단체"+tn:"",p.remark||""]);
       });
-      return rows;
-    },[sessionList.length,JSON.stringify(Object.keys(startLists))]);
-    // 데이터 행만 인덱싱 (헤더 제외)
-    const dataRowIndices=React.useMemo(()=>{
-      const m={};let di=0;
-      flatRows.forEach((r,i)=>{if(r.type==="data"){m[i]=di;di++;}});
-      return m;
-    },[flatRows]);
-    const isInSel=(ri,ci)=>{
-      if(!sel)return false;
-      const r1=Math.min(sel.r1,sel.r2),r2=Math.max(sel.r1,sel.r2);
-      const c1=Math.min(sel.c1,sel.c2),c2=Math.max(sel.c1,sel.c2);
-      return ri>=r1&&ri<=r2&&ci>=c1&&ci<=c2;
-    };
-    const onMouseDown=(ri,ci,e)=>{
-      e.preventDefault();
-      setSel({r1:ri,c1:ci,r2:ri,c2:ci});
-      setDragging(true);setSelCount(1);
-    };
-    const onMouseEnter=(ri,ci)=>{
-      if(!dragging)return;
-      setSel(prev=>{if(!prev)return prev;const ns={...prev,r2:ri,c2:ci};return ns;});
-    };
-    const onMouseUp=()=>{
-      setDragging(false);
-      if(sel){
-        const r1=Math.min(sel.r1,sel.r2),r2=Math.max(sel.r1,sel.r2);
-        const c1=Math.min(sel.c1,sel.c2),c2=Math.max(sel.c1,sel.c2);
-        setSelCount((r2-r1+1)*(c2-c1+1));
-      }
-    };
-    // 선택 영역 복사
-    // HTML 테이블을 클립보드에 복사 — 컴포넌트 내부에서는 공통 유틸 사용
-    const copyHtmlTable=(html,plainText,msg)=>copyHtmlToClip(html,plainText,msg);
-    const copySelection=React.useCallback(()=>{
-      if(!sel)return;
-      const r1=Math.min(sel.r1,sel.r2),r2=Math.max(sel.r1,sel.r2);
-      const c1=Math.min(sel.c1,sel.c2),c2=Math.max(sel.c1,sel.c2);
-      const dataRows=flatRows.filter(r=>r.type==="data");
-      let h='<table style="border-collapse:collapse;">';
-      let plain="";
-      for(let ri=r1;ri<=r2;ri++){
-        if(!dataRows[ri])continue;
-        h+="<tr>";
-        const rowPlain=[];
-        for(let ci=c1;ci<=c2;ci++){
-          const v=dataRows[ri].cells[ci]||"";
-          h+='<td style="border:1px solid #333;padding:3px 6px;">'+v+"</td>";
-          rowPlain.push(v);
-        }
-        h+="</tr>";
-        plain+=rowPlain.join("\t")+"\n";
-      }
-      h+="</table>";
-      copyHtmlTable(h,plain,"선택 영역이 복사되었습니다 ("+(r2-r1+1)+"행 × "+(c2-c1+1)+"열)");
-    },[sel,flatRows]);
-    // 전체 복사
-    const copyAll=()=>{
-      const dataRows=flatRows.filter(r=>r.type==="data");
-      let h='<table style="border-collapse:collapse;"><thead><tr>'+cols.map(c=>'<th style="border:1px solid #333;padding:3px 6px;background:#e0e0e0;font-weight:bold;text-align:center;">'+c+'</th>').join('')+'</tr></thead><tbody>';
-      let plain=cols.join("\t")+"\n";
-      dataRows.forEach(r=>{
-        h+="<tr>"+r.cells.map(v=>'<td style="border:1px solid #333;padding:3px 6px;">'+v+"</td>").join("")+"</tr>";
-        plain+=r.cells.join("\t")+"\n";
-      });
-      h+="</tbody></table>";
-      copyHtmlTable(h,plain,"전체 스타트리스트가 복사되었습니다");
-    };
-    // Ctrl+C 키보드 핸들러
-    React.useEffect(()=>{
-      const handler=(e)=>{if((e.ctrlKey||e.metaKey)&&e.key==="c"&&sel){e.preventDefault();copySelection();}};
-      window.addEventListener("keydown",handler);
-      return ()=>window.removeEventListener("keydown",handler);
-    },[sel,copySelection]);
-    if(sessionList.length===0) return <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setSlSpreadView(false)}>
-      <div style={{background:C.card,padding:30,borderRadius:12,border:"1px solid "+C.border,textAlign:"center",color:C.text}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontSize:16,marginBottom:8}}>데이터 없음</div>
-        <div style={{fontSize:12,color:C.dim}}>생성된 스타트리스트가 없습니다</div>
-        <button onClick={()=>setSlSpreadView(false)} style={{marginTop:16,...S.btn(C.gold,C.bg),fontSize:12}}>닫기</button>
-      </div>
-    </div>;
-    const cBorder="1px solid #2a3a55";
-    const thS={padding:"4px 8px",fontSize:10,fontWeight:700,background:"#1a2744",color:"#c9a84c",border:cBorder,whiteSpace:"nowrap",textAlign:"center"};
-    const secS={padding:"6px 10px",fontSize:12,fontWeight:800,color:"#c9a84c",background:"#0d1520",border:cBorder,textAlign:"left"};
-    let dataIdx=-1;
-    return <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.88)",display:"flex",flexDirection:"column"}} onMouseUp={onMouseUp}>
-      <div style={{display:"flex",alignItems:"center",padding:"10px 20px",background:"#0d1520",borderBottom:"1px solid "+C.border,gap:8,flexShrink:0}}>
-        <span style={{fontSize:14,fontWeight:800,color:C.gold,flex:1}}>📊 전체 스타트리스트 — {tName}</span>
-        {sel&&<span style={{fontSize:10,color:"#94a3b8"}}>선택: {Math.abs(sel.r2-sel.r1)+1}행 × {Math.abs(sel.c2-sel.c1)+1}열</span>}
-        {sel&&<button style={{...S.btn("#0ea5e9","#fff"),fontSize:10,padding:"5px 12px"}} onClick={copySelection}>📋 선택 복사</button>}
-        <button style={{...S.btn("#374151","#e5e7eb"),fontSize:10,padding:"5px 12px"}} onClick={copyAll}>📋 전체 복사</button>
-        <button style={{...S.btn("#374151","#e5e7eb"),fontSize:10,padding:"5px 12px"}} onClick={()=>setSlSpreadView(false)}>✕ 닫기</button>
-      </div>
-      <div style={{flex:1,overflow:"auto",padding:"12px 20px",cursor:"cell",userSelect:"none"}}>
-        <table style={{borderCollapse:"collapse",width:"100%",userSelect:"none"}}>
-          <thead style={{position:"sticky",top:0,zIndex:3}}>
-            <tr>{cols.map(c=><th key={c} style={thS}>{c}</th>)}</tr>
-          </thead>
-          <tbody>
-            {flatRows.map((row,fi)=>{
-              if(row.type==="header"){
-                return <tr key={"h"+fi}><td colSpan={8} style={secS}>{row.label}</td></tr>;
-              }
-              dataIdx++;
-              const ri=dataIdx;
-              return <tr key={"d"+fi}>
-                {row.cells.map((v,ci)=>{
-                  const selected=isInSel(ri,ci);
-                  return <td key={ci}
-                    onMouseDown={e=>onMouseDown(ri,ci,e)}
-                    onMouseEnter={()=>onMouseEnter(ri,ci)}
-                    style={{
-                      padding:"3px 6px",fontSize:11,color:selected?"#fff":"#e8dcc8",
-                      border:cBorder,whiteSpace:"nowrap",
-                      background:selected?"#2563eb55":"transparent",
-                      outline:selected?"1px solid #3b82f6":"none",
-                      cursor:"cell"
-                    }}>{v}</td>;
-                })}
-              </tr>;
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>;
-  };
-  const renderSlSpreadView=()=>{
-    if(!slSpreadView) return null;
-    return <SlSpreadSheet/>;
+    });
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    // 열 너비 설정
+    ws["!cols"]=[{wch:30},{wch:5},{wch:5},{wch:6},{wch:12},{wch:16},{wch:8},{wch:12}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"스타트리스트");
+    XLSX.writeFile(wb,tName+"_스타트리스트.xlsx");
+    flash("엑셀 파일이 다운로드되었습니다");
   };
 
   // ─── 대회 상세 ───
@@ -4681,7 +4568,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     {renderSchedPrint()}
     {renderSlPrint()}
     {renderSlPrintAll()}
-    {renderSlSpreadView()}
+    {/* 스프레드시트 뷰: 새 창으로 열림 (openSlSpreadWindow) */}
     {/* 불참 사유 입력 모달 */}
     {absentModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setAbsentModal(null)}>
       <div style={{background:"#1e293b",border:"1px solid #475569",borderRadius:10,padding:24,minWidth:340,maxWidth:400,boxShadow:"0 8px 32px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
@@ -4805,7 +4692,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           ?{position:"fixed",bottom:mixedTeamDD.rect.vpHeight-mixedTeamDD.rect.bottom,left:mixedTeamDD.rect.left}
           :{position:"fixed",top:mixedTeamDD.rect.top,left:mixedTeamDD.rect.left};
         return <div style={{...posStyle,background:"#1a2332",border:"1px solid #3a506b",borderRadius:8,padding:6,minWidth:200,maxHeight:340,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.7)",animation:"fadeIn .15s ease"}} onClick={e=>e.stopPropagation()}>
-        <div style={{fontSize:10,color:"#6b7d94",fontWeight:700,padding:"4px 8px",borderBottom:"1px solid #2a3a5c",marginBottom:4}}>혼성팀 배정 (최대 2명/팀)</div>
+        <div style={{fontSize:10,color:"#6b7d94",fontWeight:700,padding:"4px 8px",borderBottom:"1px solid #2a3a5c",marginBottom:4}}>단체 배정 (최대 2명/단체)</div>
         {(()=>{
           const evCode=mixedTeamDD.evCode;
           const mixedOv=(mixedTeamOverrides[evCode])||{};
@@ -4855,7 +4742,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 ...(o.isCurrent?{border:"1px solid "+tc+"77"}:{border:"1px solid transparent"})}}>
               <span style={{display:"flex",alignItems:"center",gap:6,fontWeight:o.isCurrent?700:400}}>
                 <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:tc,flexShrink:0}}/>
-                팀{o.num} {o.isCurrent?"✓":""}
+                단체{o.num} {o.isCurrent?"✓":""}
                 {o.teamMates.length>0&&<span style={{fontSize:9,color:"#6b7d94",fontWeight:400}}>({o.teamMates.join(", ")})</span>}
               </span>
               <span style={{fontSize:10,color:o.full&&!o.isCurrent?"#ef4444":"#6b7d94"}}>{o.count}/2{o.full&&!o.isCurrent?" (만석)":""}</span>
@@ -4864,7 +4751,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               style={{padding:"6px 10px",borderRadius:5,cursor:"pointer",display:"flex",alignItems:"center",gap:6,
                 color:newTC,fontSize:12,marginTop:4,borderTop:"1px solid #2a3a5c",paddingTop:8}}>
               <span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:newTC,flexShrink:0}}/>
-              <span>＋ 새 팀 추가 (팀{newNum})</span>
+              <span>＋ 새 단체 추가 (단체{newNum})</span>
             </div>
           </div>;
         })()}
@@ -4942,7 +4829,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
           {detailTab==="lanes"&&<><div style={{fontSize:12,color:C.dim}}>세부종목별 사대 배정 · 조 자동 생성 → 시간표 연동</div>
             <div style={{flex:1}}/><button style={S.btn(C.gold,C.bg)} onClick={saveLanes}>💾 저장</button></>}
           {detailTab==="schedule"&&<><div style={{fontSize:12,color:C.dim}}>사대배정 기반 자동 시간표 · 조별 공식훈련(PET) 생성</div>
-            <div style={{flex:1}}/><button style={{...S.btn(schedEditMode?"#f59e0b":"#334155",schedEditMode?"#000":"#e8dcc8"),marginRight:6}} onClick={()=>setSchedEditMode(p=>!p)}>{schedEditMode?"✏️ 편집 ON":"✏️ 편집 OFF"}</button><button style={{...S.btn(C.red,C.bg),marginRight:6}} onClick={()=>{if(!confirm("시간표의 모든 행을 초기화합니다. 계속하시겠습니까?")) return;setSchedData(sd=>sd.map(d=>({...d,rows:[]})));flash("시간표 전체 초기화 완료");}}>🗑 전체 초기화</button><button style={S.btn(C.gold,C.bg)} onClick={saveSched}>💾 저장</button><button style={{...S.btn("#22c55e","#fff"),marginLeft:6}} onClick={publishSched}>📤 게시</button><button style={{...S.btn("#334155","#e8dcc8"),marginLeft:6}} onClick={()=>setSchedPrint(true)}>🖨 인쇄</button><button style={{...S.btn("#6366f1","#fff"),marginLeft:6}} onClick={()=>openSlPrintAll()}>📋 전체 스타트리스트</button><button style={{...S.btn("#0ea5e9","#fff"),marginLeft:6}} onClick={()=>setSlSpreadView(true)}>📊 스타트리스트 열람</button></>}
+            <div style={{flex:1}}/><button style={{...S.btn(schedEditMode?"#f59e0b":"#334155",schedEditMode?"#000":"#e8dcc8"),marginRight:6}} onClick={()=>setSchedEditMode(p=>!p)}>{schedEditMode?"✏️ 편집 ON":"✏️ 편집 OFF"}</button><button style={{...S.btn(C.red,C.bg),marginRight:6}} onClick={()=>{if(!confirm("시간표의 모든 행을 초기화합니다. 계속하시겠습니까?")) return;setSchedData(sd=>sd.map(d=>({...d,rows:[]})));flash("시간표 전체 초기화 완료");}}>🗑 전체 초기화</button><button style={S.btn(C.gold,C.bg)} onClick={saveSched}>💾 저장</button><button style={{...S.btn("#22c55e","#fff"),marginLeft:6}} onClick={publishSched}>📤 게시</button><button style={{...S.btn("#334155","#e8dcc8"),marginLeft:6}} onClick={()=>setSchedPrint(true)}>🖨 인쇄</button><button style={{...S.btn("#6366f1","#fff"),marginLeft:6}} onClick={()=>openSlPrintAll()}>📋 전체 스타트리스트</button><button style={{...S.btn("#0ea5e9","#fff"),marginLeft:6}} onClick={downloadSlSpreadExcel}>📊 스타트리스트 엑셀</button></>}
         </div>
         <div style={{flex:1,overflow:"auto",padding:24,animation:"fadeIn .2s"}}>
           {/* 참가신청 */}
@@ -6235,7 +6122,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               const tc=getTeamColor(curNum);
               return <span onClick={openDd}
                 style={{...S.badge(tc),fontWeight:700,cursor:"pointer",userSelect:"none",position:"relative",color:"#fff",textShadow:"0 1px 2px rgba(0,0,0,.5)",...(extraStyle||{})}}>
-                팀{curNum} ▾
+                단체{curNum} ▾
               </span>;
             };
             // 드롭다운 렌더 (개인전 단체번호용)
@@ -6288,10 +6175,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // ── 세션 단위 스타트리스트 생성 (전체 릴레이 한번에) ──
             const generateSessionStartLists=()=>{
               if(!selEvCode||sibSessions.length===0) return;
+              // 해당 종목의 이전 고아 세션 키 정리 (조 수 변경 시 남은 잔여 데이터 제거)
+              const validKeys=new Set(sibSessions.map(ss=>ss.key));
+              const orphanKeys=Object.keys(startLists).filter(k=>k.startsWith(selEvCode+"_")&&!validKeys.has(k));
               // ── 산탄총: 전 참가자가 모든 일차(릴레이)에 동일하게 참가 ──
               if(isShotgunEv(selEvCode)){
                 const shuffled=buildStartList(sorted,orgNumMap);
                 const newSL={...startLists};
+                orphanKeys.forEach(k=>{delete newSL[k];});
                 sibSessions.forEach(ss=>{
                   const lanes=getSessionLanes(ss.key);
                   newSL[ss.key]=shuffled.map((p,i)=>({...p,lane:lanes[i]?ss.relay+"-"+lanes[i]:null,absent:false,remark:""}));
@@ -6310,6 +6201,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
               if(hasRelayMap){
                 // ── 조 배정 기반 분배 ──
                 const newSL={...startLists};
+                orphanKeys.forEach(k=>{delete newSL[k];});
                 let totalGenerated=0;
                 sibSessions.forEach(ss=>{
                   const lanes=getSessionLanes(ss.key);
@@ -6375,6 +6267,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const shuffledTeams=buildStartList(teamProxies,orgNumMap);
                 let offset=0;
                 const newSL={...startLists};
+                orphanKeys.forEach(k=>{delete newSL[k];});
                 sibSessions.forEach(ss=>{
                   const lanes=getSessionLanes(ss.key);
                   const teamSlots=Math.floor(lanes.length/2);
@@ -6418,6 +6311,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 const shuffled=buildStartList(sorted,orgNumMap);
                 let offset=0;
                 const newSL={...startLists};
+                orphanKeys.forEach(k=>{delete newSL[k];});
                 sibSessions.forEach(ss=>{
                   const lanes=getSessionLanes(ss.key);
                   const count=lanes.length;
@@ -6526,45 +6420,28 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
             // 자동 조 배분 (사대 수 비율 기반)
             const autoDistributeRelays=()=>{
               if(totalRelays<2){flash("조가 2개 이상이어야 자동 배분 가능합니다","error");return;}
-              const pList=selIsMixed?sorted:sorted;
-              const ids=pList.map(p=>String(p.memberId));
-              // 각 조의 사대 수 가져오기
-              const relayLaneCounts=sibSessions.map(ss=>({relay:ss.relay,lanes:getSessionLanes(ss.key).length}));
-              const totalLanes=relayLaneCounts.reduce((s,r)=>s+r.lanes,0);
-              // 비율에 따라 인원 배분 수 계산
-              const quotas=relayLaneCounts.map((r,ri)=>{
-                if(ri===relayLaneCounts.length-1) return ids.length-relayLaneCounts.slice(0,ri).reduce((s,x)=>s+Math.round(ids.length*x.lanes/totalLanes),0);
-                return Math.round(ids.length*r.lanes/totalLanes);
-              });
-              // 참가자를 무작위로 섞기
-              const shuffled=[...ids];
-              for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
-              // 배분
+              const ids=sorted.map(p=>String(p.memberId));
+              const relays=sibSessions.map(ss=>ss.relay);
+              // 순차 라운드로빈: 1조, 2조, 3조, 1조, 2조, 3조, ...
               const newRA={...relayAssign};
-              if(!newRA[selEvCode]) newRA[selEvCode]={};
               const evMap={};
-              let offset=0;
-              relayLaneCounts.forEach((r,ri)=>{
-                const q=quotas[ri];
-                for(let j=0;j<q&&offset<shuffled.length;j++){
-                  evMap[shuffled[offset]]=r.relay;
-                  offset++;
-                }
-              });
+              ids.forEach((id,i)=>{evMap[id]=relays[i%relays.length];});
               newRA[selEvCode]=evMap;
               setRelayAssign(newRA);
-              const info=relayLaneCounts.map((r,ri)=>r.relay+"조:"+quotas[ri]+"명("+r.lanes+"사대)").join(" · ");
-              flash("자동 조 배분 완료 — "+info);
+              const counts={};relays.forEach(r=>{counts[r]=0;});ids.forEach((id,i)=>{counts[relays[i%relays.length]]++;});
+              const info=relays.map(r=>r+"조:"+counts[r]+"명").join(" · ");
+              flash("순차 조 배분 완료 — "+info);
             };
             // 조 미배정 경고 확인
             const hasUnassignedRelay=()=>{
               if(totalRelays<2) return false;
+              if(isShotgunEv(selEvCode)) return false;
               const pList=sorted;
               return pList.some(p=>!getParticipantRelay(p));
             };
             const renderListTable=(list)=>(<div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
-                {["#",selIsMixed?"팀":"","이름","소속",selIsMixed?"":"단체번호"].filter(Boolean).concat(totalRelays>1?["조 배정"]:[]).map(h=><th key={h} style={S.th}>{h}</th>)}
+                {["#",selIsMixed?"단체":"","이름","소속",selIsMixed?"":"단체번호"].filter(Boolean).concat(totalRelays>1&&!isShotgunEv(selEvCode)?["조 배정"]:[]).map(h=><th key={h} style={S.th}>{h}</th>)}
               </tr></thead><tbody>
                 {list.map((p,i)=>{
                   const isNewTeam=selIsMixed&&(i===0||(p._mixedTeamNum!==list[i-1]?._mixedTeamNum));
@@ -6575,7 +6452,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                     <td style={{...S.td,fontWeight:600}}>{p.name}</td>
                     <td style={S.td}>{p.subOrg||"-"}</td>
                     {!selIsMixed&&<td style={S.td}>{renderTeamBadge(p,getEffectiveOrgNum(p))}</td>}
-                    {totalRelays>1&&<td style={{...S.td,padding:"2px 4px"}}>
+                    {totalRelays>1&&!isShotgunEv(selEvCode)&&<td style={{...S.td,padding:"2px 4px"}}>
                       <select value={pRelay||""} onChange={e=>{const v=e.target.value?Number(e.target.value):null;setParticipantRelay(p.memberId,v);}}
                         style={{padding:"3px 6px",fontSize:11,borderRadius:4,border:"1px solid "+C.border,background:pRelay?getTeamColor(pRelay)+"33":C.card,color:pRelay?"#fff":"#888",cursor:"pointer",fontWeight:pRelay?600:400,minWidth:56}}>
                         <option value="">미배정</option>
@@ -6600,7 +6477,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 </div>}
                 <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
-                  {["#","사대","이름","소속",selIsMixed?"팀":"단체번호","비고",""].map((h,hi)=><th key={h+hi} style={{...S.th,...(hi<=1&&slEditMode?{background:"#0a1220",borderRight:hi===1?"2px solid #334466":"none"}:{})}}>{h}</th>)}
+                  {["#","사대","이름","소속","단체번호","비고",""].map((h,hi)=><th key={h+hi} style={{...S.th,...(hi<=1&&slEditMode?{background:"#0a1220",borderRight:hi===1?"2px solid #334466":"none"}:{})}}>{h}</th>)}
                 </tr></thead><tbody>
                   {list.map((p,i)=>{
                     const isAbsent=p.absent;
@@ -7069,7 +6946,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                       {evpView==="list"&&<div>
                         <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
                           <span style={{fontSize:12,color:C.dim}}>시도 기준 정렬 · {participantCount} (종목 전체)</span>
-                          {totalRelays>1&&<>
+                          {totalRelays>1&&!isShotgunEv(selEvCode)&&<>
                             <button style={{...S.btn("#8b5cf6",C.bg),fontSize:11,padding:"5px 12px"}} onClick={autoDistributeRelays}>🔀 자동 조 배분</button>
                             <span style={{fontSize:10,color:C.dim}}>
                               {(()=>{
@@ -7082,12 +6959,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                           </>}
                         </div>
                         {/* 조 미배정 경고 */}
-                        {totalRelays>1&&hasUnassignedRelay()&&<div style={{padding:"8px 14px",marginBottom:10,borderRadius:8,background:"#fbbf2418",border:"1px solid #fbbf2444",fontSize:12,color:"#fbbf24"}}>
+                        {totalRelays>1&&!isShotgunEv(selEvCode)&&hasUnassignedRelay()&&<div style={{padding:"8px 14px",marginBottom:10,borderRadius:8,background:"#fbbf2418",border:"1px solid #fbbf2444",fontSize:12,color:"#fbbf24"}}>
                           ⚠️ 조가 배정되지 않은 참가자가 있습니다. 스타트리스트 작성 전에 모든 참가자에게 조를 배정해주세요.
                         </div>}
                         {renderListTable(sorted)}
                         {/* 저장 드롭다운 */}
-                        {totalRelays>1&&<div style={{marginTop:12,display:"flex",gap:8,alignItems:"center",position:"relative"}}>
+                        {totalRelays>1&&!isShotgunEv(selEvCode)&&<div style={{marginTop:12,display:"flex",gap:8,alignItems:"center",position:"relative"}}>
                           <button style={{...S.btn(C.gold,C.bg),fontSize:12,padding:"8px 16px"}} onClick={async()=>{
                             await dbSave("relay_assignments",relayAssign);
                             flash("조 배정 저장 완료");
