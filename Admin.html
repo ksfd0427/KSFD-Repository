@@ -466,6 +466,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const [feeExpanded, setFeeExpanded]=useState(null); // 참가비 세부내역 열린 appId
   const [showMedalModal, setShowMedalModal]=useState(false); // 메달 산정 모달
   const [showRegionCross, setShowRegionCross]=useState(false); // 시도별 종목참가 현황 교차표
+  const [crossEvPopup, setCrossEvPopup]=useState(null); // {evCode, evName, members:[], paletteMembers:[]} 시도별 현황 계 클릭 팝업
   const [showAllFirearms, setShowAllFirearms]=useState(false); // 총기 전체 열람 모달
   const [allFirearmsData, setAllFirearmsData]=useState(null); // [{...firearm, memberName, subOrg, regionName, orgName}]
   const [medalDetail, setMedalDetail]=useState(null); // {evCode, subType} - 메달 세부 참가자 2차 모달
@@ -982,10 +983,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     }catch(e){flash("DB 저장 실패: "+e.message,"error");}
   };
   const loadAllLocal=async(tid)=>{
-    // DB에서 불러오기 시도, 없으면 localStorage 폴백
-    const s=await dbLoad("sched",tid);if(s)setSchedData(s);
-    const l=await dbLoad("lanes",tid);if(l){if(l.laneAssign)setLaneAssign(l.laneAssign);if(l.laneBroken)setLaneBroken(p=>({...p,...l.laneBroken}));if(l.laneConfig)setLaneConfig(p=>({...p,...l.laneConfig}));}
-    const sl=await dbLoad("startlists",tid);if(sl){setStartLists(sl);setSlSavedKeys(new Set(Object.keys(sl).filter(k=>sl[k]&&sl[k].length>0)));}
+    // DB에서 불러오기 시도, 없으면 빈 초기값으로 초기화 (대회간 데이터 격리)
+    const s=await dbLoad("sched",tid);if(s)setSchedData(s); else { const days=[];for(let d=1;d<=5;d++) days.push({day:d,rows:[]});setSchedData(days); }
+    const l=await dbLoad("lanes",tid);if(l){if(l.laneAssign)setLaneAssign(l.laneAssign); else setLaneAssign({});if(l.laneBroken)setLaneBroken(p=>({...p,...l.laneBroken})); else setLaneBroken({"10M":[],"25M":[],"50M":[],"산탄총":[]});if(l.laneConfig)setLaneConfig(p=>({...p,...l.laneConfig})); else setLaneConfig({"10M":48,"25M":25,"50M":20,"산탄총":5});} else { setLaneAssign({});setLaneBroken({"10M":[],"25M":[],"50M":[],"산탄총":[]});setLaneConfig({"10M":48,"25M":25,"50M":20,"산탄총":5}); }
+    const sl=await dbLoad("startlists",tid);if(sl){setStartLists(sl);setSlSavedKeys(new Set(Object.keys(sl).filter(k=>sl[k]&&sl[k].length>0)));} else { setStartLists({});setSlSavedKeys(new Set()); }
     const ep=await dbLoad("evpdata",tid); // 더 이상 사용하지 않음 - 항상 DB 실시간 쿼리
     const ss=await dbLoad("session_status",tid);if(ss)setSessionStatuses(ss); else setSessionStatuses({});
     const ah=await dbLoad("absent_history",tid);if(ah)setAbsentHistory(ah); else setAbsentHistory([]);
@@ -5045,9 +5046,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                 // 전체 신청 대상 (승인 여부 무관)
                 const targetApps=apps;
                 const targetIds=new Set(targetApps.map(a=>a.id));
-                const targetAppMap={};targetApps.forEach(a=>{targetAppMap[a.id]=a;});
-                // 멤버 → 신청 매핑
-                const memberAppId={};epM.forEach(m=>{if(targetIds.has(m.application_id))memberAppId[m.id]=m.application_id;});
+                // targetAppMap 제거됨 — 교차표가 이제 epAM을 직접 사용
                 // 해당 대회 종목 정렬: R→P→PT→기타(청각 등), 접두사 내에서 숫자순
                 const evSortKey=(code)=>{
                   const m=code.match(/^(R|P|PT)(\d+)$/i);
@@ -5055,30 +5054,37 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   return[5,0];
                 };
                 const tEvents=[...events].sort((a,b)=>{const ka=evSortKey(a.code),kb=evSortKey(b.code);return ka[0]-kb[0]||ka[1]-kb[1]||(a.sort_order||0)-(b.sort_order||0);});
-                // 교차 집계: {evCode: {regionName: count}}
+                // ── 교차 집계: 팔레트와 100% 동일한 로직 (epAM + entry.application_id 직접 사용) ──
                 const cross={};
                 tEvents.forEach(ev=>{cross[ev.code]={};ALL_R.forEach(r=>{cross[ev.code][r]=0;});});
-                // 개인종목 집계
+                const crossMembers={};
+                tEvents.forEach(ev=>{crossMembers[ev.code]=[];});
+                // 개인종목: epE → epAM[e.application_id] (팔레트와 동일)
                 epE.forEach(e=>{
-                  const appId=memberAppId[e.member_id];
-                  if(!appId)return;
-                  const app=targetAppMap[appId];
+                  if(!cross[e.event_code])return;
+                  const app=epAM[e.application_id];
                   if(!app)return;
                   const rn=app.region_name;
-                  if(cross[e.event_code]&&cross[e.event_code][rn]!==undefined)cross[e.event_code][rn]++;
+                  if(cross[e.event_code][rn]!==undefined)cross[e.event_code][rn]++;
+                  const m=epMemberMap[e.member_id];
+                  crossMembers[e.event_code].push({member_id:e.member_id,name:m?.name||"(삭제됨)",regionName:rn||"-",orgName:app.org_name||"-",subOrg:m?.sub_org||"",appId:e.application_id});
                 });
-                // 팀종목 집계 (팀당 1카운트: slot_order===0인 엔트리만)
+                // 팀종목: epTE slot_order===0 → epAM[t.application_id] (팔레트와 동일)
                 epTE.forEach(t=>{
                   if(t.slot_order!==0)return;
-                  const appId=memberAppId[t.member_id];
-                  if(!appId)return;
-                  const app=targetAppMap[appId];
+                  if(!cross[t.event_code])return;
+                  const app=epAM[t.application_id];
                   if(!app)return;
                   const rn=app.region_name;
-                  if(cross[t.event_code]&&cross[t.event_code][rn]!==undefined)cross[t.event_code][rn]++;
+                  if(cross[t.event_code][rn]!==undefined)cross[t.event_code][rn]++;
+                  const m=epMemberMap[t.member_id];
+                  crossMembers[t.event_code].push({member_id:t.member_id,name:m?.name||"(삭제됨)",regionName:rn||"-",orgName:app.org_name||"-",subOrg:m?.sub_org||"",teamNum:t.team_number||1,appId:t.application_id});
                 });
-                // 행합계, 열합계
-                const rowSum={};tEvents.forEach(ev=>{rowSum[ev.code]=ALL_R.reduce((s,r)=>s+(cross[ev.code]?.[r]||0),0);});
+                const onClickRowSum=(evCode,evName)=>{
+                  setCrossEvPopup({evCode,evName,members:crossMembers[evCode]||[]});
+                };
+                // 행합계 = 팔레트 evRawMap 직접 참조 (100% 일치 보장)
+                const rowSum={};tEvents.forEach(ev=>{rowSum[ev.code]=evRawMap[ev.code]||0;});
                 const colSum={};ALL_R.forEach(r=>{colSum[r]=tEvents.reduce((s,ev)=>s+(cross[ev.code]?.[r]||0),0);});
                 const grandTotal=ALL_R.reduce((s,r)=>s+colSum[r],0);
                 // 복사 기능 (HTML 테이블로 복사 → HWP/Word에 표째로 붙여넣기 가능)
@@ -5144,7 +5150,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         {tEvents.map((ev,i)=><tr key={ev.code} style={{background:i%2===0?"transparent":"#0d152044"}}>
                           <td style={{...tdSt,textAlign:"left",fontWeight:"bold",color:"#e8dcc8"}}>{ev.name}</td>
                           {ALL_R.map(r=><td key={r} style={{...tdSt,color:(cross[ev.code]?.[r]||0)>0?"#e8dcc8":"#334455"}}>{(cross[ev.code]?.[r]||0)>0?cross[ev.code][r]:""}</td>)}
-                          <td style={{...tdSt,fontWeight:"bold",color:"#c9a84c"}}>{rowSum[ev.code]||""}</td>
+                          <td style={{...tdSt,fontWeight:"bold",color:"#c9a84c",cursor:rowSum[ev.code]?"pointer":"default",textDecoration:rowSum[ev.code]?"underline":"none"}} onClick={()=>rowSum[ev.code]&&onClickRowSum(ev.code,ev.name)} title={rowSum[ev.code]?"클릭하여 인원 조회":""}>{rowSum[ev.code]||""}</td>
                         </tr>)}
                         <tr style={{background:"#1a274488"}}>
                           <td style={{...tdSt,fontWeight:"bold",color:"#c9a84c"}}>합 계</td>
@@ -5153,6 +5159,51 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         </tr>
                       </tbody>
                     </table>
+                  </div>
+                </div>;
+              })()}
+              {/* ── 시도별 현황 계 클릭 팝업 ── */}
+              {crossEvPopup&&(()=>{
+                const {evCode,evName,members}=crossEvPopup;
+                const palCount=evRawMap[evCode]||0;
+                const crossCount=members.length;
+                const diff=crossCount-palCount;
+                const isMatch=diff===0;
+                return <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.6)"}} onClick={()=>setCrossEvPopup(null)}>
+                  <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,width:720,maxHeight:"80vh",overflow:"auto",padding:0}} onClick={e=>e.stopPropagation()}>
+                    <div style={{padding:"14px 18px",borderBottom:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:14,fontWeight:"bold",color:C.gold}}>{evName} ({evCode}) — 인원 목록</span>
+                      <button style={{background:"none",border:"none",color:C.dim,fontSize:18,cursor:"pointer"}} onClick={()=>setCrossEvPopup(null)}>✕</button>
+                    </div>
+                    <div style={{padding:"12px 18px"}}>
+                      <div style={{display:"flex",gap:16,marginBottom:12}}>
+                        <div style={{padding:"8px 14px",borderRadius:8,background:"#1a274466",flex:1,textAlign:"center"}}>
+                          <div style={{fontSize:10,color:C.dim}}>팔레트 (기준)</div>
+                          <div style={{fontSize:20,fontWeight:"bold",color:"#8b5cf6"}}>{palCount}</div>
+                        </div>
+                        <div style={{padding:"8px 14px",borderRadius:8,background:"#1a274466",flex:1,textAlign:"center"}}>
+                          <div style={{fontSize:10,color:C.dim}}>시도별 현황표</div>
+                          <div style={{fontSize:20,fontWeight:"bold",color:C.gold}}>{crossCount}</div>
+                        </div>
+                        <div style={{padding:"8px 14px",borderRadius:8,background:isMatch?"#22c55e22":"#ef444422",flex:1,textAlign:"center"}}>
+                          <div style={{fontSize:10,color:C.dim}}>차이</div>
+                          <div style={{fontSize:20,fontWeight:"bold",color:isMatch?"#22c55e":"#ef4444"}}>{isMatch?"일치":diff>0?`+${diff}`:String(diff)}</div>
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,fontWeight:"bold",color:C.gold,marginBottom:4}}>인원 목록 ({crossCount}명)</div>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                          <thead><tr>{["#","이름","소속","시도","단체"].map(h=><th key={h} style={{padding:"3px 6px",background:"#1a2744",color:C.gold,border:"1px solid "+C.border,textAlign:"left"}}>{h}</th>)}</tr></thead>
+                          <tbody>{members.sort((a,b)=>a.regionName.localeCompare(b.regionName)||a.name.localeCompare(b.name)).map((m,i)=><tr key={i} style={{background:i%2?"#0d152044":"transparent"}}>
+                            <td style={{padding:"3px 6px",border:"1px solid "+C.border,color:C.dim,textAlign:"center"}}>{i+1}</td>
+                            <td style={{padding:"3px 6px",border:"1px solid "+C.border,color:C.text}}>{m.name}</td>
+                            <td style={{padding:"3px 6px",border:"1px solid "+C.border,color:C.text}}>{m.subOrg||"-"}</td>
+                            <td style={{padding:"3px 6px",border:"1px solid "+C.border,color:C.text}}>{m.regionName}</td>
+                            <td style={{padding:"3px 6px",border:"1px solid "+C.border,color:C.text}}>{m.orgName}</td>
+                          </tr>)}</tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>;
               })()}
