@@ -5054,37 +5054,49 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                   return[5,0];
                 };
                 const tEvents=[...events].sort((a,b)=>{const ka=evSortKey(a.code),kb=evSortKey(b.code);return ka[0]-kb[0]||ka[1]-kb[1]||(a.sort_order||0)-(b.sort_order||0);});
-                // ── 교차 집계: 팔레트와 100% 동일한 로직 (epAM + entry.application_id 직접 사용) ──
+                // ── 교차 집계: member_id 중복 제거 + epAM 직접 사용 (팔레트와 동일) ──
                 const cross={};
                 tEvents.forEach(ev=>{cross[ev.code]={};ALL_R.forEach(r=>{cross[ev.code][r]=0;});});
                 const crossMembers={};
                 tEvents.forEach(ev=>{crossMembers[ev.code]=[];});
-                // 개인종목: epE → epAM[e.application_id] (팔레트와 동일)
+                // 개인종목: 이벤트별 member_id 중복 제거
+                const seenE={};tEvents.forEach(ev=>{seenE[ev.code]=new Set();});
                 epE.forEach(e=>{
                   if(!cross[e.event_code])return;
+                  if(seenE[e.event_code]?.has(e.member_id))return;
                   const app=epAM[e.application_id];
                   if(!app)return;
                   const rn=app.region_name;
-                  if(cross[e.event_code][rn]!==undefined)cross[e.event_code][rn]++;
-                  const m=epMemberMap[e.member_id];
-                  crossMembers[e.event_code].push({member_id:e.member_id,name:m?.name||"(삭제됨)",regionName:rn||"-",orgName:app.org_name||"-",subOrg:m?.sub_org||"",appId:e.application_id});
+                  if(cross[e.event_code][rn]!==undefined){
+                    cross[e.event_code][rn]++;
+                    seenE[e.event_code].add(e.member_id);
+                    const m=epMemberMap[e.member_id];
+                    crossMembers[e.event_code].push({member_id:e.member_id,name:m?.name||"(삭제됨)",regionName:rn||"-",orgName:app.org_name||"-",subOrg:m?.sub_org||"",appId:e.application_id});
+                  }
                 });
-                // 팀종목: epTE slot_order===0 → epAM[t.application_id] (팔레트와 동일)
+                // 팀/혼성종목만 epTE 집계 (개인종목은 epE만 — 팔레트와 동일)
+                const mixedTeamCodes=new Set(events.filter(e=>e.type==="mixed"||e.type==="team").map(e=>e.code));
+                const seenT={};tEvents.forEach(ev=>{seenT[ev.code]=new Set();});
                 epTE.forEach(t=>{
                   if(t.slot_order!==0)return;
                   if(!cross[t.event_code])return;
+                  if(!mixedTeamCodes.has(t.event_code))return;// 개인종목 스킵
+                  if(seenT[t.event_code]?.has(t.member_id))return;
                   const app=epAM[t.application_id];
                   if(!app)return;
                   const rn=app.region_name;
-                  if(cross[t.event_code][rn]!==undefined)cross[t.event_code][rn]++;
-                  const m=epMemberMap[t.member_id];
-                  crossMembers[t.event_code].push({member_id:t.member_id,name:m?.name||"(삭제됨)",regionName:rn||"-",orgName:app.org_name||"-",subOrg:m?.sub_org||"",teamNum:t.team_number||1,appId:t.application_id});
+                  if(cross[t.event_code][rn]!==undefined){
+                    cross[t.event_code][rn]++;
+                    seenT[t.event_code].add(t.member_id);
+                    const m=epMemberMap[t.member_id];
+                    crossMembers[t.event_code].push({member_id:t.member_id,name:m?.name||"(삭제됨)",regionName:rn||"-",orgName:app.org_name||"-",subOrg:m?.sub_org||"",teamNum:t.team_number||1,appId:t.application_id});
+                  }
                 });
                 const onClickRowSum=(evCode,evName)=>{
                   setCrossEvPopup({evCode,evName,members:crossMembers[evCode]||[]});
                 };
-                // 행합계 = 팔레트 evRawMap 직접 참조 (100% 일치 보장)
-                const rowSum={};tEvents.forEach(ev=>{rowSum[ev.code]=evRawMap[ev.code]||0;});
+                // 행합계, 열합계 — 셀 합산 (중복 제거 후이므로 팔레트와 일치)
+                const rowSum={};tEvents.forEach(ev=>{rowSum[ev.code]=ALL_R.reduce((s,r)=>s+(cross[ev.code]?.[r]||0),0);});
                 const colSum={};ALL_R.forEach(r=>{colSum[r]=tEvents.reduce((s,ev)=>s+(cross[ev.code]?.[r]||0),0);});
                 const grandTotal=ALL_R.reduce((s,r)=>s+colSum[r],0);
                 // 복사 기능 (HTML 테이블로 복사 → HWP/Word에 표째로 붙여넣기 가능)
