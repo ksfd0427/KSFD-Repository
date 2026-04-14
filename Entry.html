@@ -1790,7 +1790,7 @@ function TournamentRegistration() {
                               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: bgColor }}>
                                 {sessionKey && renderSessionBtn(sessionKey, row.event_code, row.category)}
                                 <div style={{ flex: 1, color: isPET ? "#8899aa" : "#e8dcc8", fontStyle: isPET ? "italic" : "normal", fontWeight: isPET ? 400 : 600, fontSize: 14 }}>
-                                  {isPET ? "🏋️ " : ""}{row.content || row.event_code}
+                                  {isPET ? "🏋️ " : ""}{(()=>{const _c=row.content||row.event_code||"";return (row.event_code&&!_c.startsWith(row.event_code))?(row.event_code+" "+_c):_c;})()}
                                 </div>
                               </div>
                               <div style={{ display: "flex", gap: 16, padding: "4px 12px 10px", background: bgColor }}>
@@ -1829,7 +1829,7 @@ function TournamentRegistration() {
                                 <td style={{ ...tdSt, textAlign: "left", paddingLeft: 12, color: isPET ? "#8899aa" : "#e8dcc8", fontStyle: isPET ? "italic" : "normal", fontWeight: isPET ? 400 : 600 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={e => e.stopPropagation()}>
                                     {sessionKey && renderSessionBtn(sessionKey, row.event_code, row.category)}
-                                    <span>{isPET ? "🏋️ " : ""}{row.content || row.event_code}</span>
+                                    <span>{isPET ? "🏋️ " : ""}{(()=>{const _c=row.content||row.event_code||"";return (row.event_code&&!_c.startsWith(row.event_code))?(row.event_code+" "+_c):_c;})()}</span>
                                   </div>
                                 </td>
                                 <td style={{ ...tdSt, textAlign: "center", color: "#b0c4de", fontFamily: "monospace", fontWeight: 600 }}>{row.time_slot || row.time || ""}</td>

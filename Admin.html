@@ -629,6 +629,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         const{error}=await sb.from("tournament_ops_data").insert({tournament_id:tid,data_type:type,json_data:data});
         if(error) throw error;
       }
+      // 🔄 startlists 저장 시 tournament_startlists 테이블도 자동 동기화
+      //    (Entry.html 의 "명단 확인" 이 이 테이블을 조회하므로 반드시 함께 갱신)
+      if(type==="startlists" && data && typeof data==="object"){
+        try{
+          const keys=Object.keys(data).filter(k=>Array.isArray(data[k])&&data[k].length>0);
+          if(keys.length>0 && typeof syncStartlistSessions==="function") await syncStartlistSessions(data,keys);
+        }catch(se){console.warn("tournament_startlists auto-sync 실패",se);}
+      }
       return true;
     }catch(e){console.warn("DB save fail for "+type,e);return false;}
     finally{setDbBusy(v=>v-1);}
@@ -650,6 +658,53 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   };
   const saveLanes=async()=>{
     await dbSave("lanes",{laneAssign,laneBroken,laneConfig});
+    // ── 사대 변경을 기존 스타트리스트 p.lane 에 전파 + tournament_startlists 동기화 ──
+    // (Entry.html 은 tournament_startlists 를 조회하므로 반드시 같이 갱신해야 "명단 확인"에 즉시 반영됨)
+    try{
+      const getLanesForSession=(evCode,relay)=>{
+        const lanes=[];
+        Object.keys(laneAssign).forEach(dayKey=>{
+          const da=laneAssign[dayKey]||{};
+          Object.keys(da).forEach(k=>{
+            const a=da[k],p=evKeyParse(k);
+            if(p.evCode===evCode&&a&&a.relay===relay&&Array.isArray(a.lanes)) a.lanes.forEach(ln=>lanes.push(ln));
+          });
+        });
+        return lanes.slice().sort((x,y)=>Number(x)-Number(y));
+      };
+      const updatedSL={...startLists};
+      const changedKeys=[];
+      Object.keys(updatedSL).forEach(sessionKey=>{
+        const sl=updatedSL[sessionKey];
+        if(!Array.isArray(sl)||sl.length===0) return;
+        const parts=sessionKey.match(/^(.+?)_(\d+)$/);
+        if(!parts) return;
+        const evCode=parts[1], relay=Number(parts[2]);
+        const lanes=getLanesForSession(evCode,relay);
+        if(lanes.length===0) return;
+        const ev=(events||[]).find(e=>e.code===evCode);
+        const isMixed=ev&&ev.type==="mixed";
+        const updated=sl.map((p,i)=>{
+          if(isMixed&&p._teamIdx!==undefined){
+            const ti=p._teamIdx;
+            const slotInTeam=sl.slice(0,i).filter(q=>q._teamIdx===ti).length;
+            const laneIdx=ti*2+slotInTeam;
+            return {...p,lane:lanes[laneIdx]!=null?relay+"-"+lanes[laneIdx]:null};
+          }
+          return {...p,lane:lanes[i]!=null?relay+"-"+lanes[i]:null};
+        });
+        // 변경 여부 확인
+        const changed=updated.some((p,i)=>p.lane!==sl[i].lane);
+        if(changed){ updatedSL[sessionKey]=updated; changedKeys.push(sessionKey); }
+      });
+      if(changedKeys.length>0){
+        setStartLists(updatedSL);
+        await dbSave("startlists",updatedSL);
+        await syncStartlistSessions(updatedSL,changedKeys);
+        flash("사대배정 저장 완료 (스타트리스트 "+changedKeys.length+"개 동기화)");
+        return;
+      }
+    }catch(e){ console.warn("lane→startlist 동기화 실패",e); }
     flash("사대배정 저장 완료");
   };
   // ── 세션별 tournament_startlists 테이블 동기화 ──
@@ -682,6 +737,67 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
     await syncStartlistSessions(startLists,keys);
     setSlSavedKeys(new Set(Object.keys(startLists).filter(k=>startLists[k]&&startLists[k].length>0)));
     flash("스타트리스트 저장 완료 (DB 동기화)");
+  };
+  // ── 종목별 현황: 한방에 전체 DB 저장 ──
+  //   시간표 / 사대(+lane propagation) / 조배정 / 세션상태 / 단체번호 / 혼성팀 / 불참이력 / 스타트리스트 + tournament_startlists
+  const saveAllOps=async()=>{
+    if(!sb||!selectedT){flash("DB 연결 또는 대회 미선택","error");return;}
+    const done=[];
+    try{
+      // 1) 기본 tournament_ops_data 저장들
+      await dbSave("sched",schedData); done.push("시간표");
+      await dbSave("lanes",{laneAssign,laneBroken,laneConfig}); done.push("사대배정");
+      await dbSave("relay_assignments",relayAssign); done.push("조배정");
+      await dbSave("session_status",sessionStatuses); done.push("세션상태");
+      await dbSave("orgnum_overrides",orgNumOverrides); done.push("단체번호");
+      await dbSave("mixed_team_overrides",mixedTeamOverrides); done.push("혼성팀");
+      await dbSave("absent_history",absentHistory); done.push("불참이력");
+      // 2) 사대 변경을 startLists p.lane 에 전파 (saveLanes 와 동일 로직)
+      const getLanesForSession=(evCode,relay)=>{
+        const lanes=[];
+        Object.keys(laneAssign).forEach(dayKey=>{
+          const da=laneAssign[dayKey]||{};
+          Object.keys(da).forEach(k=>{
+            const a=da[k],p=evKeyParse(k);
+            if(p.evCode===evCode&&a&&a.relay===relay&&Array.isArray(a.lanes)) a.lanes.forEach(ln=>lanes.push(ln));
+          });
+        });
+        return lanes.slice().sort((x,y)=>Number(x)-Number(y));
+      };
+      const updatedSL={...startLists};
+      Object.keys(updatedSL).forEach(sessionKey=>{
+        const sl=updatedSL[sessionKey];
+        if(!Array.isArray(sl)||sl.length===0) return;
+        const parts=sessionKey.match(/^(.+?)_(\d+)$/);
+        if(!parts) return;
+        const evCode=parts[1], relay=Number(parts[2]);
+        const lanes=getLanesForSession(evCode,relay);
+        if(lanes.length===0) return;
+        const ev=(events||[]).find(e=>e.code===evCode);
+        const isMixed=ev&&ev.type==="mixed";
+        const updated=sl.map((p,i)=>{
+          if(isMixed&&p._teamIdx!==undefined){
+            const ti=p._teamIdx;
+            const slotInTeam=sl.slice(0,i).filter(q=>q._teamIdx===ti).length;
+            const laneIdx=ti*2+slotInTeam;
+            return {...p,lane:lanes[laneIdx]!=null?relay+"-"+lanes[laneIdx]:null};
+          }
+          return {...p,lane:lanes[i]!=null?relay+"-"+lanes[i]:null};
+        });
+        updatedSL[sessionKey]=updated;
+      });
+      setStartLists(updatedSL);
+      // 3) startlists 저장 → dbSave 가 tournament_startlists 자동 동기화
+      await dbSave("startlists",updatedSL); done.push("스타트리스트");
+      // 4) 결선 없음/결정전 종목 목록 (Entry 참조용)
+      try{ await syncEventFinals(events); done.push("결선설정"); }catch(e){}
+      // 5) saved 표시
+      setSlSavedKeys(new Set(Object.keys(updatedSL).filter(k=>updatedSL[k]&&updatedSL[k].length>0)));
+      flash("✅ 전체 DB 저장 완료 — "+done.join(" · "));
+    }catch(e){
+      console.error("saveAllOps 실패",e);
+      flash("전체 DB 저장 실패: "+(e.message||e),"error");
+    }
   };  const publishSched=async()=>{
     if(!sb||!selectedT){flash("DB 연결 또는 대회 미선택","error");return;}
     const tid=selectedT.id;
@@ -693,9 +809,22 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
       const usedSessionKeys=new Set(); // 시간표에 포함된 세션 키 수집
       schedData.forEach(d=>{
         d.rows.forEach((r,i)=>{
+          // content 는 저장 당시 ev.name 스냅샷 → 종목명 수정(예: "DB-R1" prefix 추가)이 반영 안 됨
+          // → 발행 시점의 최신 events 기준으로 동적 재생성 (Admin 화면 표시 로직과 동일)
+          const _fresh=(()=>{
+            if(r.type==="pet"){
+              if(r.content) return r.content;
+              return "공식 훈련"+(r.event_code?" ("+r.event_code+(r.relay?" "+schedLabel(r.event_code,r.relay):"")+")":"");
+            }
+            if(r.type==="custom"||!r.event_code) return r.content||"";
+            const _ev=events.find(e=>e.code===r.event_code);
+            const _evName=_ev?_ev.name:r.event_code;
+            const _base=_evName.startsWith(r.event_code)?_evName:(r.event_code+" "+_evName);
+            return _base+(r.relay?" "+schedLabel(r.event_code,r.relay):"");
+          })();
           rows.push({
             tournament_id:tid, day_number:d.day, sort_order:i+1,
-            category:r.category||"", content:r.content||"", event_code:r.event_code||"",
+            category:r.category||"", content:_fresh, event_code:r.event_code||"",
             relay:r.relay||"", time_slot:r.time||"", participant_count:(()=>{
               if(r.event_code&&r.relay){
                 // 25M 종목: 완사/급사 → 전체 relay 합산
@@ -6729,6 +6858,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
                         <button style={{...S.btn(C.blue,C.bg),fontSize:10,padding:"4px 10px"}} onClick={generateAllStartLists}>🔀 전체 생성</button>
                         <button style={{...S.btn(C.gold,C.bg),fontSize:10,padding:"4px 10px"}} onClick={()=>{generateAllStartLists();flash("전체 생성+저장 완료");}}>⚡ 생성+저장</button>
                       </>}
+                      <button style={{...S.btn("#ff6b35","#fff"),fontSize:10,padding:"4px 10px",fontWeight:700,marginLeft:6}} onClick={saveAllOps} title="시간표·사대·조배정·세션상태·단체번호·혼성팀·불참이력·스타트리스트를 한꺼번에 DB에 저장하고 Entry 테이블(tournament_startlists)까지 동기화합니다">💾 전체 DB 저장</button>
                     </div>
                     {/* ── 카테고리 드롭다운 그룹 ── */}
                     {paletteViewMode==="category"&&(()=>{
