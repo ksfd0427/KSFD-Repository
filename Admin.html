@@ -136,6 +136,7 @@ const FINAL_RESULT_CFG = {
   none: { label:"결선 없음", series:0, decimal:false, xcount:false, elimination:false },
   final: { label:"탈락식 결선 (9시리즈·격발·소수점)", series:9, decimal:true, xcount:false, elimination:true, shotsPerSeries:(s)=>s<=2?5:2 },
   final_3pos: { label:"3자세 결선 (8시리즈·3/2/1발·소수점)", series:8, decimal:true, xcount:false, elimination:true, shotsPerSeries:(s)=>s<=2?3:s===3?2:1 },
+  final_pistol: { label:"권총 결선 (10시리즈·1발·정수)", series:10, decimal:false, xcount:false, elimination:true, shotsPerSeries:(s)=>1 },
   medal_match: { label:"결정전 (3·4위 + 1·2위)", series:0, decimal:false, xcount:false, elimination:false },
 };
 const FINAL_FORMAT_OPTS=Object.entries(FINAL_RESULT_CFG).map(([k,v])=>[k,v.label]);
@@ -159,7 +160,7 @@ const DEFAULT_EVENTS = [
   { code:"R9", name:"R9 50m소총 복사 혼성 SH2", category:"소총(SH2)", type:"individual", gender:"혼", team_size:1, sort_order:9, result_format:"rifle", final_format:"final", league_eligible:true },
   { code:"P1", name:"P1 공기권총 남자 SH1", category:"권총", type:"individual", gender:"남", team_size:1, sort_order:10, result_format:"pistol", final_format:"final" },
   { code:"P2", name:"P2 공기권총 여자 SH1", category:"권총", type:"individual", gender:"여", team_size:1, sort_order:11, result_format:"pistol", final_format:"final" },
-  { code:"P3", name:"P3 25m권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:12, result_format:"pistol", final_format:"final" },
+  { code:"P3", name:"P3 25m권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:12, result_format:"pistol", final_format:"final_pistol" },
   { code:"P4", name:"P4 50m권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:13, result_format:"pistol", final_format:"final", league_eligible:true },
   { code:"P5", name:"P5 스탠다드공기권총 혼성 SH1", category:"권총", type:"individual", gender:"혼", team_size:1, sort_order:14, result_format:"p5", final_format:"final", league_eligible:true },
   { code:"R10", name:"R10 공기소총 복사 혼성팀 SH1", category:"소총", type:"mixed", gender:"혼", team_size:2, sort_order:15, result_format:"mixedRifle", final_format:"medal_match" },
@@ -180,8 +181,8 @@ const DB_REC_EVENTS = [
   { code:"DB-R6(F)", name:"DB-R6(F) 50m소총 복사 여자 청각",   category:"청각", type:"individual", gender:"여", team_size:1, sort_order:106, result_format:"rifle",    final_format:"final" },
   { code:"DB-R7",    name:"DB-R7 50m소총 3자세 남자 청각",     category:"청각", type:"individual", gender:"남", team_size:1, sort_order:107, result_format:"threePos", final_format:"final_3pos" },
   { code:"DB-R8",    name:"DB-R8 50m소총 3자세 여자 청각",     category:"청각", type:"individual", gender:"여", team_size:1, sort_order:108, result_format:"threePos", final_format:"final_3pos" },
-  { code:"DB-P3(M)", name:"DB-P3(M) 25m권총 남자 청각",         category:"청각", type:"individual", gender:"남", team_size:1, sort_order:109, result_format:"pistol",   final_format:"final" },
-  { code:"DB-P3(F)", name:"DB-P3(F) 25m권총 여자 청각",         category:"청각", type:"individual", gender:"여", team_size:1, sort_order:110, result_format:"pistol",   final_format:"final" },
+  { code:"DB-P3(M)", name:"DB-P3(M) 25m권총 남자 청각",         category:"청각", type:"individual", gender:"남", team_size:1, sort_order:109, result_format:"pistol",   final_format:"final_pistol" },
+  { code:"DB-P3(F)", name:"DB-P3(F) 25m권총 여자 청각",         category:"청각", type:"individual", gender:"여", team_size:1, sort_order:110, result_format:"pistol",   final_format:"final_pistol" },
   { code:"DB-R10",   name:"DB-R10 공기소총 입사 혼성팀 청각",  category:"청각", type:"mixed",      gender:"혼", team_size:2, sort_order:111, result_format:"mixedRifle",  final_format:"medal_match" },
   { code:"DB-P6",    name:"DB-P6 공기권총 혼성팀 청각",         category:"청각", type:"mixed",      gender:"혼", team_size:2, sort_order:112, result_format:"mixedPistol", final_format:"medal_match" },
 ];
@@ -628,7 +629,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   const [resBestRecs, setResBestRecs]=useState([]); // 현재 종목 신기록
   const [resFinalSL, setResFinalSL]=useState(null); // 결선 스타트리스트 [{bib, name, region, sub_org, prelimRank, prelimTotal}]
   const getEvFmt=(code)=>(events.find(e=>e.code===code)||{}).result_format||(DEFAULT_EVENTS.find(e=>e.code===code)||{}).result_format;
-  const getEvFinalFmt=(code)=>(events.find(e=>e.code===code)||{}).final_format||(DEFAULT_EVENTS.find(e=>e.code===code)||{}).final_format||"final";
+  const getEvFinalFmt=(code)=>{
+    // DEFAULT_EVENTS / DB_REC_EVENTS 의 final_format 을 우선 참조 (코드에서 변경된 사항 즉시 반영)
+    const def=(DEFAULT_EVENTS.find(e=>e.code===code)||DB_REC_EVENTS.find(e=>e.code===code)||{}).final_format;
+    if(def) return def;
+    return (events.find(e=>e.code===code)||{}).final_format||"final";
+  };
   const getEventFinalCfg=(code)=>{const fmt=getEvFinalFmt(code); return FINAL_RESULT_CFG[fmt]||FINAL_RESULT_CFG.final;};
   const hasNoFinal=(code)=>{
     const fmt=getEvFinalFmt(code);
@@ -636,6 +642,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   };
   const isMedalMatch=(code)=>getEvFinalFmt(code)==="medal_match";
   const isFinal3Pos=(code)=>getEvFinalFmt(code)==="final_3pos";
+  const isFinalPistol=(code)=>getEvFinalFmt(code)==="final_pistol";
   const isNatGames=()=>{try{const m=JSON.parse(localStorage.getItem("ksfd_cnr")||"{}");return !!m[selectedT?.id];}catch(e){return false;}};
 
   // ─── DB 저장/불러오기 (tournament_ops_data) ───
@@ -2293,8 +2300,36 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     }
   };
   // ── 결선 탈락식 테스트 데이터 생성 ──
-  const resGenFinalElim=(rows,is3Pos)=>{
+  const resGenFinalElim=(rows,is3Pos,isPistolF)=>{
     const n=rows.length;
+    if(isPistolF){
+      // 권총 결선: 10시리즈, 1발씩, 정수 (7~10점), 탈락식
+      const firstElimSeries=Math.max(3, 12-n);
+      const sims=rows.map(r=>({row:r, cumul:0, eliminated:false, elimAt:0, rank:0}));
+      for(let s=1;s<=10;s++){
+        const remaining=sims.filter(d=>!d.eliminated);
+        if(remaining.length===0) break;
+        remaining.forEach(d=>{
+          const v=Math.floor(Math.random()*4+7); // 7~10
+          d.cumul+=v;
+          d.row["s"+s]=String(v);
+        });
+        if(s>=firstElimSeries&&s<=9&&remaining.length>2){
+          remaining.sort((a,b)=>a.cumul-b.cumul);
+          remaining[0].eliminated=true; remaining[0].elimAt=s;
+          remaining[0].rank=remaining.length; remaining[0].row.total=String(remaining[0].cumul);
+        }
+        if(s===10){
+          const last=sims.filter(d=>!d.eliminated);
+          last.sort((a,b)=>b.cumul-a.cumul);
+          if(last.length>=2){ last[0].rank=1; last[0].row.total=String(last[0].cumul); last[1].rank=2; last[1].row.total=String(last[1].cumul); }
+          else if(last.length===1){ last[0].rank=1; last[0].row.total=String(last[0].cumul); }
+        }
+      }
+      sims.forEach(d=>{d.row.rank=d.rank;});
+      rows.sort((a,b)=>a.rank-b.rank);
+      return;
+    }
     if(is3Pos){
       // 3자세 결선: 8시리즈, S1·S2=3발, S3=2발, S4~S8=1발
       // S3 후 7,8위 탈락(2명), 이후 1명씩 탈락, S8에서 1·2위 확정
@@ -2581,7 +2616,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
         return row;
       });
       if(isFinal){
-        resGenFinalElim(rows,isFinal3Pos(resEvCode));
+        resGenFinalElim(rows,isFinal3Pos(resEvCode),isFinalPistol(resEvCode));
       } else {
         rows.sort((a,b)=>parseFloat(b.total)-parseFloat(a.total));
         rows.forEach((r,i)=>r.rank=i+1);
@@ -2658,7 +2693,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
       rows.push(row);
     }
     if(isFinal){
-      resGenFinalElim(rows,isFinal3Pos(resEvCode));
+      resGenFinalElim(rows,isFinal3Pos(resEvCode),isFinalPistol(resEvCode));
     } else {
       rows.sort((a,b)=>parseFloat(b.total)-parseFloat(a.total));
       rows.forEach((r,i)=>r.rank=i+1);
@@ -2687,7 +2722,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
         nr.total=""; nr.x_count=""; nr._dirty=true;
         return nr;
       });
-      resGenFinalElim(rows,isFinal3Pos(resEvCode));
+      resGenFinalElim(rows,isFinal3Pos(resEvCode),isFinalPistol(resEvCode));
       const deleted=resData.filter(r=>r._deleted);
       setResData([...deleted,...rows]);
       setResDirty(true);
@@ -3241,7 +3276,8 @@ td{border:1px solid #333;padding:4px 6px}
           is_team:true,total:cfg.decimal?t.teamTotal.toFixed(1):String(t.teamTotal),
           x_count:cfg.xcount?String(t.teamXCount):"",remarks:t._remarks||""};
         for(let s=1;s<=cfg.series;s++){
-          teamRow["s"+s]=String(t.top3.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0));
+          const sSum=t.top3.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0);
+          teamRow["s"+s]=cfg.decimal?sSum.toFixed(1):String(sSum);
         }
         for(let s=cfg.series+1;s<=12;s++) teamRow["s"+s]="";
         const{error:e1}=await sb.from("competition_results").insert(teamRow);
@@ -3277,7 +3313,8 @@ td{border:1px solid #333;padding:4px 6px}
           is_team:true,total:cfg.decimal?t.teamTotal.toFixed(1):String(t.teamTotal),
           x_count:cfg.xcount?String(t.teamXCount):"",remarks:t._remarks||""};
         for(let s=1;s<=cfg.series;s++){
-          teamRow["s"+s]=String(t.top2.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0));
+          const sSum=t.top2.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0);
+          teamRow["s"+s]=cfg.decimal?sSum.toFixed(1):String(sSum);
         }
         for(let s=cfg.series+1;s<=12;s++) teamRow["s"+s]="";
         const{error:e1}=await sb.from("competition_results").insert(teamRow);
@@ -3304,6 +3341,17 @@ td{border:1px solid #333;padding:4px 6px}
     if(type==="final"){
       // 결선: 개별 격발 열
       const is3Pos=isFinal3Pos(code);
+      const isPistolF=isFinalPistol(code);
+      if(isPistolF){
+        // 권총 결선: 10시리즈, 시리즈당 1발, 정수
+        base.push({k:"name",l:isMixed?"팀원":"이름",w:isMixed?140:80},{k:"region",l:"시도",w:65},{k:"_sub_org",l:"세부소속",w:85});
+        for(let s=1;s<=10;s++){
+          base.push({k:"s"+s+"_0",_s:"s"+s,_si:0,l:"S"+s,w:42,t:"shot"});
+        }
+        base.push({k:"total",l:"합계",w:60,t:"computed"});
+        base.push({k:"remarks",l:"비고",w:80});
+        return base;
+      }
       const totalSeries=is3Pos?8:9;
       const shotsIn3P=s=>s<=2?3:s===3?2:1;
       const shotsInStd=s=>s<=2?5:2;
@@ -3347,8 +3395,9 @@ td{border:1px solid #333;padding:4px 6px}
     const sNum=parseInt(seriesKey.replace("s",""));
     const cfg3=resEvCode?getEventCfg(resEvCode,getEvFmt(resEvCode)):null;
     const is3Pos=isFinal3Pos(resEvCode);
-    const nShots=is3Pos?(sNum<=2?3:sNum===3?2:1):(sNum<=2?5:2);
-    const totalSeries=is3Pos?8:9;
+    const isPistolF=isFinalPistol(resEvCode);
+    const nShots=isPistolF?1:is3Pos?(sNum<=2?3:sNum===3?2:1):(sNum<=2?5:2);
+    const totalSeries=isPistolF?10:is3Pos?8:9;
     const parts=String(r[seriesKey]||"").split(",");
     while(parts.length<nShots) parts.push("");
     parts[shotIdx]=value;
@@ -3357,7 +3406,7 @@ td{border:1px solid #333;padding:4px 6px}
     for(let s=1;s<=totalSeries;s++){
       String(r["s"+s]||"").split(",").forEach(v=>{const n=parseFloat(v);if(!isNaN(n))total+=n;});
     }
-    r.total=total>0?total.toFixed(1):"";
+    r.total=total>0?(isPistolF?String(Math.round(total)):total.toFixed(1)):"";
     r._dirty=true;
     nr[origIdx]=r;
     setResData(nr); setResDirty(true);
@@ -3835,6 +3884,67 @@ td{border:1px solid #333;padding:4px 6px}
       }).flat()}</tbody></table>;
     };
 
+    // ═══ 권총 결선 전용 테이블 (10시리즈, 1발/시리즈, 정수, 탈락식) ═══
+    const renderFinalPistol=()=>{
+      const data=resData.filter(r=>!r._deleted);
+      if(data.length===0) return <p style={{textAlign:"center",color:"#999",padding:"20mm 0"}}>결선 데이터가 없습니다.</p>;
+      const SERIES=10;
+      const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
+      const SZ="8pt";
+      const calcCumul=r=>{
+        const subs=[];let cum=0;
+        for(let s=1;s<=SERIES;s++){
+          const v=parseInt(r["s"+s]);
+          if(isNaN(v)) break;
+          cum+=v;
+          subs.push(cum);
+        }
+        return subs;
+      };
+      const bdr="1px solid #333";
+      const bdrNone="none";
+      const cellBase={padding:"2px 3px",textAlign:"center",fontSize:SZ,fontFamily:F,lineHeight:1.2};
+      const colW=["22px","42px","62px",...Array(SERIES).fill(null),"40px","48px"];
+      return <table style={{tableLayout:"fixed",width:"100%"}}><colgroup>
+        {colW.map((w,i)=><col key={i} style={w?{width:w}:{}}/>)}
+      </colgroup>
+      <thead>
+        <tr>
+          {["순위","이름","소속"].map((h,i)=>
+            <th key={h} style={{...pTh,padding:"2px 2px",fontSize:"7pt",...(i===2?{borderRight:bdr}:{})}}>{h}</th>
+          )}
+          {Array.from({length:SERIES},(_,i)=>
+            <th key={"s"+i} style={{...pTh,fontSize:"7pt",padding:"2px 1px",borderLeft:bdrNone,borderRight:bdrNone}}>S{i+1}</th>
+          )}
+          <th style={{...pTh,padding:"2px 2px",fontSize:"7pt",borderLeft:bdr}}>합계</th>
+          <th style={{...pTh,padding:"2px 2px",fontSize:"7pt"}}>비고</th>
+        </tr>
+      </thead>
+      <tbody>{data.map((r,pi)=>{
+        const subs=calcCumul(r);
+        const playerLastS=subs.length;
+        return <tr key={r.id||pi}>
+          <td style={{...cellBase,borderLeft:bdr,borderTop:bdr,borderBottom:bdr,fontWeight:700}}>{r.rank}</td>
+          <td style={{...cellBase,borderTop:bdr,borderBottom:bdr,borderRight:bdrNone,textAlign:"left",paddingLeft:"2px",fontWeight:600}}>{r.name}</td>
+          <td style={{...cellBase,borderTop:bdr,borderBottom:bdr,borderLeft:bdrNone,borderRight:bdr,fontSize:"6.5pt",textAlign:"left",paddingLeft:"1px"}}>{isNatGames()?r.region:(r._sub_org||r.sub_org||r.region)}</td>
+          {Array.from({length:SERIES},(_,s)=>{
+            const shotVal=parseInt(r["s"+(s+1)]);
+            const hasSeries=!isNaN(shotVal);
+            const cumVal=subs[s];
+            const isLastSeries=(s+1)===playerLastS;
+            return <td key={"s"+s} style={{...cellBase,borderTop:bdr,borderBottom:bdr,borderLeft:bdrNone,borderRight:bdrNone,fontWeight:400}}>
+              {hasSeries&&<>
+                {!isLastSeries&&<span style={{display:"block",fontSize:"7pt",fontWeight:700,lineHeight:1.1}}>{cumVal}</span>}
+                <span style={{display:"block",fontSize:SZ,fontWeight:400,lineHeight:1.1}}>{shotVal}</span>
+              </>}
+            </td>;
+          })}
+          <td style={{...cellBase,borderTop:bdr,borderBottom:bdr,borderLeft:bdr,fontWeight:700}}>{subs.length>0?subs[subs.length-1]:(r.total||"")}</td>
+          <td style={{...cellBase,borderTop:bdr,borderBottom:bdr,borderRight:bdr,fontSize:"5.5pt",textAlign:"left",padding:"2px 1px",fontWeight:400}}>{fmtRemarks(r.remarks)}</td>
+        </tr>;
+      })}</tbody></table>;
+    };
+
     // ═══ 3자세 결선 전용 테이블 (8시리즈: S1·S2=3발, S3=2발표시, S4~S8=1발) ═══
     const renderFinal3Pos=()=>{
       const data=resData.filter(r=>!r._deleted);
@@ -4241,7 +4351,7 @@ td{border:1px solid #333;padding:4px 6px}
         </div>{/* close header ref */}
         {/* ═══ 본문 테이블 (자동 zoom) ═══ */}
         <div ref={printTableRef} style={{zoom:printZoom}}>
-        {resType==="team"?renderTeam():resType==="league"?renderLeague():resType==="final"?(isFinal3Pos(resEvCode)?renderFinal3Pos():renderFinal()):(resType==="bronze"||resType==="gold"||resType==="prelim")?renderPrelimFinal():renderPrelimFinal()}
+        {resType==="team"?renderTeam():resType==="league"?renderLeague():resType==="final"?(isFinal3Pos(resEvCode)?renderFinal3Pos():isFinalPistol(resEvCode)?renderFinalPistol():renderFinal()):(resType==="bronze"||resType==="gold"||resType==="prelim")?renderPrelimFinal():renderPrelimFinal()}
         </div>{/* close table zoom wrapper */}
         {/* ═══ 하단 (고정 크기) ═══ */}
         <div ref={printFooterRef} style={{marginTop:"5mm",display:"flex",alignItems:"flex-end",fontSize:"8pt"}}>
@@ -4782,7 +4892,8 @@ td{border:1px solid #333;padding:4px 6px}
       return printTeamNum[p.memberId]||printTeamNum[Number(p.memberId)]||printTeamNum[String(p.memberId)]||p._orgNum||null;
     };
     const thSt={border:"1px solid #333",padding:"5px 6px",background:"#e8e8e8",fontWeight:700,fontSize:"11pt",textAlign:"center"};
-    const tdSt={border:"1px solid #333",padding:"4px 6px",fontSize:"13px"};
+    const tdSt={borderLeft:"none",borderRight:"none",borderTop:"none",borderBottom:"none",padding:"4px 6px",fontSize:"13px"};
+    const bdr="1px solid #333";
     let seqNum=0;
     return <div className="print-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"#fff",overflow:"auto",color:"#000"}}>
       <button className="no-print" onClick={()=>setSlPrint(null)} style={{position:"fixed",top:20,right:20,zIndex:10000,padding:"8px 20px",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✕ 닫기</button>
@@ -4809,18 +4920,20 @@ td{border:1px solid #333;padding:4px 6px}
             <th style={{...thSt,width:"60px"}}>비고</th>
           </tr></thead>
           <tbody>
-            {list.filter(p=>!p.absent).map((p,i)=>{
+            {(()=>{const active=list.filter(p=>!p.absent);return active.map((p,i)=>{
               seqNum++;
               const tn=getPrintTeamNum(p);
+              const isLast=i===active.length-1;
+              const bb=isLast?bdr:"none";
               return <tr key={i} style={{background:"#fff"}}>
-                <td style={{...tdSt,textAlign:"center"}}>{seqNum}</td>
-                <td style={{...tdSt,textAlign:"center",fontWeight:700}}>{p.lane||"-"}</td>
-                <td style={{...tdSt,fontWeight:600}}>{p.name}</td>
-                <td style={{...tdSt}}>{p.subOrg||"-"}</td>
-                <td style={{...tdSt,textAlign:"center",fontWeight:700,fontSize:"12px"}}>{tn?"단체"+tn:""}</td>
-                <td style={{...tdSt}}>{p.remark||""}</td>
+                <td style={{...tdSt,borderBottom:bb,textAlign:"center"}}>{seqNum}</td>
+                <td style={{...tdSt,borderBottom:bb,textAlign:"center",fontWeight:700}}>{p.lane||"-"}</td>
+                <td style={{...tdSt,borderBottom:bb,fontWeight:600}}>{p.name}</td>
+                <td style={{...tdSt,borderBottom:bb}}>{p.subOrg||"-"}</td>
+                <td style={{...tdSt,borderBottom:bb,textAlign:"center",fontWeight:700,fontSize:"12px"}}>{tn?"단체"+tn:""}</td>
+                <td style={{...tdSt,borderBottom:bb}}>{p.remark||""}</td>
               </tr>;
-            })}
+            });})()}
           </tbody>
         </table>
       </div>
@@ -4966,8 +5079,9 @@ td{border:1px solid #333;padding:4px 6px}
     }
 
     // ── 2단계: 인쇄 뷰 ──
-    const thSt={border:"1px solid #333",padding:"5px 6px",background:"#e8e8e8",fontWeight:700,fontSize:"11pt",textAlign:"center"};
-    const tdSt={border:"1px solid #333",padding:"4px 6px",fontSize:"13px"};
+    const thSt2={border:"1px solid #333",padding:"5px 6px",background:"#e8e8e8",fontWeight:700,fontSize:"11pt",textAlign:"center"};
+    const tdSt2={borderLeft:"none",borderRight:"none",borderTop:"none",borderBottom:"none",padding:"4px 6px",fontSize:"13px"};
+    const bdr2="1px solid #333";
     const selected=allSessions.filter(s=>slPrintAllSel.has(s.evCode+"_"+s.relay));
     return <div className="print-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"#fff",overflow:"auto",color:"#000"}}>
       <button className="no-print" onClick={closeSlPrintAll} style={{position:"fixed",top:20,right:20,zIndex:10000,padding:"8px 20px",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700}}>✕ 닫기</button>
@@ -5005,26 +5119,28 @@ td{border:1px solid #333;padding:4px 6px}
           </div>
           <table style={{width:"100%",borderCollapse:"collapse",color:"#000"}}>
             <thead><tr>
-              <th style={{...thSt,width:"36px"}}>순</th>
-              <th style={{...thSt,width:"48px"}}>사대</th>
-              <th style={{...thSt,width:"72px"}}>이름</th>
-              <th style={{...thSt}}>소속</th>
-              <th style={{...thSt,width:"48px"}}>단체</th>
-              <th style={{...thSt,width:"60px"}}>비고</th>
+              <th style={{...thSt2,width:"36px"}}>순</th>
+              <th style={{...thSt2,width:"48px"}}>사대</th>
+              <th style={{...thSt2,width:"72px"}}>이름</th>
+              <th style={{...thSt2}}>소속</th>
+              <th style={{...thSt2,width:"48px"}}>단체</th>
+              <th style={{...thSt2,width:"60px"}}>비고</th>
             </tr></thead>
             <tbody>
-              {list.filter(p=>!p.absent).map((p,i)=>{
+              {(()=>{const active=list.filter(p=>!p.absent);return active.map((p,i)=>{
                 seqNum++;
                 const tn=getTeamNum(p);
+                const isLast=i===active.length-1;
+                const bb=isLast?bdr2:"none";
                 return <tr key={i} style={{background:"#fff"}}>
-                  <td style={{...tdSt,textAlign:"center"}}>{seqNum}</td>
-                  <td style={{...tdSt,textAlign:"center",fontWeight:700}}>{p.lane||"-"}</td>
-                  <td style={{...tdSt,fontWeight:600}}>{p.name}</td>
-                  <td style={{...tdSt}}>{p.subOrg||"-"}</td>
-                  <td style={{...tdSt,textAlign:"center",fontWeight:700,fontSize:"12px"}}>{tn?"단체"+tn:""}</td>
-                  <td style={{...tdSt}}>{p.remark||""}</td>
+                  <td style={{...tdSt2,borderBottom:bb,textAlign:"center"}}>{seqNum}</td>
+                  <td style={{...tdSt2,borderBottom:bb,textAlign:"center",fontWeight:700}}>{p.lane||"-"}</td>
+                  <td style={{...tdSt2,borderBottom:bb,fontWeight:600}}>{p.name}</td>
+                  <td style={{...tdSt2,borderBottom:bb}}>{p.subOrg||"-"}</td>
+                  <td style={{...tdSt2,borderBottom:bb,textAlign:"center",fontWeight:700,fontSize:"12px"}}>{tn?"단체"+tn:""}</td>
+                  <td style={{...tdSt2,borderBottom:bb}}>{p.remark||""}</td>
                 </tr>;
-              })}
+              });})()}
             </tbody>
           </table>
         </div>;
@@ -7615,6 +7731,7 @@ td{border:1px solid #333;padding:4px 6px}
             const visible=resData.filter(r=>!r._deleted);
             const isThreePos=cfg&&!!cfg.seriesLabels&&resType==="prelim";
             const isThreePosFinal=resEvCode&&isFinal3Pos(resEvCode)&&resType==="final";
+            const isPistolFinal=resEvCode&&isFinalPistol(resEvCode)&&resType==="final";
             const catClr=(c)=>({"10M":"#3b82f6","25M":"#8b5cf6","50M":"#10b981","산탄총":"#f59e0b"}[c]||C.dim);
             // 3자세 출력용: DB 1행 → 화면 3행(슬사/복사/입사)
             const isPrelim=resType==="prelim";
@@ -7846,9 +7963,9 @@ td{border:1px solid #333;padding:4px 6px}
               </div>
               {/* 테이블 */}
                 <div style={{overflow:"auto",borderRadius:8,border:"1px solid "+C.border}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",minWidth:(isThreePos||isThreePosFinal)?700:resType==="final"?1400:fields.length*50}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",minWidth:(isThreePos||isThreePosFinal)?700:isPistolFinal?900:resType==="final"?1400:fields.length*50}}>
                     <thead>
-                      {resType==="final"&&!isThreePosFinal&&<tr>
+                      {resType==="final"&&!isThreePosFinal&&!isPistolFinal&&<tr>
                         <th colSpan={4} style={{...S.th,fontSize:10,padding:"4px"}}></th>
                         <th colSpan={5} style={{...S.th,fontSize:10,padding:"4px",background:"#1a3a2a",color:"#6ee7b7"}}>S1 (5발)</th>
                         <th colSpan={5} style={{...S.th,fontSize:10,padding:"4px",background:"#1a2a3a",color:"#7dd3fc"}}>S2 (5발)</th>
@@ -7959,7 +8076,7 @@ td{border:1px solid #333;padding:4px 6px}
               <div style={{marginTop:14,padding:12,background:C.sidebar,borderRadius:8,border:"1px solid "+C.border}}>
                 <div style={{fontSize:11,color:C.dim,lineHeight:1.8}}>
                   📋 엑셀 헤더: <span style={{color:"#e8dcc8",fontWeight:600}}>{fields.filter(f=>f.t!=="shot"&&f.t!=="computed").map(f=>f.l).join(", ")}</span> · CSV 내보내기로 양식 확인 가능
-                  {resType==="final"&&<><br/>🎯 결선: 각 격발 점수를 개별 칸에 입력. 합계는 자동 계산됩니다.</>}
+                  {resType==="final"&&<><br/>🎯 결선: 각 {isPistolFinal?"시리즈":"격발"} 점수를 개별 칸에 입력. 합계는 자동 계산됩니다.</>}
                 </div>
               </div>
               {/* ── 결선 스타트리스트 섹션 ── */}
