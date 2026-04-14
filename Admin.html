@@ -170,6 +170,22 @@ const DEFAULT_EVENTS = [
   { code:"PT3", name:"PT3 트랩 상지 혼성 SG-U", category:"산탄총", type:"individual", gender:"혼", team_size:1, sort_order:20, result_format:"shotgun", final_format:"final" },
 ];
 
+// 청각(Deaf) 종목 — 신기록 관리에도 노출 (tournament_events 와 별개로 cross-tournament best_records 지원)
+const DB_REC_EVENTS = [
+  { code:"DB-R1",    name:"DB-R1 공기소총 입사 남자 청각",     category:"청각", type:"individual", gender:"남", team_size:1, sort_order:101, result_format:"rifle",    final_format:"final" },
+  { code:"DB-R2",    name:"DB-R2 공기소총 입사 여자 청각",     category:"청각", type:"individual", gender:"여", team_size:1, sort_order:102, result_format:"rifle",    final_format:"final" },
+  { code:"DB-P1",    name:"DB-P1 공기권총 남자 청각",           category:"청각", type:"individual", gender:"남", team_size:1, sort_order:103, result_format:"pistol",   final_format:"final" },
+  { code:"DB-P2",    name:"DB-P2 공기권총 여자 청각",           category:"청각", type:"individual", gender:"여", team_size:1, sort_order:104, result_format:"pistol",   final_format:"final" },
+  { code:"DB-R6(M)", name:"DB-R6(M) 50m소총 복사 남자 청각",   category:"청각", type:"individual", gender:"남", team_size:1, sort_order:105, result_format:"rifle",    final_format:"final" },
+  { code:"DB-R6(F)", name:"DB-R6(F) 50m소총 복사 여자 청각",   category:"청각", type:"individual", gender:"여", team_size:1, sort_order:106, result_format:"rifle",    final_format:"final" },
+  { code:"DB-R7",    name:"DB-R7 50m소총 3자세 남자 청각",     category:"청각", type:"individual", gender:"남", team_size:1, sort_order:107, result_format:"threePos", final_format:"final_3pos" },
+  { code:"DB-R8",    name:"DB-R8 50m소총 3자세 여자 청각",     category:"청각", type:"individual", gender:"여", team_size:1, sort_order:108, result_format:"threePos", final_format:"final_3pos" },
+  { code:"DB-P3(M)", name:"DB-P3(M) 25m권총 남자 청각",         category:"청각", type:"individual", gender:"남", team_size:1, sort_order:109, result_format:"pistol",   final_format:"final" },
+  { code:"DB-P3(F)", name:"DB-P3(F) 25m권총 여자 청각",         category:"청각", type:"individual", gender:"여", team_size:1, sort_order:110, result_format:"pistol",   final_format:"final" },
+  { code:"DB-R10",   name:"DB-R10 공기소총 입사 혼성팀 청각",  category:"청각", type:"mixed",      gender:"혼", team_size:2, sort_order:111, result_format:"mixedRifle",  final_format:"medal_match" },
+  { code:"DB-P6",    name:"DB-P6 공기권총 혼성팀 청각",         category:"청각", type:"mixed",      gender:"혼", team_size:2, sort_order:112, result_format:"mixedPistol", final_format:"medal_match" },
+];
+
 const DROP_SQL = `DROP FUNCTION IF EXISTS submit_application(JSONB) CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
 DROP TABLE IF EXISTS best_records CASCADE;
@@ -599,6 +615,16 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     },200);
     return ()=>clearTimeout(timer);
   },[resPrintMode,resEvCode,resType,resData]);
+  // 🔄 인쇄 진입 시 best_records 재조회 (신기록 관리에서 추가한 값이 즉시 반영되도록)
+  React.useEffect(()=>{
+    if(!resPrintMode||!resEvCode||!resType||!sb) return;
+    (async()=>{
+      try{
+        const{data:br}=await sb.from("best_records").select("*").eq("event_code",resEvCode).eq("result_type",resType);
+        setResBestRecs(br||[]);
+      }catch(e){console.warn("신기록 재조회 실패",e);}
+    })();
+  },[resPrintMode,resEvCode,resType,sb]);
   const [resBestRecs, setResBestRecs]=useState([]); // 현재 종목 신기록
   const [resFinalSL, setResFinalSL]=useState(null); // 결선 스타트리스트 [{bib, name, region, sub_org, prelimRank, prelimTotal}]
   const getEvFmt=(code)=>(events.find(e=>e.code===code)||{}).result_format||(DEFAULT_EVENTS.find(e=>e.code===code)||{}).result_format;
@@ -1895,6 +1921,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
         teams.forEach(t=>{sorted.push(t);(teamSubMap.get(t.id)||[]).forEach(s=>sorted.push(s));});
         sorted.push(...others);
         rows=sorted;
+      } else {
+        // 개인전/결선: rank 값이 있으면 rank 오름차순 정렬
+        const hasRank=rows.some(r=>r.rank&&r.rank>0);
+        if(hasRank){
+          rows.sort((a,b)=>(a.rank||9999)-(b.rank||9999));
+        }
       }
       setResData(rows);
       const{data:br}=await sb.from("best_records").select("*").eq("event_code",evCode).eq("result_type",type);
@@ -1962,6 +1994,20 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
       setResData([...resData,{_new:true,id:"new_"+Date.now(),tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,rank:nr,bib:"",name:"",region:"",_sub_org:"",is_team:isMixed,s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""}]);
     }
     setResDirty(true);
+  };
+  // ── Enter키 위아래 셀 이동 ──
+  const resGridKeyDown=(e)=>{
+    if(e.key!=="Enter") return;
+    e.preventDefault();
+    const el=e.target;
+    const row=parseInt(el.getAttribute("data-gr"));
+    const col=el.getAttribute("data-gc");
+    if(isNaN(row)||!col) return;
+    const nextRow=e.shiftKey?row-1:row+1;
+    const tbl=el.closest("table");
+    if(!tbl) return;
+    const next=tbl.querySelector("[data-gr='"+nextRow+"'][data-gc='"+col+"']");
+    if(next){next.focus();next.select&&next.select();}
   };
   const resUpdateRow=(idx,field,val)=>{
     const nr=[...resData]; nr[idx]={...nr[idx],[field]:val,_dirty:true};
@@ -2064,12 +2110,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
           for(const r of toD){await sb.from("competition_results").delete().eq("id",r.id);}
         }
         for(const r of toI){
-          const{_new,_dirty,_sub_org,id,...row}=r; row.sub_org=_sub_org||"";
+          const{_new,_dirty,_sub_org,_teamNum,id,...row}=r; row.sub_org=_sub_org||"";
           const{error}=await sb.from("competition_results").insert(row);
           if(error){failed++;failMsg=error.message;} else saved++;
         }
         for(const r of toU){
-          const{_new,_dirty,_deleted,_sub_org,created_at,...row}=r; row.sub_org=_sub_org||"";
+          const{_new,_dirty,_deleted,_sub_org,_teamNum,created_at,...row}=r; row.sub_org=_sub_org||"";
           const{error}=await sb.from("competition_results").update(row).eq("id",r.id);
           if(error){failed++;failMsg=error.message;} else saved++;
         }
@@ -2322,6 +2368,124 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   };
 
   // 모드1: 스타트리스트 기반
+  // ── 참가신청 명단 입력 (본선: 스타트리스트 기반, 점수 비움) ──
+  const resLoadRosterPrelim=()=>{
+    if(!resEvCode){setResTestMenu(false);return;}
+    let sl=startLists[resEvCode]||null;
+    if(!sl){
+      const sessionLists=Object.keys(startLists).filter(k=>k===resEvCode||k.startsWith(resEvCode+"_")).sort();
+      if(sessionLists.length>0) sl=sessionLists.flatMap(k=>startLists[k]||[]);
+    }
+    if(!sl||sl.length===0){flash("이 종목의 스타트리스트가 없습니다. 먼저 스타트리스트를 생성해주세요.","error");setResTestMenu(false);return;}
+    const cfg=getEventCfg(resEvCode,getEvFmt(resEvCode));
+    const ev=events.find(e=>e.code===resEvCode);
+    const isMixed=cfg.mixed||(ev&&ev.type==="mixed");
+    const activePlayers=sl.filter(p=>!p.absent);
+    let rows;
+    if(isMixed){
+      const mixedOv=(mixedTeamOverrides[resEvCode])||{};
+      const defaultTMSL={};
+      if(evPData&&evPData.allTeamEntries){
+        const gk2n={};let gs=0;
+        evPData.allTeamEntries.filter(t=>t.event_code===resEvCode).forEach(t=>{
+          const gk=t.application_id+"_"+(t.team_number||1);
+          if(gk2n[gk]===undefined){gs++;gk2n[gk]=gs;}
+          defaultTMSL[t.member_id]=gk2n[gk];
+        });
+      }
+      const getTeamNumSL=(p)=>{const ov=mixedOv[String(p.memberId)];return ov!==undefined?ov:(defaultTMSL[p.memberId]||null);};
+      const byTeam={};
+      activePlayers.forEach(p=>{const tn=getTeamNumSL(p);if(tn){if(!byTeam[tn])byTeam[tn]=[];byTeam[tn].push(p);}});
+      rows=[];
+      let teamIdx=0;
+      Object.entries(byTeam).forEach(([tNum,members])=>{
+        if(members.length<2) return;
+        teamIdx++;
+        const p1=members[0],p2=members[1];
+        rows.push({_new:true,id:"roster_t_"+Date.now()+"_"+teamIdx,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+          rank:teamIdx,bib:"team",name:"팀"+tNum,region:p1.regionName||"",is_team:true,_sub_org:p1.subOrg||"",
+          s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""});
+        rows.push({_new:true,id:"roster_m1_"+Date.now()+"_"+teamIdx,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+          rank:0,bib:"sub",name:p1.name,region:p1.regionName||"",is_team:true,_sub_org:p1.subOrg||"",
+          s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""});
+        rows.push({_new:true,id:"roster_m2_"+Date.now()+"_"+teamIdx,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+          rank:0,bib:"sub",name:p2.name,region:p2.regionName||"",is_team:true,_sub_org:p2.subOrg||"",
+          s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""});
+      });
+    } else {
+      const teamMemIds=new Set();
+      if(evPData&&evPData.allTeamEntries){
+        evPData.allTeamEntries.forEach(te=>{if(te.event_code===resEvCode&&te.team_type==="team")teamMemIds.add(te.member_id);});
+      }
+      const evOvR=orgNumOverrides[resEvCode]||{};
+      Object.keys(evOvR).forEach(mid=>{if(evOvR[mid])teamMemIds.add(Number(mid));});
+      rows=activePlayers.map((p,i)=>({
+        _new:true,id:"roster_"+Date.now()+"_"+i,tournament_id:selectedT.id,event_code:resEvCode,result_type:resType,
+        rank:i+1,bib:"",name:p.name,region:p.regionName||"",is_team:teamMemIds.has(p.memberId),
+        _sub_org:p.subOrg||"",
+        s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:""
+      }));
+    }
+    const oldDbRows=resData.filter(r=>!r._new).map(r=>({...r,_deleted:true}));
+    setResData([...oldDbRows,...rows]);
+    setResDirty(true);
+    setResTestMenu(false);
+    flash("📋 "+(isMixed?Object.keys(rows.filter(r=>r.bib==="team")).length+"팀":rows.length+"명")+" 명단 입력 완료 — 점수를 직접 입력하세요");
+  };
+
+  // ── 결선 명단 입력 (결선: 본선 상위 8인 명단, 점수 비움) ──
+  const resLoadRosterFinal=()=>{
+    if(!resEvCode){setResTestMenu(false);return;}
+    const cfg=getEventCfg(resEvCode,getEvFmt(resEvCode));
+    const ev=events.find(e=>e.code===resEvCode);
+    const isMixed=cfg.mixed||(ev&&ev.type==="mixed");
+    // 본선 데이터 DB에서 가져오기
+    (async()=>{
+      setDbBusy(v=>v+1);
+      try{
+        const{data:prelim}=await sb.from("competition_results").select("*")
+          .eq("tournament_id",selectedT.id).eq("event_code",resEvCode).eq("result_type","prelim")
+          .order("rank",{ascending:true});
+        if(!prelim||prelim.length===0){flash("이 종목의 본선 결과가 없습니다. 먼저 본선 결과를 저장하세요.","error");setResTestMenu(false);return;}
+        let rows;
+        if(isMixed){
+          // 혼성팀: 상위 4팀 (team+sub 그룹) → 결선에선 개인행만
+          const teams=[],teamSubs=new Map();let cur=null;
+          prelim.forEach(r=>{
+            if(r.bib==="team"){cur=r;teams.push(r);teamSubs.set(r.id,[]);}
+            else if(r.bib==="sub"&&cur){teamSubs.get(cur.id).push(r);}
+          });
+          teams.sort((a,b)=>(a.rank||999)-(b.rank||999));
+          const top=teams.slice(0,4);
+          rows=[];
+          top.forEach(t=>{
+            const subs=teamSubs.get(t.id)||[];
+            subs.forEach(s=>{
+              rows.push({_new:true,id:"froster_"+Date.now()+"_"+rows.length,tournament_id:selectedT.id,event_code:resEvCode,result_type:"final",
+                rank:0,bib:"",name:s.name||"",region:s.region||"",is_team:false,_sub_org:s.sub_org||"",
+                s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:"본선 "+t.rank+"위"});
+            });
+          });
+        } else {
+          const individuals=prelim.filter(r=>r.bib!=="sub"&&r.bib!=="team");
+          individuals.sort((a,b)=>(a.rank||999)-(b.rank||999));
+          const top8=individuals.slice(0,8);
+          rows=top8.map((r,i)=>({
+            _new:true,id:"froster_"+Date.now()+"_"+i,tournament_id:selectedT.id,event_code:resEvCode,result_type:"final",
+            rank:0,bib:String(i+1),name:r.name||"",region:r.region||"",is_team:!!r.is_team,_sub_org:r.sub_org||"",
+            s1:"",s2:"",s3:"",s4:"",s5:"",s6:"",s7:"",s8:"",s9:"",s10:"",s11:"",s12:"",total:"",x_count:"",remarks:"본선 "+r.rank+"위"
+          }));
+        }
+        const oldDbRows=resData.filter(r=>!r._new).map(r=>({...r,_deleted:true}));
+        setResData([...oldDbRows,...rows]);
+        setResDirty(true);
+        setResTestMenu(false);
+        flash("📋 결선 "+rows.length+"명 명단 입력 완료 — 점수를 직접 입력하세요");
+      }catch(e){flash("결선 명단 로드 실패: "+e.message,"error");}
+      finally{setDbBusy(v=>v-1);}
+    })();
+  };
+
   const resGenFromStartList=()=>{
     if(!resEvCode) return;
     // 세션 기반 startLists에서 해당 종목의 전체 리스트 합치기
@@ -2682,6 +2846,97 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     }catch(e){flash("게시 실패: "+e.message,"error");}
   };
 
+  // ── 결선 스타트리스트 엑셀 추출 ──
+  const exportFinalSL=()=>{
+    if(!resFinalSL||!resFinalSL.length){flash("결선 스타트리스트가 없습니다.","error"); return;}
+    const evName=events.find(e=>e.code===resEvCode)?.name||resEvCode;
+    const tName=selectedT?.name||"대회";
+    const rows=[
+      [tName+" — "+evName+" 결선 스타트리스트","","","","",""],
+      ["배번","이름","소속","세부소속","본선순위","본선점수"]
+    ];
+    resFinalSL.forEach(p=>{
+      rows.push([
+        p.bib, p.name||"",
+        (isNatGames()?p.region:(p.sub_org||p.region))||"",
+        p.sub_org||"",
+        p.prelimRank||"",
+        p.prelimTotal||""
+      ]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"]=[{wch:6},{wch:12},{wch:20},{wch:20},{wch:10},{wch:10}];
+    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:5}}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"결선스타트리스트");
+    XLSX.writeFile(wb,tName+"_"+evName+"_결선스타트리스트.xlsx");
+    flash("엑셀 파일이 다운로드되었습니다");
+  };
+
+  // ── 결선 스타트리스트 인쇄 ──
+  const printFinalSL=()=>{
+    if(!resFinalSL||!resFinalSL.length){flash("결선 스타트리스트가 없습니다.","error"); return;}
+    const evName=events.find(e=>e.code===resEvCode)?.name||resEvCode;
+    const tName=selectedT?.name||"";
+    const tVenue=selectedT?.venue||"";
+    const tDate=(()=>{
+      let evDay=null;
+      for(const d of schedData){
+        for(const r of d.rows){ if(r.event_code===resEvCode&&r.type==="final"){evDay=d.day;break;} }
+        if(evDay) break;
+      }
+      if(evDay&&selectedT?.start_date){
+        const sd=new Date(selectedT.start_date); sd.setDate(sd.getDate()+(evDay-1));
+        return sd.toISOString().slice(0,10);
+      }
+      return selectedT?.start_date||"";
+    })();
+    const w=window.open("","_blank");
+    if(!w){flash("팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.","error"); return;}
+    const rowsHtml=resFinalSL.map(p=>{
+      const org=(isNatGames()?p.region:(p.sub_org||p.region))||"";
+      return `<tr>
+        <td style="text-align:center;font-weight:700;font-size:12pt">${p.bib}</td>
+        <td style="font-weight:600">${p.name||""}</td>
+        <td>${org}</td>
+        <td>${p.sub_org||""}</td>
+        <td style="text-align:center">${p.prelimRank||""}</td>
+        <td style="text-align:center">${p.prelimTotal||""}</td>
+      </tr>`;
+    }).join("");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${tName} ${evName} 결선 스타트리스트</title>
+<style>
+@page{size:A4;margin:15mm}
+body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;color:#000;margin:0;padding:0}
+h1{font-size:16pt;text-align:center;margin:0 0 4px 0}
+h2{font-size:13pt;text-align:center;margin:0 0 12px 0;font-weight:600}
+.meta{font-size:10pt;text-align:center;margin-bottom:14px;color:#333}
+table{width:100%;border-collapse:collapse;font-size:10.5pt}
+th{border:1px solid #333;background:#e8e8e8;padding:5px 6px;font-weight:700}
+td{border:1px solid #333;padding:4px 6px}
+.note{font-size:9pt;color:#555;margin-top:10px}
+@media print{.noprint{display:none}}
+.noprint{text-align:center;margin:14px 0}
+.noprint button{padding:8px 18px;font-size:11pt;cursor:pointer;margin:0 4px}
+</style></head><body>
+<h1>${tName}</h1>
+<h2>${evName} — 결선 스타트리스트</h2>
+<div class="meta">${tDate?tDate+"  ":""}${tVenue||""}</div>
+<table>
+<thead><tr>
+<th style="width:10%">배번</th><th style="width:15%">이름</th>
+<th style="width:25%">소속</th><th style="width:25%">세부소속</th>
+<th style="width:12%">본선순위</th><th style="width:13%">본선점수</th>
+</tr></thead>
+<tbody>${rowsHtml}</tbody>
+</table>
+<div class="note">※ 같은 소속·세부소속이 연속되지 않도록 배번 1~${resFinalSL.length}번 무작위 배정</div>
+<div class="noprint"><button onclick="window.print()">🖨 인쇄</button><button onclick="window.close()">닫기</button></div>
+<script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
+</body></html>`);
+    w.document.close();
+  };
+
   // 단체전 자동 계산
   const loadTeamResults=async(evCodeOverride)=>{
     const ec=evCodeOverride||resEvCode;
@@ -2930,14 +3185,19 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   const getResultTeamNum=(ec,playerName)=>{
     if(!ec||!playerName) return null;
     const evOv=orgNumOverrides[ec]||{};
-    // 이름 → memberId 찾기 (스타트리스트 → evPData 순)
+    // 0. ⭐ 스타트리스트에 이미 _orgNum 이 박혀있으면 그 값을 최우선 사용 (스타트리스트 = 눈으로 보는 진실)
+    //    같은 이름이 여러 조에 있을 수 있으므로 먼저 만나는 할당값을 채택
     let matchMid=null;
-    Object.keys(startLists).forEach(sk=>{
-      if(matchMid) return;
+    for(const sk of Object.keys(startLists)){
       const parts=sk.match(/^(.+?)_(\d+)$/);
       const evCode=parts?parts[1]:sk;
-      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(!matchMid&&p.name===playerName&&p.memberId)matchMid=p.memberId;});
-    });
+      if(evCode!==ec) continue;
+      const hit=(startLists[sk]||[]).find(p=>p.name===playerName);
+      if(hit){
+        if(hit._orgNum!=null&&hit._orgNum!=="") return hit._orgNum;
+        if(hit.memberId&&!matchMid) matchMid=hit.memberId;
+      }
+    }
     if(!matchMid&&evPData){
       const m=evPData.allMembers.find(m=>m.name===playerName);
       if(m) matchMid=m.id;
@@ -3110,7 +3370,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     const fields=resGetFields(resEvCode,resType);
     let csv="\uFEFF"+fields.map(f=>f.l).join(",")+"\n";
     visible.forEach(r=>{csv+=fields.map(f=>{
-      if(f.t==="teamBadge") return getResultTeamNum(resEvCode,r.name)||"";
+      if(f.t==="teamBadge"){ const gt=getResultTeamNum(resEvCode,r.name); return (gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:""))||""; }
       if(f.t==="check") return r[f.k]?"O":"";
       if(f.t==="shot") return resShotRead(r,f._s,f._si);
       if(f.t==="computed") return r.total||"";
@@ -3156,11 +3416,44 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
         // 단체 컬럼: O, o, TRUE, true, 1 → boolean true
         if(row.is_team!==undefined) row.is_team=["O","o","TRUE","true","1","Y","y"].includes(String(row.is_team).trim());
         else row.is_team=false;
+        // 🔧 "단체" 컬럼 (_teamNum) 정규화: "1" / "2" / "" / "—" 등을 숫자 또는 null 로
+        //    이 값이 있으면 렌더링 시 getResultTeamNum 보다 우선 사용됨
+        if(row._teamNum!==undefined){
+          const tn=String(row._teamNum).trim();
+          const n=parseInt(tn,10);
+          row._teamNum=(!isNaN(n)&&n>0)?n:null;
+        }
         if(!row.rank) row.rank=i+1;
         if(!row.name) return null;
         return row;
       }).filter(Boolean);
       if(mapped.length===0){flash("유효한 데이터가 없습니다.","error"); return;}
+      // 🔧 _teamNum 이 지정된 선수는 orgNumOverrides 에도 반영 → 재로딩/새로고침 후에도 유지
+      //    이름으로 memberId 를 찾아서 override map 에 기록 (startLists 또는 evPData 기반)
+      try{
+        const newOv={...orgNumOverrides};
+        const evOv={...(newOv[resEvCode]||{})};
+        let ovChanged=false;
+        mapped.forEach(r=>{
+          if(r._teamNum==null||!r.name) return;
+          let mid=null;
+          Object.keys(startLists).forEach(sk=>{
+            if(mid) return;
+            const parts=sk.match(/^(.+?)_(\d+)$/);
+            const evC=parts?parts[1]:sk;
+            if(evC===resEvCode)(startLists[sk]||[]).forEach(p=>{if(!mid&&p.name===r.name&&p.memberId)mid=p.memberId;});
+          });
+          if(!mid&&evPData){
+            const m=evPData.allMembers.find(m=>m.name===r.name);
+            if(m) mid=m.id;
+          }
+          if(mid){ evOv[String(mid)]=Number(r._teamNum); ovChanged=true; }
+        });
+        if(ovChanged){
+          newOv[resEvCode]=evOv;
+          setOrgNumOverrides(newOv);
+        }
+      }catch(e){console.warn("단체번호 override 반영 실패",e);}
       setResData([...resData.filter(r=>!r._deleted),...mapped]);
       setResDirty(true);
       flash(mapped.length+"건 불러오기 완료");
@@ -7511,6 +7804,15 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
                   <button onClick={()=>setResTestMenu(!resTestMenu)} style={{...S.btn("#8b5cf6","#fff"),fontSize:11,padding:"5px 12px"}}>🎲 테스트 데이터 ▾</button>
                   {resTestMenu&&<><div onClick={()=>setResTestMenu(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
                   <div style={{position:"absolute",top:"100%",right:0,marginTop:4,background:"#1e293b",border:"1px solid #475569",borderRadius:6,boxShadow:"0 4px 12px rgba(0,0,0,.4)",zIndex:100,minWidth:220,overflow:"hidden"}}>
+                    {resType==="prelim"&&<button onClick={resLoadRosterPrelim} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 14px",background:"transparent",border:"none",borderBottom:"1px solid #334155",color:"#22d3ee",fontSize:11,cursor:"pointer",lineHeight:1.5}}
+                      onMouseEnter={e=>e.target.style.background="#334155"} onMouseLeave={e=>e.target.style.background="transparent"}>
+                      📝 참가신청 명단 입력<br/><span style={{fontSize:10,color:"#94a3b8"}}>스타트리스트 명단 불러오기 (점수 직접 입력)</span>
+                    </button>}
+                    {resType==="final"&&<button onClick={resLoadRosterFinal} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 14px",background:"transparent",border:"none",borderBottom:"1px solid #334155",color:"#22d3ee",fontSize:11,cursor:"pointer",lineHeight:1.5}}
+                      onMouseEnter={e=>e.target.style.background="#334155"} onMouseLeave={e=>e.target.style.background="transparent"}>
+                      📝 결선 명단 입력<br/><span style={{fontSize:10,color:"#94a3b8"}}>본선 상위 8인 불러오기 (점수 직접 입력)</span>
+                    </button>}
+                    <div style={{padding:"4px 14px",background:"#0f172a",fontSize:9,color:"#64748b",fontWeight:600,letterSpacing:1}}>테스트 데이터</div>
                     <button onClick={resGenFromStartList} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 14px",background:"transparent",border:"none",borderBottom:"1px solid #334155",color:"#e2e8f0",fontSize:11,cursor:"pointer",lineHeight:1.5}}
                       onMouseEnter={e=>e.target.style.background="#334155"} onMouseLeave={e=>e.target.style.background="transparent"}>
                       📋 스타트리스트 기반 생성<br/><span style={{fontSize:10,color:"#94a3b8"}}>실제 선수 정보 + 랜덤 점수</span>
@@ -7596,18 +7898,18 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
                           const tdS={padding:"2px 2px",borderBottom:borderBot};
                           const rowBg=isFirst?(i%2===0?"transparent":"#0d152044"):(i%2===0?"#0a101a":"#0d152066");
                           return <tr key={r.id+"_"+pi} style={{background:rowBg}}>
-                            <td style={tdS}>{isFirst?<input type="number" value={r.rank??""} onChange={e=>resUpdateRow(origIdx,"rank",e.target.value)} style={{...resInp,width:42}}/>:null}</td>
-                            <td style={tdS}>{isFirst?<input type="text" value={r.name??""} onChange={e=>resUpdateRow(origIdx,"name",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
-                            <td style={tdS}>{isFirst?<input type="text" value={r.region??""} onChange={e=>resUpdateRow(origIdx,"region",e.target.value)} style={{...resInp,width:57}}/>:null}</td>
-                            <td style={tdS}>{isFirst?<input type="text" value={r._sub_org??""} onChange={e=>resUpdateRow(origIdx,"_sub_org",e.target.value)} style={{...resInp,width:77}}/>:null}</td>
-                            <td style={{...tdS,textAlign:"center"}}>{isFirst?(()=>{const tn=getResultTeamNum(resEvCode,r.name);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})():null}</td>
+                            <td style={tdS}>{isFirst?<input type="number" data-gr={i} data-gc="rank" onKeyDown={resGridKeyDown} value={r.rank??""} onChange={e=>resUpdateRow(origIdx,"rank",e.target.value)} style={{...resInp,width:42}}/>:null}</td>
+                            <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="name" onKeyDown={resGridKeyDown} value={r.name??""} onChange={e=>resUpdateRow(origIdx,"name",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
+                            <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="region" onKeyDown={resGridKeyDown} value={r.region??""} onChange={e=>resUpdateRow(origIdx,"region",e.target.value)} style={{...resInp,width:57}}/>:null}</td>
+                            <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="_sub_org" onKeyDown={resGridKeyDown} value={r._sub_org??""} onChange={e=>resUpdateRow(origIdx,"_sub_org",e.target.value)} style={{...resInp,width:77}}/>:null}</td>
+                            <td style={{...tdS,textAlign:"center"}}>{isFirst?(()=>{const gt=getResultTeamNum(resEvCode,r.name);const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})():null}</td>
                             <td style={{...tdS,textAlign:"center"}}><span style={{fontSize:10,fontWeight:600,color:pi===0?"#6ee7b7":pi===1?"#7dd3fc":"#c4b5fd"}}>{p.name}</span></td>
-                            <td style={tdS}><input type="text" value={r[p.s1]??""} onChange={e=>resUpdateRow(origIdx,p.s1,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
-                            <td style={tdS}><input type="text" value={r[p.s2]??""} onChange={e=>resUpdateRow(origIdx,p.s2,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
+                            <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc={p.s1} onKeyDown={resGridKeyDown} value={r[p.s1]??""} onChange={e=>resUpdateRow(origIdx,p.s1,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
+                            <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc={p.s2} onKeyDown={resGridKeyDown} value={r[p.s2]??""} onChange={e=>resUpdateRow(origIdx,p.s2,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
                             <td style={{...tdS,textAlign:"center"}}><span style={{fontSize:11,fontWeight:600,color:"#b0c4de"}}>{calcSub(p.si)}</span></td>
                             <td style={tdS}>{isFirst?<span style={{display:"block",fontSize:12,fontWeight:700,color:C.gold,textAlign:"center",padding:"2px 0"}}>{r.total||""}</span>:null}</td>
-                            <td style={tdS}>{isFirst?<input type="text" value={r.x_count??""} onChange={e=>resUpdateRow(origIdx,"x_count",e.target.value)} style={{...resInp,width:52,textAlign:"center"}}/>:null}</td>
-                            <td style={tdS}>{isFirst?<input type="text" value={r.remarks??""} onChange={e=>resUpdateRow(origIdx,"remarks",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
+                            <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="x_count" onKeyDown={resGridKeyDown} value={r.x_count??""} onChange={e=>resUpdateRow(origIdx,"x_count",e.target.value)} style={{...resInp,width:52,textAlign:"center"}}/>:null}</td>
+                            <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="remarks" onKeyDown={resGridKeyDown} value={r.remarks??""} onChange={e=>resUpdateRow(origIdx,"remarks",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
                             <td style={{...tdS,textAlign:"center"}}>{isFirst?<button onClick={()=>resRemoveRow(origIdx)} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14}}>✕</button>:null}</td>
                           </tr>;
                         });
@@ -7627,14 +7929,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
                                 <span style={{display:"block",fontSize:11,color:"#94a3b8",paddingLeft:14}}>└ {r.name||""} <span style={{color:"#64748b",fontSize:10}}>{r._sub_org||r.sub_org?("("+( r._sub_org||r.sub_org)+")"):""}</span></span></td>;
                             return <td key={f.k} style={{padding:"2px 2px",borderBottom:"1px solid "+C.border+"44",textAlign:(f.t==="check"||f.t==="teamBadge")?"center":undefined,...(isSubRow&&f.k==="rank"?{color:"transparent"}:{})}}>
                             {f.t==="teamBadge"
-                              ?(()=>{const tn=getResultTeamNum(resEvCode,r.name);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})()
+                              ?(()=>{const gt=getResultTeamNum(resEvCode,r.name);const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})()
                               :f.t==="check"
                               ?<input type="checkbox" checked={!!r[f.k]} onChange={e=>resUpdateRow(origIdx,f.k,e.target.checked)} style={{accentColor:C.gold,cursor:"pointer"}}/>
                               :f.t==="shot"
-                              ?<input type="text" value={resShotRead(r,f._s,f._si)} onChange={e=>resShotWrite(origIdx,f._s,f._si,e.target.value)} style={{...resInp,width:f.w-6,textAlign:"center",fontSize:11,...(isTeamRow?{fontWeight:700,background:"#1a2a3a"}:{})}}/>
+                              ?<input type="text" data-gr={i} data-gc={f.k} onKeyDown={resGridKeyDown} value={resShotRead(r,f._s,f._si)} onChange={e=>resShotWrite(origIdx,f._s,f._si,e.target.value)} style={{...resInp,width:f.w-6,textAlign:"center",fontSize:11,...(isTeamRow?{fontWeight:700,background:"#1a2a3a"}:{})}}/>
                               :f.t==="computed"
                               ?<span style={{display:"block",fontSize:12,fontWeight:700,color:isTeamRow?"#4ade80":C.gold,textAlign:"center",padding:"2px 0"}}>{r.total||""}</span>
-                              :<input type={f.t||"text"} value={r[f.k]??""} onChange={e=>resUpdateRow(origIdx,f.k,e.target.value)} style={{...resInp,width:f.w-8,...(isTeamRow?{fontWeight:700,background:"#1a2a3a"}:isSubRow&&f.k==="name"?{paddingLeft:12}:{})}}/>}
+                              :<input type={f.t||"text"} data-gr={i} data-gc={f.k} onKeyDown={resGridKeyDown} value={r[f.k]??""} onChange={e=>resUpdateRow(origIdx,f.k,e.target.value)} style={{...resInp,width:f.w-8,...(isTeamRow?{fontWeight:700,background:"#1a2a3a"}:isSubRow&&f.k==="name"?{paddingLeft:12}:{})}}/>}
                           </td>;})}
                           <td style={{padding:"2px 3px",borderBottom:"1px solid "+C.border+"44",textAlign:"center"}}>
                             {!isSubRow&&<button onClick={()=>resRemoveRow(origIdx)} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14}}>✕</button>}
@@ -7668,6 +7970,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
                   <button onClick={generateFinalSL} style={{...S.btn("#a855f7","#fff"),fontSize:11,padding:"5px 12px"}}>
                     {resFinalSL?"🔄 다시 셔플":"🔀 스타트리스트 작성"}
                   </button>
+                  {resFinalSL&&<button onClick={exportFinalSL} style={{...S.btn(C.green,"#fff"),fontSize:11,padding:"5px 12px"}}>📊 엑셀</button>}
+                  {resFinalSL&&<button onClick={printFinalSL} style={{...S.btn("#334155","#e8dcc8"),fontSize:11,padding:"5px 12px"}}>🖨 인쇄</button>}
                   {resFinalSL&&<button onClick={publishFinalSL} style={{...S.btn("#22c55e","#fff"),fontSize:11,padding:"5px 12px"}}>📤 DB 게시</button>}
                 </div>
                 <div style={{fontSize:10,color:C.dim,marginBottom:10}}>
@@ -9761,9 +10065,10 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
   const BR_EV_COLORS=["#e8f0fe","#fef3e2","#e6f4ea","#fce8e8","#f3e8fd","#e2f0f0","#fef9e7","#f0e8f8","#e8eff8","#fceee8","#eef8e8","#f8e8ee","#e8f8f4","#e8e8f8","#fef0e8","#f4f4e8","#e8f4f0","#f8f0e8"];
 
   const renderBrTable=(forPrint)=>{
+    const ORDER_EVS=[...DEFAULT_EVENTS,...DB_REC_EVENTS];
     const sorted=[...brAllData].sort((a,b)=>{
-      const ai=DEFAULT_EVENTS.findIndex(e=>e.code===a.event_code);
-      const bi=DEFAULT_EVENTS.findIndex(e=>e.code===b.event_code);
+      const ai=ORDER_EVS.findIndex(e=>e.code===a.event_code);
+      const bi=ORDER_EVS.findIndex(e=>e.code===b.event_code);
       if(ai!==bi) return (ai===-1?999:ai)-(bi===-1?999:bi);
       const to={prelim:0,final:1,team:2};
       if(to[a.result_type]!==to[b.result_type]) return to[a.result_type]-to[b.result_type];
@@ -9919,22 +10224,60 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
     setBrData({...brData,[cat]:{...brData[cat],[field]:val,_dirty:true}});
     setBrDirty(true);
   };
+  // 🛡️ best_records 행 정제: DATE/빈문자열 → null 로, supabase 에 안전한 형식으로
+  const brCleanRow=(row)=>{
+    const out={...row};
+    // record_date 는 DATE — 빈 문자열은 null 로
+    if(out.record_date===""||out.record_date===undefined) out.record_date=null;
+    // 기타 텍스트 필드: undefined → "" (null 은 허용)
+    ["record_value","holder_name","holder_region","tournament_name","remarks"].forEach(k=>{
+      if(out[k]===undefined) out[k]="";
+    });
+    return out;
+  };
+  // 🔧 SERIAL id 시퀀스 불일치로 upsert 가 pkey 충돌을 내는 문제 방지용 —
+  //    SELECT 로 기존 행 확인 → 있으면 UPDATE, 없으면 INSERT (id 는 건드리지 않음)
+  const brSaveRow=async(evCode,type,catKey,rowIn)=>{
+    const{data:existing,error:selErr}=await sb.from("best_records")
+      .select("id").eq("event_code",evCode).eq("result_type",type).eq("record_category",catKey).maybeSingle();
+    if(selErr) return {error:selErr};
+    const row=brCleanRow({...rowIn,event_code:evCode,result_type:type,record_category:catKey});
+    // id/created_at 은 절대 전송하지 않음 (시퀀스 충돌 및 덮어쓰기 방지)
+    delete row.id; delete row.created_at;
+    if(existing&&existing.id){
+      const{error}=await sb.from("best_records").update(row).eq("id",existing.id);
+      return{error,id:existing.id};
+    }
+    // INSERT — SERIAL 시퀀스가 max(id) 보다 뒤처져 있으면 pkey 충돌 발생.
+    // Postgres 는 INSERT 실패 시에도 nextval 가 전진하므로 일정 횟수 재시도하면 자연 복구된다.
+    let lastErr=null, insId=null;
+    for(let attempt=0; attempt<50; attempt++){
+      const{data:ins,error}=await sb.from("best_records").insert(row).select("id").single();
+      if(!error){ insId=ins?.id; lastErr=null; break; }
+      lastErr=error;
+      // pkey (id) 충돌만 재시도, 다른 에러는 바로 중단
+      const msg=String(error.message||"");
+      if(!/best_records_pkey|duplicate key.*id/i.test(msg)) break;
+    }
+    return{error:lastErr,id:insId};
+  };
   const brSave=async()=>{
     try{
-      let saved=0;
+      let saved=0, failed=[];
       for(const cat of BR_CATS){
         const r=brData[cat.key];
         if(!r||!r._dirty) continue;
-        const{_dirty,id,created_at,...row}=r;
-        row.event_code=brEvCode; row.result_type=brType; row.record_category=cat.key;
-        if(id){
-          await sb.from("best_records").update(row).eq("id",id);
-        } else if(row.record_value||row.holder_name){
-          await sb.from("best_records").upsert(row,{onConflict:"event_code,result_type,record_category"});
-        }
-        saved++;
+        const{_dirty,_saved,id,created_at,...row0}=r;
+        if(!row0.record_value&&!row0.holder_name) continue; // 빈 카드 skip
+        const{error}=await brSaveRow(brEvCode,brType,cat.key,row0);
+        if(error){ failed.push(cat.label+": "+error.message); console.error(error); }
+        else { saved++; }
       }
-      flash(saved+"건 저장 완료");
+      if(failed.length>0){
+        flash("저장 실패 "+failed.length+"건 — "+failed[0],"error");
+      } else {
+        flash(saved+"건 저장 완료");
+      }
       loadBestRecords(brEvCode,brType);
     }catch(e){flash("저장 실패: "+e.message,"error");}
   };
@@ -9943,18 +10286,15 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
     try{
       const r=brData[catKey];
       if(!r) return;
-      const{_dirty,_saved,id,created_at,...row}=r;
-      row.event_code=brEvCode; row.result_type=brType; row.record_category=catKey;
-      if(id){
-        await sb.from("best_records").update(row).eq("id",id);
-      } else if(row.record_value||row.holder_name){
-        await sb.from("best_records").upsert(row,{onConflict:"event_code,result_type,record_category"});
-      } else { flash("기록 또는 보유자를 입력하세요","error"); return; }
+      const{_dirty,_saved,id,created_at,...row0}=r;
+      if(!row0.record_value&&!row0.holder_name){ flash("기록 또는 보유자를 입력하세요","error"); return; }
+      const{error}=await brSaveRow(brEvCode,brType,catKey,row0);
+      if(error){ console.error(error); flash("저장 실패: "+error.message,"error"); return; }
       setBrData(prev=>({...prev,[catKey]:{...prev[catKey],_dirty:false,_saved:true}}));
       setTimeout(()=>setBrData(prev=>({...prev,[catKey]:{...prev[catKey],_saved:false}})),2000);
       flash(BR_CATS.find(c=>c.key===catKey)?.label+" 저장 완료");
       // reload to get id
-      const{data:fresh}=await sb.from("best_records").select("*").eq("event_code",brEvCode).eq("result_type",brType).eq("record_category",catKey).single();
+      const{data:fresh}=await sb.from("best_records").select("*").eq("event_code",brEvCode).eq("result_type",brType).eq("record_category",catKey).maybeSingle();
       if(fresh) setBrData(prev=>({...prev,[catKey]:{...fresh,_saved:true}}));
     }catch(e){flash("저장 실패: "+e.message,"error");}
   };
@@ -10126,13 +10466,24 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
             </div>
             {/* 종목별 모드일 때만 종목 버튼 */}
             {!brViewAll&&<>
-            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:10}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
               {DEFAULT_EVENTS.filter(e=>e.type==="individual").map(ev=>(
                 <button key={ev.code} onClick={()=>{setBrEvCode(ev.code);loadBestRecords(ev.code,brType);}} style={{
                   padding:"5px 10px",borderRadius:5,fontSize:11,fontWeight:brEvCode===ev.code?700:400,cursor:"pointer",
                   border:"1px solid "+(brEvCode===ev.code?C.gold:C.border),
                   background:brEvCode===ev.code?C.gold+"22":"transparent",
                   color:brEvCode===ev.code?C.gold:C.dim,
+                }}>{ev.code}</button>
+              ))}
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:10,alignItems:"center"}}>
+              <span style={{fontSize:10,color:"#a855f7",fontWeight:700,marginRight:4}}>청각</span>
+              {DB_REC_EVENTS.map(ev=>(
+                <button key={ev.code} onClick={()=>{setBrEvCode(ev.code);loadBestRecords(ev.code,brType);}} style={{
+                  padding:"5px 10px",borderRadius:5,fontSize:11,fontWeight:brEvCode===ev.code?700:400,cursor:"pointer",
+                  border:"1px solid "+(brEvCode===ev.code?"#a855f7":C.border),
+                  background:brEvCode===ev.code?"#a855f722":"transparent",
+                  color:brEvCode===ev.code?"#a855f7":C.dim,
                 }}>{ev.code}</button>
               ))}
             </div>
@@ -10157,7 +10508,7 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
             </div>}
             {brEvCode&&<div>
               <div style={{marginBottom:16}}>
-                <span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{DEFAULT_EVENTS.find(e=>e.code===brEvCode)?.name}</span>
+                <span style={{fontSize:15,fontWeight:700,color:"#fff"}}>{(DEFAULT_EVENTS.find(e=>e.code===brEvCode)||DB_REC_EVENTS.find(e=>e.code===brEvCode))?.name}</span>
                 <span style={{fontSize:12,color:C.dim,marginLeft:8}}>— {BR_TYPE_LABEL[brType]} 기록</span>
               </div>
               {/* 4분류 카드 */}
