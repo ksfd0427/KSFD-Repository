@@ -25,8 +25,9 @@
     textarea, input, select { font-family: 'JetBrains Mono', monospace; }
     @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes dbProgress { 0%{left:-40%;width:40%} 50%{left:30%;width:50%} 100%{left:100%;width:20%} }
-    .db-bar { position:fixed; top:0; left:0; right:0; height:3px; z-index:99999; overflow:hidden; background:transparent; pointer-events:none; }
+    .db-bar { position:fixed; top:0; left:0; right:0; height:3px; z-index:99999; overflow:hidden; background:#1a2030; pointer-events:none; }
     .db-bar-inner { position:absolute; top:0; height:100%; background:linear-gradient(90deg,#c9a84c,#f0d060,#c9a84c); border-radius:0 2px 2px 0; animation:dbProgress 1.2s ease-in-out infinite; }
+    .db-bar-det { position:absolute; top:0; left:0; height:100%; background:linear-gradient(90deg,#c9a84c,#f0d060); border-radius:0 2px 2px 0; transition:width .25s ease-out; box-shadow:0 0 6px #f0d06066; }
     @media print { .db-bar { display:none; } }
     /* 인쇄 미리보기 */
     .print-overlay { position:fixed; inset:0; z-index:9999; background:#f0f0f0; overflow-y:auto; }
@@ -288,6 +289,7 @@ function App() {
     }
   };
   const [dbBusy, setDbBusy]=useState(0);
+  const [dbProg, setDbProg]=useState(null); // {done,total} when determinate
   useEffect(()=>{try{setSb(window.supabase.createClient(SB_URL,SB_KEY));}catch(e){flash("연결실패","error");}}, []);
   const [migrationSQL, setMigrationSQL]=useState(false);
   // DB 테이블 존재 여부 확인
@@ -303,7 +305,7 @@ function App() {
     })();
   },[sb]);
   return (<div>
-    {dbBusy>0&&<div className="db-bar"><div className="db-bar-inner"/></div>}
+    {(dbBusy>0||dbProg)&&<div className="db-bar">{dbProg&&dbProg.total>0?<div className="db-bar-det" style={{width:Math.min(100,Math.round((dbProg.done/dbProg.total)*100))+"%"}}/>:<div className="db-bar-inner"/>}</div>}
     {error && <div style={S.toast("error")}>{error}</div>}
     {success && <div style={S.toast("success")}>{success}</div>}
     {migrationSQL&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"#7f1d1d",padding:"12px 20px",fontSize:12,color:"#fca5a5",textAlign:"center"}}>
@@ -331,7 +333,7 @@ ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_league BOOLEAN DEFAULT FALSE
       <button onClick={()=>setMigrationSQL(false)} style={{background:"#dc2626",color:"#fff",border:"none",borderRadius:4,padding:"3px 10px",fontSize:11,cursor:"pointer",marginLeft:8}}>닫기</button>
     </div>}
     {mode==="landing" && <Landing onSelect={setMode} sb={sb}/>}
-    {mode==="ops" && <OpsPanel sb={sb} flash={flash} onBack={()=>setMode("landing")} dbBusy={dbBusy} setDbBusy={setDbBusy} setMigrationSQL={setMigrationSQL}/>}
+    {mode==="ops" && <OpsPanel sb={sb} flash={flash} onBack={()=>setMode("landing")} dbBusy={dbBusy} setDbBusy={setDbBusy} setDbProg={setDbProg} setMigrationSQL={setMigrationSQL}/>}
     {mode==="records" && <RecordsPanel sb={sb} flash={flash} onBack={()=>setMode("landing")} setDbBusy={setDbBusy}/>}
     {mode==="db" && <DbPanel sb={sb} flash={flash} onBack={()=>setMode("landing")} setDbBusy={setDbBusy}/>}
   </div>);
@@ -370,7 +372,7 @@ function Landing({ onSelect, sb }) {
 }
 
 // ═══ 대회 운영 ═══
-function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
+function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigrationSQL }) {
   const resSavingRef=React.useRef(false);
   const [view, setView]=useState("list");
   const [listTab, setListTab]=useState("tournaments"); // "tournaments" | "fedLogo" | "eventMaster"
@@ -635,6 +637,36 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         try{
           const keys=Object.keys(data).filter(k=>Array.isArray(data[k])&&data[k].length>0);
           if(keys.length>0 && typeof syncStartlistSessions==="function") await syncStartlistSessions(data,keys);
+          // 🧹 stale 숫자 조 키 정리 (예: 이전에 2조 만들어둔 DB 행이 남아서 Entry 에 조 드랍다운이 잘못 표시되는 문제 방지)
+          //    현재 startLists 에 없는 {evCode}_{숫자} 세션 키만 삭제. _final / _bronze / _gold 등 특수 키는 보존.
+          try{
+            const currentRelaysByEv={};
+            keys.forEach(k=>{
+              const m=k.match(/^(.+?)_(\d+)$/);
+              if(m){
+                const ev=m[1], rel=m[2];
+                if(!currentRelaysByEv[ev]) currentRelaysByEv[ev]=new Set();
+                currentRelaysByEv[ev].add(rel);
+              }
+            });
+            const {data:allDbKeys}=await sb.from("tournament_startlists").select("session_key").eq("tournament_id",tid);
+            const staleSet=new Set();
+            (allDbKeys||[]).forEach(r=>{
+              const m=(r.session_key||"").match(/^(.+?)_(\d+)$/);
+              if(m){
+                const ev=m[1], rel=m[2];
+                // 🛡️ 안전장치: relay=1 은 절대 삭제하지 않음 (기본 조이므로 보존)
+                //    2조 이상만 stale 후보로 취급.
+                //    추가로 현재 save 에 해당 ev 가 실제로 존재해야만 삭제 (부분 저장 시 오삭제 방지)
+                if(rel==="1") return;
+                if(currentRelaysByEv[ev] && !currentRelaysByEv[ev].has(rel)) staleSet.add(r.session_key);
+              }
+            });
+            if(staleSet.size>0){
+              await sb.from("tournament_startlists").delete().eq("tournament_id",tid).in("session_key",[...staleSet]);
+              console.log("🧹 stale session_keys 정리:",[...staleSet]);
+            }
+          }catch(ce){console.warn("stale session cleanup 실패",ce);}
         }catch(se){console.warn("tournament_startlists auto-sync 실패",se);}
       }
       return true;
@@ -743,15 +775,19 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
   const saveAllOps=async()=>{
     if(!sb||!selectedT){flash("DB 연결 또는 대회 미선택","error");return;}
     const done=[];
+    const TOTAL=9; // 시간표,사대,조,세션,단체,혼성,불참,스타트리스트,결선설정
+    let step=0;
+    const bump=(label)=>{step++; done.push(label); if(typeof setDbProg==="function") setDbProg({done:step,total:TOTAL});};
+    if(typeof setDbProg==="function") setDbProg({done:0,total:TOTAL});
     try{
       // 1) 기본 tournament_ops_data 저장들
-      await dbSave("sched",schedData); done.push("시간표");
-      await dbSave("lanes",{laneAssign,laneBroken,laneConfig}); done.push("사대배정");
-      await dbSave("relay_assignments",relayAssign); done.push("조배정");
-      await dbSave("session_status",sessionStatuses); done.push("세션상태");
-      await dbSave("orgnum_overrides",orgNumOverrides); done.push("단체번호");
-      await dbSave("mixed_team_overrides",mixedTeamOverrides); done.push("혼성팀");
-      await dbSave("absent_history",absentHistory); done.push("불참이력");
+      await dbSave("sched",schedData); bump("시간표");
+      await dbSave("lanes",{laneAssign,laneBroken,laneConfig}); bump("사대배정");
+      await dbSave("relay_assignments",relayAssign); bump("조배정");
+      await dbSave("session_status",sessionStatuses); bump("세션상태");
+      await dbSave("orgnum_overrides",orgNumOverrides); bump("단체번호");
+      await dbSave("mixed_team_overrides",mixedTeamOverrides); bump("혼성팀");
+      await dbSave("absent_history",absentHistory); bump("불참이력");
       // 2) 사대 변경을 startLists p.lane 에 전파 (saveLanes 와 동일 로직)
       const getLanesForSession=(evCode,relay)=>{
         const lanes=[];
@@ -786,25 +822,64 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         });
         updatedSL[sessionKey]=updated;
       });
+      // 2.5) 25M 종목 stale relay 정리: laneAssign 에 없는 _2+ 세션 제거
+      //     (예: 청각 25M 은 1조만 배정되어야 하는데 startLists 에 _2 가 남아있으면
+      //      get25MRelayCount 가 2조로 인식해 시간표/Entry 에 오표시됨)
+      try{
+        const assignedRelaysByEv={};
+        Object.keys(laneAssign).forEach(dayKey=>{
+          const da=laneAssign[dayKey]||{};
+          Object.keys(da).forEach(k=>{
+            const a=da[k],p=evKeyParse(k);
+            if(p.evCode&&a&&a.relay){
+              if(!assignedRelaysByEv[p.evCode]) assignedRelaysByEv[p.evCode]=new Set();
+              assignedRelaysByEv[p.evCode].add(String(a.relay));
+            }
+          });
+        });
+        const removed25M=[];
+        Object.keys(updatedSL).forEach(k=>{
+          const m=k.match(/^(.+?)_(\d+)$/);
+          if(!m) return;
+          const ev=m[1], rel=m[2];
+          if(!is25MEv(ev)) return;
+          if(rel==="1") return; // 1조는 항상 보존
+          // 🛡️ 실제 선수 데이터가 있는 키는 절대 삭제 안 함 (데이터 손실 방지)
+          const sl=updatedSL[k];
+          if(Array.isArray(sl)&&sl.length>0) return;
+          const assigned=assignedRelaysByEv[ev];
+          if(!assigned||!assigned.has(rel)){
+            delete updatedSL[k];
+            removed25M.push(k);
+          }
+        });
+        if(removed25M.length>0) console.log("🧹 25M stale relay 정리:",removed25M);
+      }catch(e){console.warn("25M relay cleanup 실패",e);}
       setStartLists(updatedSL);
       // 3) startlists 저장 → dbSave 가 tournament_startlists 자동 동기화
-      await dbSave("startlists",updatedSL); done.push("스타트리스트");
+      await dbSave("startlists",updatedSL); bump("스타트리스트");
       // 4) 결선 없음/결정전 종목 목록 (Entry 참조용)
-      try{ await syncEventFinals(events); done.push("결선설정"); }catch(e){}
+      try{ await syncEventFinals(events); bump("결선설정"); }catch(e){}
       // 5) saved 표시
       setSlSavedKeys(new Set(Object.keys(updatedSL).filter(k=>updatedSL[k]&&updatedSL[k].length>0)));
+      if(typeof setDbProg==="function") setDbProg({done:TOTAL,total:TOTAL});
       flash("✅ 전체 DB 저장 완료 — "+done.join(" · "));
     }catch(e){
       console.error("saveAllOps 실패",e);
       flash("전체 DB 저장 실패: "+(e.message||e),"error");
+    }finally{
+      if(typeof setDbProg==="function") setTimeout(()=>setDbProg(null),600);
     }
   };  const publishSched=async()=>{
     if(!sb||!selectedT){flash("DB 연결 또는 대회 미선택","error");return;}
     const tid=selectedT.id;
     setDbBusy(v=>v+1);
+    const setP=(d,t)=>{ if(typeof setDbProg==="function") setDbProg({done:d,total:t}); };
+    setP(0,4);
     try{
       // ── 1. 시간표 업로드 ──
       await sb.from("tournament_schedules").delete().eq("tournament_id",tid);
+      setP(1,4);
       const rows=[];
       const usedSessionKeys=new Set(); // 시간표에 포함된 세션 키 수집
       schedData.forEach(d=>{
@@ -862,9 +937,11 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         const{error}=await sb.from("tournament_schedules").insert(rows);
         if(error) throw error;
       }
+      setP(2,4);
 
       // ── 2. 해당 세션들의 스타트리스트 업로드 ──
       await sb.from("tournament_startlists").delete().eq("tournament_id",tid);
+      setP(3,4);
       const slRows=[];
       usedSessionKeys.forEach(sessionKey=>{
         const sl=startLists[sessionKey];
@@ -882,17 +959,23 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setMigrationSQL }) {
         });
       });
       if(slRows.length>0){
-        // Supabase insert 최대 1000행씩
+        // Supabase insert 최대 1000행씩 — chunk 진척도 표시
+        const chunks=Math.ceil(slRows.length/500);
+        const base=3; // 이전까지 진척
+        const remain=1; // 남은 비중 (총 4 중 1)
         for(let i=0;i<slRows.length;i+=500){
           const chunk=slRows.slice(i,i+500);
           const{error}=await sb.from("tournament_startlists").insert(chunk);
           if(error) throw error;
+          const idx=Math.floor(i/500)+1;
+          setP(base+(idx/chunks)*remain,4);
         }
       }
+      setP(4,4);
 
       flash("게시 완료: 시간표 "+rows.length+"개 항목 + 스타트리스트 "+slRows.length+"명 ("+usedSessionKeys.size+"개 세션)");
     }catch(e){flash("게시 실패: "+e.message,"error");console.error(e);}
-    finally{setDbBusy(v=>v-1);}
+    finally{setDbBusy(v=>v-1); if(typeof setDbProg==="function") setTimeout(()=>setDbProg(null),600);}
   };
 
   // ─── 참가신청 테스트 데이터 (1개 단체) ───

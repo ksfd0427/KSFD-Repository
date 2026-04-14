@@ -1299,7 +1299,11 @@ function TournamentRegistration() {
           </div>;
         }
         // 기본: 단순 명단 버튼
-        return <button onClick={() => openSessionView(sessionKey, "startlist", eventCode, category)} style={{
+        // 🔧 25M 단일 조: sessionKey 는 eventCode_완사/급사 형태라 tournament_startlists 조회 실패
+        //   → 실제 numeric relay 키(보통 _1)로 매핑
+        const singleRelay25M = is25M && relays25M.length === 1 ? relays25M[0] : null;
+        const clickType = singleRelay25M ? "startlist:" + singleRelay25M : "startlist";
+        return <button onClick={() => openSessionView(sessionKey, clickType, eventCode, category)} style={{
           padding: "4px 8px", borderRadius: 5, border: "1px solid " + (isOpen ? "#c9a84c" : "#334466"),
           background: isOpen ? "#c9a84c22" : "transparent", color: isOpen ? "#c9a84c" : "#6688aa",
           fontSize: 10, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap"
@@ -1332,6 +1336,10 @@ function TournamentRegistration() {
           }
         });
         items = newItems;
+      } else if (is25M && relays25M.length === 1) {
+        // 🔧 25M 단일 조: "startlist" 를 "startlist:N" 으로 변환해 정확한 session_key 조회
+        const only = relays25M[0];
+        items = items.map(item => item.key === "startlist" ? { ...item, key: "startlist:" + only } : item);
       }
 
       // 항목이 1개뿐이면 단순 버튼
