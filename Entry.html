@@ -1450,6 +1450,17 @@ function TournamentRegistration() {
         if (val.includes(",")) return val.split(",").reduce((s, v) => s + (parseFloat(v) || 0), 0);
         return parseFloat(val) || 0;
       };
+      const fmtTotal = (r) => {
+        if (!r.total) return "-";
+        const xc = r.x_count;
+        if (xc && xc !== "" && xc !== "0") {
+          const xVal = typeof xc === "string" && xc.includes(",")
+            ? xc.split(",").reduce((s, v) => s + (parseInt(v) || 0), 0)
+            : parseInt(xc) || 0;
+          return xVal ? r.total + "-" + xVal + "x" : r.total;
+        }
+        return r.total;
+      };
       const calcCumulative = (r) => {
         const cumArr = [];
         let running = 0;
@@ -1601,10 +1612,10 @@ function TournamentRegistration() {
                         <td style={{ ...cellStyle, textAlign: "left", fontWeight: isTeamRow ? 700 : 600, color: isTeamRow ? "#7dd3fc" : isTop3 ? medalColor : "#e8dcc8", paddingLeft: isSubRow ? 24 : 8 }}>{isSubRow ? "└ " : ""}{r.name}</td>
                         <td style={{ ...cellStyle, color: "#8899aa", fontSize: 11 }}>{isTeamRow ? (r.region || "") : (r.sub_org || "-")}</td>
                         {isBronzeGold ? (
-                          <td style={{ ...cellStyle, fontWeight: 800, color: "#e8dcc8", fontFamily: "monospace", fontSize: 13 }}>{r.total || "-"}</td>
+                          <td style={{ ...cellStyle, fontWeight: 800, color: "#e8dcc8", fontFamily: "monospace", fontSize: 13 }}>{fmtTotal(r)}</td>
                         ) : isFinal ? (
                           <>
-                            <td style={{ ...cellStyle, fontWeight: 800, color: "#e8dcc8", fontFamily: "monospace", fontSize: 13 }}>{r.total || "-"}</td>
+                            <td style={{ ...cellStyle, fontWeight: 800, color: "#e8dcc8", fontFamily: "monospace", fontSize: 13 }}>{fmtTotal(r)}</td>
                             {Array.from({ length: finalMaxVisible }, (_, si) => {
                               const sNum = si + 1;
                               const isHidden = sNum >= lastSIdx;
@@ -1619,7 +1630,7 @@ function TournamentRegistration() {
                         ) : (
                           <>
                             {seriesCols.map(c => <td key={c.key} style={{ ...cellStyle, fontFamily: "monospace", color: isSubRow ? "#7899aa" : "#b0c4de", fontSize: isSubRow ? 11 : 12 }}>{r[c.key] || "-"}</td>)}
-                            <td style={{ ...cellStyle, fontWeight: isSubRow ? 600 : 700, color: isSubRow ? "#7899aa" : "#e8dcc8", fontFamily: "monospace", fontSize: isSubRow ? 11 : 12 }}>{r.total || "-"}</td>
+                            <td style={{ ...cellStyle, fontWeight: isSubRow ? 600 : 700, color: isSubRow ? "#7899aa" : "#e8dcc8", fontFamily: "monospace", fontSize: isSubRow ? 11 : 12 }}>{fmtTotal(r)}</td>
                           </>
                         )}
                         
