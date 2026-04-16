@@ -135,7 +135,7 @@ const RESULT_FORMAT_OPTS=Object.entries(EVENT_RESULT_CFG).map(([k,v])=>[k,v.labe
 const FINAL_RESULT_CFG = {
   none: { label:"결선 없음", series:0, decimal:false, xcount:false, elimination:false },
   final: { label:"탈락식 결선 (9시리즈·격발·소수점)", series:9, decimal:true, xcount:false, elimination:true, shotsPerSeries:(s)=>s<=2?5:2 },
-  final_3pos: { label:"3자세 결선 (8시리즈·3/2/1발·소수점)", series:8, decimal:true, xcount:false, elimination:true, shotsPerSeries:(s)=>s<=2?3:s===3?2:1 },
+  final_3pos: { label:"3자세 결선 (8시리즈·슬사/복사/입사·소수점)", series:8, decimal:true, xcount:false, elimination:true, shotsPerSeries:(s)=>s===3?2:1, seriesLabels:["슬사","복사","입사","입사","입사","입사","입사","입사"] },
   final_pistol: { label:"권총 결선 (10시리즈·1발·정수)", series:10, decimal:false, xcount:false, elimination:true, shotsPerSeries:(s)=>1 },
   medal_match: { label:"결정전 (3·4위 + 1·2위)", series:0, decimal:false, xcount:false, elimination:false },
 };
@@ -2071,7 +2071,20 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     if(next){next.focus();next.select&&next.select();}
   };
   const resUpdateRow=(idx,field,val)=>{
-    const nr=[...resData]; nr[idx]={...nr[idx],[field]:val,_dirty:true};
+    const nr=[...resData]; const row={...nr[idx],[field]:val,_dirty:true};
+    // 본선 시리즈(s1~s12) 변경 시 합계 자동 재계산
+    if(/^s\d+$/.test(field)&&resType==="prelim"){
+      const cfg=resEvCode?getEventCfg(resEvCode,getEvFmt(resEvCode)):null;
+      if(cfg){
+        let sum10=0,hasVal=false;
+        for(let s=1;s<=cfg.series;s++){
+          const v=parseFloat(row["s"+s]);
+          if(!isNaN(v)&&v>0){sum10+=Math.round(v*(cfg.decimal?10:1));hasVal=true;}
+        }
+        if(hasVal) row.total=cfg.decimal?(sum10/10).toFixed(1):String(sum10);
+      }
+    }
+    nr[idx]=row;
     setResData(nr); setResDirty(true);
   };
   const resRemoveRow=(idx)=>{
@@ -2385,13 +2398,13 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
       return;
     }
     if(is3Pos){
-      // 3자세 결선: 8시리즈, S1·S2=3발, S3=2발, S4~S8=1발
+      // 3자세 결선: 8시리즈, S1=슬사(1발), S2=복사(1발), S3=입사(2발), S4~S8=입사(1발)
       // S3 후 7,8위 탈락(2명), 이후 1명씩 탈락, S8에서 1·2위 확정
       const sims=rows.map(r=>({row:r, cumul:0, eliminated:false, elimAt:0, rank:0}));
       for(let s=1;s<=8;s++){
         const remaining=sims.filter(d=>!d.eliminated);
         if(remaining.length===0) break;
-        const nShots=s<=2?3:s===3?2:1;
+        const nShots=s===3?2:1;
         remaining.forEach(d=>{
           const shots=[];
           for(let j=0;j<nShots;j++){
@@ -3061,24 +3074,24 @@ td{border:1px solid #333;padding:4px 6px}
       teamList0.sort((a,b)=>{const ai=regionOrder0.indexOf(a.regionName),bi=regionOrder0.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
       teamList0.forEach((t,i)=>{t.members.forEach(mid=>{teamMembers[mid]=i+1;});});
     }
-    // 스타트리스트에서 이름 → memberId 매핑 (이름 기반 역조회용)
-    const slEntries=[];
+    // 이름 → memberId 매핑: evPData(현재 ID)를 우선, 스타트리스트는 보조
+    const nameToSL={};
+    // 1) 스타트리스트에서 이름 → memberId 초기 매핑
     Object.keys(startLists).forEach(sk=>{
       const parts=sk.match(/^(.+?)_(\d+)$/);
       const evCode=parts?parts[1]:sk;
-      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId)slEntries.push(p);});
+      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId&&p.name)nameToSL[p.name]=p;});
     });
-    // evPData fallback (이름→memberId)
-    if(slEntries.length===0&&evPData){
+    // 2) evPData로 현재 memberId 오버레이 (stale ID 해결)
+    if(evPData){
       const{allMembers,allEntries,appMap}=evPData;
       const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
       const memberAppMap2={};allMembers.forEach(m=>{memberAppMap2[m.id]=appMap[m.application_id];});
       allEntries.filter(e=>e.event_code===ec).forEach(e=>{
         const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];
-        if(m) slEntries.push({memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"});
+        if(m) nameToSL[m.name]={memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"};
       });
     }
-    const nameToSL={};slEntries.forEach(p=>{nameToSL[p.name]=p;});
     // getTeamNum: team_entries에 있거나 orgNumOverrides에 수동 배정된 경우만 번호 반환
     const getTeamNum=(r)=>{
       const slP=nameToSL[r.name];
@@ -3196,23 +3209,22 @@ td{border:1px solid #333;padding:4px 6px}
       teamList0.sort((a,b)=>{const ai=regionOrder0.indexOf(a.regionName),bi=regionOrder0.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
       teamList0.forEach((t,i)=>{t.members.forEach(mid=>{leagueMembers[mid]=i+1;});});
     }
-    // 이름 → memberId 매핑
-    const slEntries=[];
+    // 이름 → memberId 매핑: evPData(현재 ID)를 우선, 스타트리스트는 보조
+    const nameToSL={};
     Object.keys(startLists).forEach(sk=>{
       const parts=sk.match(/^(.+?)_(\d+)$/);
       const evCode=parts?parts[1]:sk;
-      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId)slEntries.push(p);});
+      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId&&p.name)nameToSL[p.name]=p;});
     });
-    if(slEntries.length===0&&evPData){
+    if(evPData){
       const{allMembers,allEntries,appMap}=evPData;
       const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
       const memberAppMap2={};allMembers.forEach(m=>{memberAppMap2[m.id]=appMap[m.application_id];});
       allEntries.filter(e=>e.event_code===ec).forEach(e=>{
         const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];
-        if(m) slEntries.push({memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"});
+        if(m) nameToSL[m.name]={memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"};
       });
     }
-    const nameToSL={};slEntries.forEach(p=>{nameToSL[p.name]=p;});
     const getLeagueNum=(r)=>{
       const slP=nameToSL[r.name];
       if(!slP) return null;
@@ -3407,13 +3419,16 @@ td{border:1px solid #333;padding:4px 6px}
         return base;
       }
       const totalSeries=is3Pos?8:9;
-      const shotsIn3P=s=>s<=2?3:s===3?2:1;
+      const shotsIn3P=s=>s===3?2:1; // S1=슬사(1발), S2=복사(1발), S3=입사(2발), S4~S8=입사(1발)
       const shotsInStd=s=>s<=2?5:2;
       base.push({k:"name",l:isMixed?"팀원":"이름",w:isMixed?140:80},{k:"region",l:"시도",w:65},{k:"_sub_org",l:"세부소속",w:85});
+      const finalCfg3=is3Pos?getEventFinalCfg(code):null;
       for(let s=1;s<=totalSeries;s++){
         const nShots=is3Pos?shotsIn3P(s):shotsInStd(s);
+        const sLabel=finalCfg3?.seriesLabels?.[s-1];
         for(let j=0;j<nShots;j++){
-          base.push({k:"s"+s+"_"+j,_s:"s"+s,_si:j,l:s+"-"+"①②③④⑤"[j],w:46,t:"shot"});
+          const lbl=is3Pos?(nShots>1?(sLabel||"S"+s)+"-"+"①②"[j]:(sLabel||"S"+s)):s+"-"+"①②③④⑤"[j];
+          base.push({k:"s"+s+"_"+j,_s:"s"+s,_si:j,l:lbl,w:46,t:"shot"});
         }
       }
       base.push({k:"total",l:"합계",w:65,t:"computed"});
@@ -3450,7 +3465,7 @@ td{border:1px solid #333;padding:4px 6px}
     const cfg3=resEvCode?getEventCfg(resEvCode,getEvFmt(resEvCode)):null;
     const is3Pos=isFinal3Pos(resEvCode);
     const isPistolF=isFinalPistol(resEvCode);
-    const nShots=isPistolF?1:is3Pos?(sNum<=2?3:sNum===3?2:1):(sNum<=2?5:2);
+    const nShots=isPistolF?1:is3Pos?(sNum===3?2:1):(sNum<=2?5:2);
     const totalSeries=isPistolF?10:is3Pos?8:9;
     const parts=String(r[seriesKey]||"").split(",");
     while(parts.length<nShots) parts.push("");
@@ -3513,9 +3528,11 @@ td{border:1px solid #333;padding:4px 6px}
         Object.entries(shotBuf).forEach(([s,arr])=>{row[s]=arr.join(",");});
         // 합계 자동계산 (결선) — ×10 정수 누적으로 부동소수점 오차 방지
         if(resType==="final"){
+          const maxS=isFinalPistol(resEvCode)?10:isFinal3Pos(resEvCode)?8:9;
+          const isPF=isFinalPistol(resEvCode);
           let tot10=0;
-          for(let s=1;s<=9;s++) String(row["s"+s]||"").split(",").forEach(v=>{const n=parseFloat(v);if(!isNaN(n))tot10+=Math.round(n*10);});
-          if(tot10>0) row.total=(tot10/10).toFixed(1);
+          for(let s=1;s<=maxS;s++) String(row["s"+s]||"").split(",").forEach(v=>{const n=parseFloat(v);if(!isNaN(n))tot10+=Math.round(n*10);});
+          if(tot10>0) row.total=isPF?String(Math.round(tot10/10)):(tot10/10).toFixed(1);
         }
         // 단체 컬럼: O, o, TRUE, true, 1 → boolean true
         if(row.is_team!==undefined) row.is_team=["O","o","TRUE","true","1","Y","y"].includes(String(row.is_team).trim());
@@ -4000,13 +4017,13 @@ td{border:1px solid #333;padding:4px 6px}
       })}</tbody></table>;
     };
 
-    // ═══ 3자세 결선 전용 테이블 (8시리즈: S1·S2=3발, S3=2발표시, S4~S8=1발) ═══
+    // ═══ 3자세 결선 전용 테이블 (8시리즈: S1=슬사1발, S2=복사1발, S3=입사2발, S4~S8=입사1발) ═══
     const renderFinal3Pos=()=>{
       const data=resData.filter(r=>!r._deleted);
       if(data.length===0) return <p style={{textAlign:"center",color:"#999",padding:"20mm 0"}}>결선 데이터가 없습니다.</p>;
       const SERIES=8;
-      const shotsIn=s=>s<=2?3:s===3?2:1; // S1,S2=3발, S3=2발(표시), S4~S8=1발
-      const MAX_ROWS=4; // row0=누계, row1~3=격발
+      const shotsIn=s=>s===3?2:1; // S1=슬사(1발), S2=복사(1발), S3=입사(2발), S4~S8=입사(1발)
+      const MAX_ROWS=3; // row0=누계, row1~2=격발 (최대 2발=S3)
       const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
       const SZ="7.5pt";
       const parseShots=str=>{
@@ -4030,6 +4047,7 @@ td{border:1px solid #333;padding:4px 6px}
       const shotCell={padding:"0.5px 1px",textAlign:"center",fontSize:SZ,fontFamily:F,fontWeight:400,lineHeight:1.1,
         borderTop:"none",borderBottom:bdrD,borderLeft:"none",borderRight:"none"};
       const shotLastCell={...shotCell,borderBottom:bdr};
+      const posLabels=["슬사","복사","입사","입사","입사","입사","입사","입사"];
       const colW=["22px","38px","62px",...Array(SERIES).fill(null),"38px","48px"];
       return <table style={{tableLayout:"fixed",width:"100%"}}><colgroup>
         {colW.map((w,i)=><col key={i} style={w?{width:w}:{}}/>)}
@@ -4039,8 +4057,8 @@ td{border:1px solid #333;padding:4px 6px}
           {["순위","이름","소속"].map((h,i)=>
             <th key={h} style={{...pTh,padding:"2px 2px",fontSize:"7pt",...(i===2?{borderRight:dotBdr}:{})}}>{h}</th>
           )}
-          {Array.from({length:SERIES},(_,i)=>
-            <th key={"s"+i} style={{...pTh,fontSize:"7pt",padding:"2px 1px",...(i===1?{borderRight:dotBdr}:{})}}>S{i+1}</th>
+          {posLabels.map((lbl,i)=>
+            <th key={"s"+i} style={{...pTh,fontSize:"7pt",padding:"2px 1px",...(i===1?{borderRight:dotBdr}:{})}}>{lbl}</th>
           )}
           <th style={{...pTh,padding:"2px 2px",fontSize:"7pt"}}>합계</th>
           <th style={{...pTh,padding:"2px 2px",fontSize:"7pt"}}>비고</th>
@@ -8055,10 +8073,10 @@ td{border:1px solid #333;padding:4px 6px}
                       </tr>}
                       {resType==="final"&&isThreePosFinal&&<tr>
                         <th colSpan={4} style={{...S.th,fontSize:10,padding:"4px"}}></th>
-                        <th colSpan={3} style={{...S.th,fontSize:10,padding:"4px",background:"#1a3a2a",color:"#6ee7b7"}}>S1 (3발)</th>
-                        <th colSpan={3} style={{...S.th,fontSize:10,padding:"4px",background:"#1a2a3a",color:"#7dd3fc"}}>S2 (3발)</th>
-                        <th colSpan={2} style={{...S.th,fontSize:10,padding:"4px",background:"#2a1a3a",color:"#c4b5fd"}}>S3 (2발)</th>
-                        {[4,5,6,7,8].map(s=><th key={s} colSpan={1} style={{...S.th,fontSize:10,padding:"4px",background:s%2===0?"#1a2a2a":"#2a1a3a",color:s%2===0?"#99f6e4":"#c4b5fd"}}>S{s}</th>)}
+                        <th colSpan={1} style={{...S.th,fontSize:10,padding:"4px",background:"#1a3a2a",color:"#6ee7b7"}}>S1 슬사(1발)</th>
+                        <th colSpan={1} style={{...S.th,fontSize:10,padding:"4px",background:"#1a2a3a",color:"#7dd3fc"}}>S2 복사(1발)</th>
+                        <th colSpan={2} style={{...S.th,fontSize:10,padding:"4px",background:"#2a1a3a",color:"#c4b5fd"}}>S3 입사(2발)</th>
+                        {[4,5,6,7,8].map(s=><th key={s} colSpan={1} style={{...S.th,fontSize:10,padding:"4px",background:s%2===0?"#1a2a2a":"#2a1a3a",color:s%2===0?"#99f6e4":"#c4b5fd"}}>S{s} 입사</th>)}
                         <th colSpan={2} style={{...S.th,fontSize:10,padding:"4px"}}></th>
                         <th style={{...S.th,fontSize:10,padding:"4px"}}></th>
                       </tr>}
@@ -8101,10 +8119,10 @@ td{border:1px solid #333;padding:4px 6px}
                             <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="_sub_org" onKeyDown={resGridKeyDown} value={r._sub_org??""} onChange={e=>resUpdateRow(origIdx,"_sub_org",e.target.value)} style={{...resInp,width:77}}/>:null}</td>
                             <td style={{...tdS,textAlign:"center"}}>{isFirst?(()=>{const gt=getResultTeamNum(resEvCode,r.name);const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})():null}</td>
                             <td style={{...tdS,textAlign:"center"}}><span style={{fontSize:10,fontWeight:600,color:pi===0?"#6ee7b7":pi===1?"#7dd3fc":"#c4b5fd"}}>{p.name}</span></td>
-                            <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc={p.s1} onKeyDown={resGridKeyDown} value={r[p.s1]??""} onChange={e=>resUpdateRow(origIdx,p.s1,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
-                            <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc={p.s2} onKeyDown={resGridKeyDown} value={r[p.s2]??""} onChange={e=>resUpdateRow(origIdx,p.s2,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
+                            <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc="pos_1" onKeyDown={resGridKeyDown} value={r[p.s1]??""} onChange={e=>resUpdateRow(origIdx,p.s1,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
+                            <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc="pos_2" onKeyDown={resGridKeyDown} value={r[p.s2]??""} onChange={e=>resUpdateRow(origIdx,p.s2,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
                             <td style={{...tdS,textAlign:"center"}}><span style={{fontSize:11,fontWeight:600,color:"#b0c4de"}}>{calcSub(p.si)}</span></td>
-                            <td style={tdS}>{isFirst?<span style={{display:"block",fontSize:12,fontWeight:700,color:C.gold,textAlign:"center",padding:"2px 0"}}>{r.total||""}</span>:null}</td>
+                            <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="total" onKeyDown={resGridKeyDown} value={r.total??""} onChange={e=>resUpdateRow(origIdx,"total",e.target.value)} style={{...resInp,width:52,textAlign:"center",fontSize:12,fontWeight:700,color:C.gold}}/>:null}</td>
                             <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="x_count" onKeyDown={resGridKeyDown} value={r.x_count??""} onChange={e=>resUpdateRow(origIdx,"x_count",e.target.value)} style={{...resInp,width:52,textAlign:"center"}}/>:null}</td>
                             <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="remarks" onKeyDown={resGridKeyDown} value={r.remarks??""} onChange={e=>resUpdateRow(origIdx,"remarks",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
                             <td style={{...tdS,textAlign:"center"}}>{isFirst?<button onClick={()=>resRemoveRow(origIdx)} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14}}>✕</button>:null}</td>
