@@ -3066,8 +3066,10 @@ td{border:1px solid #333;padding:4px 6px}
       evTE.forEach(te=>{
         if(!memberMap2[te.member_id]) return;
         const app=memberAppMap2[te.member_id];
-        const k=(te.application_id||"?")+"_"+(te.team_number||1);
-        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:app?.region_name||"-",members:new Set()};
+        // 시도+단체번호로 그룹핑 (application_id가 null이면 다른 지역이 합쳐지는 버그 방지)
+        const regionKey=app?.region_name||"-";
+        const k=regionKey+"_"+(te.team_number||1);
+        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:regionKey,members:new Set()};
         teamByApp[k].members.add(te.member_id);
       });
       const teamList0=Object.values(teamByApp);
@@ -3201,8 +3203,10 @@ td{border:1px solid #333;padding:4px 6px}
       evTE.forEach(te=>{
         if(!memberMap2[te.member_id]) return;
         const app=memberAppMap2[te.member_id];
-        const k=(te.application_id||"?")+"_"+(te.team_number||1);
-        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:app?.region_name||"-",members:new Set()};
+        // 시도+단체번호로 그룹핑 (application_id가 null이면 다른 지역이 합쳐지는 버그 방지)
+        const regionKey=app?.region_name||"-";
+        const k=regionKey+"_"+(te.team_number||1);
+        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:regionKey,members:new Set()};
         teamByApp[k].members.add(te.member_id);
       });
       const teamList0=Object.values(teamByApp);
