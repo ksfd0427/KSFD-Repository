@@ -800,7 +800,7 @@ function TournamentRegistration() {
   // Step 2: 선수단 정보만 생성
   const generateTestMembers = () => {
     const { lastNames, firstNamesM, firstNamesF, rn, rNum } = _testUtil();
-    const roles = ["지도자","로더","기타"];
+    const roles = ["감독","코치","로더","보호자","기타"];
     const evByCat = {};
     activeIndividualEvents.forEach(ev => {
       if (!evByCat[ev.cat]) evByCat[ev.cat] = [];
@@ -3141,7 +3141,6 @@ function TournamentRegistration() {
 
               {members.map((m, idx) => {
                 const isExpanded = expandedMember === m.id;
-                const hasSH2 = members.some(mm => mm.role === "선수" && mm.events.includes("소총(SH2)") && mm.id !== m.id);
                 return (
                   <div key={m.id} style={{ marginBottom: 6, position: "relative", marginRight: members.length > 1 ? 42 : 0 }}>
                     {/* Collapsed row */}
@@ -3202,14 +3201,10 @@ function TournamentRegistration() {
                         <div id={`member-${m.id}-role`} style={{...styles.detailRow, ...(highlightId === `member-${m.id}-role` ? styles.highlightRow : {})}}>
                           <span style={styles.detailLabel}>직책 <span style={{color:"#cc4444"}}>*</span></span>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            {["선수", "지도자", "로더", "기타"].map(r => (
+                            {["선수", "감독", "코치", "로더", "보호자", "기타"].map(r => (
                               <button
                                 key={r}
                                 onClick={() => {
-                                  if (r === "로더" && !hasSH2) {
-                                    alert("로더는 소총(SH2) 종목을 선택한 선수가 있어야 등록 가능합니다.");
-                                    return;
-                                  }
                                   setMembers(members.map(mm => mm.id === m.id ? { ...mm, role: r, ...(r !== "선수" ? { events: [] } : {}) } : mm));
                                 }}
                                 style={{

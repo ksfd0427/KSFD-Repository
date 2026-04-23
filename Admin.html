@@ -1692,7 +1692,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     const teamCatByMember={};
     appTeamEntries.forEach(t=>{if(!teamCatByMember[t.member_id])teamCatByMember[t.member_id]=new Set(); if(catMap[t.event_code])teamCatByMember[t.member_id].add(catMap[t.event_code]);});
     // 멤버 복사 + _events 파생 (카테고리 목록 - 개인전+단체전 모두 반영)
-    const roleMap={"감독":"지도자","코치":"지도자","팀닥터":"기타","기타임원":"기타"};
+    const roleMap={"지도자":"감독","팀닥터":"기타","기타임원":"기타"};
     setEditMembers(appMembers.map(m=>{
       const memberEvCodes=ie[m.id]||[];
       const catsFromInd=memberEvCodes.map(c=>catMap[c]).filter(Boolean);
@@ -5650,7 +5650,8 @@ td{border:1px solid #333;padding:4px 6px}
                     const uniquePlayers=Object.values(playerMap);
                     // 임원 (선수 제외 전원)
                     const staffMap={};
-                    epM.filter(m=>m.role!=="선수").forEach(m=>{const app=epAM[m.application_id];const k=m.name+"_"+(app?.org_name||"");if(!staffMap[k])staffMap[k]={name:m.name,role:m.role||"-",region:app?.region_name||"-",subOrg:m.sub_org||"-"};});
+                    const dispRole=r=>({"지도자":"감독","팀닥터":"기타","기타임원":"기타"}[r]||r||"-");
+                    epM.filter(m=>m.role!=="선수").forEach(m=>{const app=epAM[m.application_id];const k=m.name+"_"+(app?.org_name||"");if(!staffMap[k])staffMap[k]={name:m.name,role:dispRole(m.role),region:app?.region_name||"-",subOrg:m.sub_org||"-"};});
                     const uniqueStaff=Object.values(staffMap);
                     const totalCount=uniquePlayers.length+uniqueStaff.length;
                     const showPlayers=expandedEvCode==="__players__";
@@ -5696,6 +5697,7 @@ td{border:1px solid #333;padding:4px 6px}
                           <div onClick={()=>setExpandedEvCode(null)} style={{position:"fixed",inset:0,zIndex:90}}/>
                           <div style={{position:"relative",zIndex:91}}>
                           <div style={{fontSize:10,fontWeight:700,color:"#8b5cf6",marginBottom:4}}>전체 임원 명단 ({uniqueStaff.length}명, 이름+소속 기준 중복제외)</div>
+                          {(()=>{const rc={};uniqueStaff.forEach(s=>{const r=s.role||"기타";rc[r]=(rc[r]||0)+1;});const order=["감독","코치","지도자","로더","보호자","기타"];const keys=[...order.filter(k=>rc[k]),...Object.keys(rc).filter(k=>!order.includes(k)).sort()];return keys.length>0?<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>{keys.map(r=><span key={r} style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:"#8b5cf622",color:"#c4b5fd",border:"1px solid #8b5cf633"}}>{r} <b style={{color:"#e9d5ff"}}>{rc[r]}</b></span>)}</div>:null;})()}
                           <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
                             {["#","이름","직책","소속","지역"].map(h=><th key={h} style={{...S.th,fontSize:8,padding:"2px 4px"}}>{h}</th>)}
                           </tr></thead><tbody>
@@ -9920,9 +9922,7 @@ td{border:1px solid #333;padding:4px 6px}
                     <div style={detailRow}>
                       <span style={detailLabel}>직책 <span style={{color:"#cc4444"}}>*</span></span>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {["선수","지도자","로더","기타"].map(r=><button key={r} onClick={()=>{
-                          if(r==="로더"){const hasSH2=editMembers.some(mm=>mm.role==="선수"&&(mm._events||[]).includes("소총(SH2)")&&mm.id!==m.id);
-                            if(!hasSH2){flash("로더는 소총(SH2) 종목을 선택한 선수가 있어야 등록 가능합니다.","error");return;}}
+                        {["선수","감독","코치","로더","보호자","기타"].map(r=><button key={r} onClick={()=>{
                           setEditMembers(prev=>prev.map((mm,ii)=>ii===idx?{...mm,role:r,...(r!=="선수"?{_events:[]}:{})}:mm));
                         }} style={chipBtn(m.role===r)}>{r}</button>)}
                       </div>
