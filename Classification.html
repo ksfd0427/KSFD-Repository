@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="KSFD Classification">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>대한장애인사격연맹 등급분류정보</title>
+  <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAK5SURBVFhH7ZZLaBNBGMf/u9lNNtk8Nk3SpDFt0vpofbRVKz5AvSiIIIIHLx68iBdBvHnw4EkPnrx4E0G8efDgQUREFBEfqPioVVut1draptk0TbPZ7O7ON5ukhjQxTXrw4A+z7Mw3M7/9Zr6ZLRD4/+DqJcU5RBsDOiAeB8IxIBgBAgEOPo8DPr/m4vl8PHg+j/Xk0dAgfIMe3BuOYGI8RopSpUr5WHj0WjDCPOJxxOMqxoGxaYFkms8rUgVJKkdSSXx+mcKHt1N4n0hhJp1BkWRLLTM8I6wEjuKx4G+J55HPK+RNUszCGOdxmXxWU+n5YsqRuVjRvE3jwyRxbw8nc7kSuUwqXVRLRYvj4yd+TOH+oyjuDYbx5t0EH19/gLBq/JqNGZe/LM1s3bv3YH3G3sEB3p7BLaKr2WYXcmWHEGhkPNOlCLTMv8M9xPRb9PJ5OvEJM4+HsXdm7Ziy3btkGjhSuSwGSzSE9PY/TJE1y/dRu3791HIZPj08oRy1PFnNFPxO8RjxvEY5x4zIUYoUnz2AwsJiamvEr9FBKZhpzT0N7k4+8Dx4sKJ4rGVCDKn3iRNwb8GBn2oIsLhbdSGe6RYSwWX8FKogNkZWs+dREZ/JKaVwb1jVKIL42HUeR5tJjbVa1Wqy8k8kWSQzGwLNyTzCb8IvuR2PdyGO+Nx+kNdKhSXBo5ghM9HSLbupYibKsUkzFJRbXl+PzrF9YUPZiR6AbBwQFzBN5xKiI/OQnHj/FysE8XhsI4d9ALPZvP4idW0TL0Urqp1UwSn29sRqJbFGaEAz9Q7FmEUcJf+w6lWE3kHCYBxuOgf6Ayhoc+LPJj/uDIVQ3FdaFDL9ELJTIvJNwdj2LtnN7Zt3QqaeFWtqJTFj2RQZFvz43cfDIyO4dvMWnj9/Tn8K/tcIcD8BWVu3kF5HGAAAAAASUVORK5CYII=">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #0d1520; color: #e8dcc8; min-height: 100vh; }
+    input, select, textarea, button { font-family: 'Noto Sans KR', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0d1520; }
+    ::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
+    ::placeholder { color: #4a5a74; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!--
+  =====================================================================
+  SQL to create the required tables in Supabase:
+  =====================================================================
+
+  -- 1. athlete_profiles
+  CREATE TABLE IF NOT EXISTS athlete_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    dob DATE NOT NULL,
+    gender TEXT,
+    npc TEXT DEFAULT 'KOR',
+    sdms_id TEXT,
+    diagnosis TEXT,
+    impairment_types TEXT,
+    physical_assessment TEXT,
+    medical_assessment TEXT,
+    observation TEXT,
+    comments TEXT,
+    shooting_arm TEXT,
+    sh1_subclass TEXT,
+    sh2_subclass TEXT,
+    visible_free_height NUMERIC,
+    loading_assistant_sh2 TEXT,
+    loading_device_pistol TEXT,
+    compensating_block TEXT,
+    loading_stand_shotgun TEXT,
+    adaptation_shotgun TEXT,
+    trigger_adaption TEXT,
+    prosthesis TEXT,
+    orthosis TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+  );
+
+  -- 2. athlete_classifications
+  CREATE TABLE IF NOT EXISTS athlete_classifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    athlete_id UUID REFERENCES athlete_profiles(id) ON DELETE CASCADE,
+    sport TEXT DEFAULT 'Shooting',
+    class TEXT,
+    status TEXT,
+    review TEXT,
+    class_date DATE,
+    classifiers TEXT,
+    limitation_group TEXT,
+    limitation_category TEXT,
+    licence_number TEXT,
+    season TEXT,
+    date_of_issue DATE,
+    date_of_validity DATE,
+    date_of_expiry DATE,
+    is_current BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
+
+  -- 3. classification_admins (optional, for future use)
+  CREATE TABLE IF NOT EXISTS classification_admins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    dob DATE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
+
+  -- RLS policies (adjust as needed):
+  ALTER TABLE athlete_profiles ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE athlete_classifications ENABLE ROW LEVEL SECURITY;
+
+  CREATE POLICY "Allow all for anon" ON athlete_profiles FOR ALL USING (true) WITH CHECK (true);
+  CREATE POLICY "Allow all for anon" ON athlete_classifications FOR ALL USING (true) WITH CHECK (true);
+
+  =====================================================================
+  -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    const SUPABASE_URL = "https://tkdvyxouknhjhaqjrotb.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_vka5Jqtl7JtyzV5BOv9ZcQ_2E5e76Iy";
+    const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+    const HARDCODED_ADMINS = [
+      { name: "관리자", dob: "2000-01-01" }
+    ];
+
+    const IMPAIRMENT_OPTIONS = [
+      "Impaired muscle power",
+      "Limb deficiency",
+      "Ataxia",
+      "Athetosis",
+      "Hypertonia",
+      "Impaired passive range of movement"
+    ];
+
+    const PROSTHESIS_OPTIONS = [
+      "L UL AE", "L UL BE", "R UL AE", "R UL BE",
+      "L LL AK", "L LL BK", "R LL AK", "R LL BK",
+      "not allowed"
+    ];
+
+    // 종목별 등급 매핑
+    const CATEGORY_CLASS_MAP = {
+      "소총": ["SH1", "SH2"],
+      "권총": ["SH1"],
+      "산탄총": ["SG-L", "SG-U", "SG-S"]
+    };
+    const CATEGORY_OPTIONS = ["소총", "권총", "산탄총"];
+    const ALL_CLASS_OPTIONS = ["SH1", "SH2", "SG-L", "SG-U", "SG-S"];
+    const STATUS_OPTIONS = ["Confirmed", "Review", "New", "Not eligible"];
+    const SHOOTING_ARM_OPTIONS = ["Right", "Left", "Both"];
+    const SH_SUBCLASS_OPTIONS = ["A", "B", "C"];
+
+    // Colors
+    const C = {
+      bg: "#0d1520",
+      card: "#151f30",
+      cardHover: "#1a2740",
+      gold: "#c9a84c",
+      goldDim: "#c9a84c66",
+      text: "#e8dcc8",
+      textDim: "#8a9ab4",
+      border: "#2a3a5c",
+      input: "#0d1520",
+      danger: "#e74c3c",
+      success: "#2ecc71",
+      info: "#3b82f6",
+    };
+
+    // ─── Utility ───
+    const PHOTO_BUCKET = "athlete-photos";
+    function getPhotoUrl(path) {
+      if (!path) return null;
+      const clean = path.split("?")[0];
+      return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${clean}?t=${Date.now()}`;
+    }
+
+    const STATUS_KR = { "Confirmed": "확정", "Review": "재검", "New": "신규", "Not eligible": "부적격" };
+    function dispStatus(s) { return s ? (STATUS_KR[s] ? `등급상태: ${STATUS_KR[s]}` : s) : "-"; }
+
+    function formatDate(d) {
+      if (!d) return "-";
+      return d.substring(0, 10);
+    }
+
+    // ─── Badge Component ───
+    function Badge({ text, color }) {
+      return (
+        <span style={{
+          display: "inline-block", padding: "2px 10px", borderRadius: 12,
+          background: (color || C.gold) + "22", color: color || C.gold,
+          fontSize: 11, fontWeight: 600, margin: "2px 3px", whiteSpace: "nowrap",
+          border: `1px solid ${(color || C.gold)}44`
+        }}>{text}</span>
+      );
+    }
+
+    // ─── Collapsible Section ───
+    function Section({ title, defaultOpen, children }) {
+      const [open, setOpen] = useState(defaultOpen !== false);
+      return (
+        <div style={{ marginBottom: 16 }}>
+          <div onClick={() => setOpen(!open)} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 16px", background: C.card, borderRadius: open ? "10px 10px 0 0" : 10,
+            cursor: "pointer", borderBottom: open ? `1px solid ${C.border}` : "none",
+            transition: "border-radius 0.2s"
+          }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: C.gold }}>{title}</span>
+            <span style={{ color: C.textDim, fontSize: 18, transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.25s" }}>▾</span>
+          </div>
+          <div style={{
+            maxHeight: open ? 5000 : 0, overflow: "hidden",
+            transition: "max-height 0.4s ease",
+            background: C.card, borderRadius: "0 0 10px 10px",
+            padding: open ? "12px 16px" : "0 16px",
+          }}>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Info Row ───
+    function InfoRow({ label, value }) {
+      return (
+        <div style={{ display: "flex", padding: "5px 0", borderBottom: `1px solid ${C.border}33`, fontSize: 13 }}>
+          <span style={{ minWidth: 110, color: C.textDim, fontWeight: 500, flexShrink: 0 }}>{label}</span>
+          <span style={{ color: C.text, fontWeight: 400, wordBreak: "break-word" }}>{value || "-"}</span>
+        </div>
+      );
+    }
+
+    // ─── TextBlock ───
+    function TextBlock({ label, value }) {
+      if (!value) return null;
+      return (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: C.textDim, fontWeight: 600, marginBottom: 3 }}>{label}</div>
+          <div style={{ fontSize: 13, color: C.text, background: C.bg, padding: "8px 12px", borderRadius: 8, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{value}</div>
+        </div>
+      );
+    }
+
+    // ─── LOGIN SCREEN ───
+    function LoginScreen({ onLogin }) {
+      const [role, setRole] = useState(null);
+      const [name, setName] = useState("");
+      const [year, setYear] = useState("");
+      const [month, setMonth] = useState("");
+      const [day, setDay] = useState("");
+      const [error, setError] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [showMasterModal, setShowMasterModal] = useState(false);
+      const [masterPw, setMasterPw] = useState("");
+      const monthRef = useRef(null);
+      const dayRef = useRef(null);
+      const btnRef = useRef(null);
+
+      const handleLogin = async () => {
+        setError("");
+        if (!name.trim()) { setError("이름을 입력하세요."); return; }
+        if (!year || !month || !day) { setError("생년월일을 입력하세요."); return; }
+        const dob = `${year.padStart(4,"0")}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`;
+        setLoading(true);
+        try {
+          if (role === "admin") {
+            const isAdmin = HARDCODED_ADMINS.some(a => a.name === name.trim() && a.dob === dob);
+            if (isAdmin) {
+              onLogin({ role: "admin", name: name.trim() });
+            } else {
+              setError("관리자 정보가 일치하지 않습니다.");
+            }
+          } else {
+            if (!sb) { setError("DB 연결 오류"); setLoading(false); return; }
+            const { data, error: err } = await sb.from("athlete_profiles").select("*").eq("name", name.trim()).eq("dob", dob);
+            if (err) { setError("조회 오류: " + err.message); }
+            else if (!data || data.length === 0) { setError("해당 선수를 찾을 수 없습니다."); }
+            else { onLogin({ role: "athlete", name: name.trim(), athlete: data[0] }); }
+          }
+        } catch (e) {
+          setError("오류: " + e.message);
+        }
+        setLoading(false);
+      };
+
+      const handleKeyDown = (e) => { if (e.key === "Enter") handleLogin(); };
+
+      if (!role) {
+        return (
+          <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+              <div style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>대한장애인사격연맹</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.gold, marginBottom: 6 }}>등급분류정보</div>
+              <div style={{ fontSize: 12, color: C.textDim, marginBottom: 36 }}>Classification Information System</div>
+              <div style={{ fontSize: 14, color: C.text, marginBottom: 16, fontWeight: 600 }}>로그인 유형을 선택하세요</div>
+              <div style={{ display: "flex", gap: 12 }}>
+                <button onClick={() => setRole("admin")} style={{
+                  flex: 1, padding: "16px 0", background: C.card, border: `1px solid ${C.border}`,
+                  borderRadius: 12, color: C.gold, fontSize: 15, fontWeight: 700, cursor: "pointer",
+                  transition: "all 0.2s"
+                }} onMouseOver={e => { e.target.style.background = C.cardHover; e.target.style.borderColor = C.gold; }}
+                   onMouseOut={e => { e.target.style.background = C.card; e.target.style.borderColor = C.border; }}>
+                  <div style={{ fontSize: 28, marginBottom: 4 }}>&#128274;</div>
+                  관리자
+                </button>
+                <button onClick={() => setRole("athlete")} style={{
+                  flex: 1, padding: "16px 0", background: C.card, border: `1px solid ${C.border}`,
+                  borderRadius: 12, color: C.info, fontSize: 15, fontWeight: 700, cursor: "pointer",
+                  transition: "all 0.2s"
+                }} onMouseOver={e => { e.target.style.background = C.cardHover; e.target.style.borderColor = C.info; }}
+                   onMouseOut={e => { e.target.style.background = C.card; e.target.style.borderColor = C.border; }}>
+                  <div style={{ fontSize: 28, marginBottom: 4 }}>&#127941;</div>
+                  선수
+                </button>
+              </div>
+              <div style={{ marginTop: 32 }}>
+                <a href="Entry.html" style={{ color: C.textDim, fontSize: 12, textDecoration: "none" }}>
+                  &#8592; 참가신청으로
+                </a>
+              </div>
+            </div>
+            {/* 마스터 톱니바퀴 */}
+            <div style={{ position: "absolute", bottom: 18, left: "50%", transform: "translateX(-50%)", opacity: 0.25, cursor: "pointer", transition: "opacity .2s" }}
+              onClick={() => { setShowMasterModal(true); setMasterPw(""); }}
+              onMouseEnter={e => e.currentTarget.style.opacity = "0.7"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "0.25"}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6b7d94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </div>
+            {/* 마스터 비밀번호 모달 */}
+            {showMasterModal && (
+              <div style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }} onClick={() => setShowMasterModal(false)}>
+                <div style={{ background: "#1a2744", border: "1px solid #2a3a5c", borderRadius: 14, padding: "32px 36px 28px", minWidth: 300, maxWidth: 360, position: "relative", boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }} onClick={e => e.stopPropagation()}>
+                  <div style={{ position: "absolute", top: 12, right: 14, cursor: "pointer", color: "#6b7d94", fontSize: 20, fontWeight: 700, lineHeight: 1 }} onClick={() => setShowMasterModal(false)}>✕</div>
+                  <div style={{ textAlign: "center", marginBottom: 20 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c", letterSpacing: 2 }}>마스터</div>
+                    <div style={{ fontSize: 12, color: "#6b7d94", marginTop: 4 }}>암호를 입력하세요</div>
+                  </div>
+                  <input type="password" value={masterPw} onChange={e => setMasterPw(e.target.value)} onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      if (masterPw === "142857") { setShowMasterModal(false); setMasterPw(""); onLogin({ role: "admin", name: "Master", isMaster: true }); }
+                      else { setMasterPw(""); e.target.style.borderColor = "#ff4444"; setTimeout(() => { if (e.target) e.target.style.borderColor = "#2a3a5c"; }, 800); }
+                    }
+                  }} autoFocus placeholder="비밀번호" style={{ width: "100%", padding: "10px 14px", background: "#0d1520", border: "1px solid #2a3a5c", borderRadius: 8, color: "#e8dcc8", fontSize: 14, outline: "none", textAlign: "center", letterSpacing: 4, transition: "border-color .3s" }} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      const inputStyle = {
+        width: "100%", padding: "10px 14px", background: C.input, border: `1px solid ${C.border}`,
+        borderRadius: 8, color: C.text, fontSize: 14, outline: "none", transition: "border-color 0.3s"
+      };
+
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>대한장애인사격연맹</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.gold, marginBottom: 6 }}>등급분류정보</div>
+            <div style={{ fontSize: 12, color: C.textDim, marginBottom: 30 }}>
+              {role === "admin" ? "관리자 로그인" : "선수 로그인"}
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="이름"
+                style={inputStyle} onKeyDown={handleKeyDown}
+                onFocus={e => e.target.style.borderColor = C.gold}
+                onBlur={e => e.target.style.borderColor = C.border} />
+            </div>
+
+            <div style={{ fontSize: 12, color: C.textDim, marginBottom: 6, textAlign: "left" }}>생년월일</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <input value={year} onChange={e => { const v = e.target.value.replace(/\D/g,"").slice(0,4); setYear(v); if (v.length === 4) monthRef.current?.focus(); }}
+                placeholder="연도(YYYY)" maxLength={4} style={{ ...inputStyle, textAlign: "center" }} onKeyDown={handleKeyDown}
+                onFocus={e => e.target.style.borderColor = C.gold} onBlur={e => e.target.style.borderColor = C.border} />
+              <input ref={monthRef} value={month} onChange={e => { setMonth(e.target.value.replace(/\D/g,"")); if (e.target.value.length >= 2) dayRef.current?.focus(); }}
+                placeholder="월(MM)" maxLength={2} style={{ ...inputStyle, width: 80, textAlign: "center" }} onKeyDown={handleKeyDown}
+                onFocus={e => e.target.style.borderColor = C.gold} onBlur={e => e.target.style.borderColor = C.border} />
+              <input ref={dayRef} value={day} onChange={e => setDay(e.target.value.replace(/\D/g,""))}
+                placeholder="일(DD)" maxLength={2} style={{ ...inputStyle, width: 80, textAlign: "center" }} onKeyDown={handleKeyDown}
+                onFocus={e => e.target.style.borderColor = C.gold} onBlur={e => e.target.style.borderColor = C.border} />
+            </div>
+
+            {error && <div style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+            <button ref={btnRef} onClick={handleLogin} disabled={loading} style={{
+              width: "100%", padding: "12px 0", background: role === "admin" ? C.gold : C.info,
+              color: C.bg, border: "none", borderRadius: 10, fontSize: 15, fontWeight: 700,
+              cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1, transition: "opacity 0.2s"
+            }}>{loading ? "확인 중..." : "로그인"}</button>
+
+            <button onClick={() => { setRole(null); setError(""); setName(""); setYear(""); setMonth(""); setDay(""); }}
+              style={{ marginTop: 16, background: "none", border: "none", color: C.textDim, fontSize: 13, cursor: "pointer" }}>
+              &#8592; 돌아가기
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ATHLETE VIEW ───
+    function AthleteView({ athlete, onLogout }) {
+      const [classifications, setClassifications] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [profile, setProfile] = useState(athlete);
+
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      const loadData = async () => {
+        setLoading(true);
+        if (!sb) { setLoading(false); return; }
+        const { data: freshProfile } = await sb.from("athlete_profiles").select("*").eq("id", athlete.id).single();
+        if (freshProfile) setProfile(freshProfile);
+        const { data: cls } = await sb.from("athlete_classifications").select("*").eq("athlete_id", athlete.id).order("class_date", { ascending: false });
+        setClassifications(cls || []);
+        setLoading(false);
+      };
+
+      const currentClsList = classifications.filter(c => c.is_current);
+      if (currentClsList.length === 0 && classifications.length > 0) currentClsList.push(classifications[0]);
+      const impairments = profile.impairment_types ? profile.impairment_types.split(",").map(s => s.trim()).filter(Boolean) : [];
+      const prosthesisList = profile.prosthesis ? profile.prosthesis.split(",").map(s => s.trim()).filter(Boolean) : [];
+      const orthosisList = profile.orthosis ? profile.orthosis.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+      const statusColor = (s) => {
+        if (s === "Confirmed") return C.success;
+        if (s === "Review") return "#f39c12";
+        if (s === "New") return C.info;
+        return C.danger;
+      };
+
+      return (
+        <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+          {/* Header */}
+          <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
+            display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+            <div>
+              <a href="Entry.html" style={{ color: C.textDim, fontSize: 11, textDecoration: "none" }}>&#8592; 참가신청으로</a>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.gold }}>등급분류정보</div>
+            </div>
+            <button onClick={onLogout} style={{
+              background: "none", border: `1px solid ${C.border}`, borderRadius: 8,
+              color: C.textDim, fontSize: 12, padding: "6px 12px", cursor: "pointer"
+            }}>&#8592; 돌아가기</button>
+          </div>
+
+          <div style={{ maxWidth: 600, margin: "0 auto", padding: "16px 12px" }}>
+            {loading ? (
+              <div style={{ textAlign: "center", padding: 40, color: C.textDim }}>로딩 중...</div>
+            ) : (
+              <>
+                {/* Section A: 선수 카드 */}
+                <div style={{ background: C.card, borderRadius: 14, padding: "20px 16px", marginBottom: 16,
+                  border: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+                    {profile.photo_path ? (
+                      <img src={getPhotoUrl(profile.photo_path)} alt="" style={{ width: 64, height: 80, borderRadius: 8, objectFit: "cover", marginRight: 14, flexShrink: 0, border: `1px solid ${C.border}` }} />
+                    ) : (
+                      <div style={{ width: 64, height: 80, borderRadius: 8, background: C.gold + "22",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 24, fontWeight: 800, color: C.gold, marginRight: 14, flexShrink: 0,
+                        border: `1px solid ${C.border}`
+                      }}>{profile.name?.charAt(0)}</div>
+                    )}
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{profile.name}</div>
+                      <div style={{ fontSize: 12, color: C.textDim }}>{formatDate(profile.dob)} | {profile.gender || "-"} | {profile.npc || "KOR"}</div>
+                    </div>
+                  </div>
+                  {profile.sdms_id && <InfoRow label="SDMS ID" value={profile.sdms_id} />}
+                  {classifications.length > 0 ? (
+                    <>
+                      <div style={{ marginTop: 12, marginBottom: 8, fontSize: 12, color: C.textDim, fontWeight: 600 }}>등급분류 이력</div>
+                      {classifications.map((cls, i) => (
+                        <div key={cls.id || i} style={{ padding: "8px 12px", marginBottom: 6, background: C.bg, borderRadius: 8, border: `1px solid ${cls.is_current ? C.gold + "44" : C.border}33` }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
+                            <Badge text={(cls.limitation_category ? cls.limitation_category + ":" : "") + (cls.class || "-") + (cls.subclass && ["SH1","SH2"].includes(cls.class) ? cls.subclass : "")} color={C.gold} />
+                            <Badge text={dispStatus(cls.status)} color={statusColor(cls.status)} />
+                          </div>
+                          <div style={{ fontSize: 12, color: C.textDim }}>분류일: {formatDate(cls.class_date)}</div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 13, color: C.textDim, marginTop: 8 }}>등급분류 정보 없음</div>
+                  )}
+
+                  {/* 프로필 주요 정보 */}
+                  <div style={{ marginTop: 14, borderTop: `1px solid ${C.border}33`, paddingTop: 10 }}>
+                    <InfoRow label="휠체어 등 길이" value={profile.visible_free_height ? `${profile.visible_free_height} cm` : null} />
+                    <InfoRow label="사격팔" value={profile.shooting_arm} />
+                    <InfoRow label="로더 사용여부" value={profile.loading_assistant_sh2} />
+                    <InfoRow label="보정블록" value={profile.compensating_block} />
+                    <InfoRow label="의수/의족" value={profile.prosthesis} />
+                    <InfoRow label="장전보조기 여부" value={profile.loading_device_pistol} />
+                    <InfoRow label="방아쇠 개조여부" value={profile.trigger_adaption} />
+                    <InfoRow label="보조기" value={profile.orthosis} />
+                    {profile.comments && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 12, color: C.textDim, fontWeight: 600, marginBottom: 3 }}>비고</div>
+                        <div style={{ fontSize: 13, color: C.text, background: C.bg, padding: "8px 12px", borderRadius: 8, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{profile.comments}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section C: 프로필 상세 */}
+                <Section title="프로필 상세" defaultOpen={false}>
+                  <InfoRow label="진단명" value={profile.diagnosis} />
+                  <div style={{ padding: "5px 0", borderBottom: `1px solid ${C.border}33`, fontSize: 13 }}>
+                    <span style={{ minWidth: 110, color: C.textDim, fontWeight: 500, display: "inline-block" }}>장애유형</span>
+                    <div style={{ marginTop: 4 }}>
+                      {impairments.length > 0 ? impairments.map(t => <Badge key={t} text={t} />) : "-"}
+                    </div>
+                  </div>
+
+                  <TextBlock label="신체평가 (Physical Assessment)" value={profile.physical_assessment} />
+                  <TextBlock label="의료평가 (Medical Assessment)" value={profile.medical_assessment} />
+                  <TextBlock label="관찰 (Observation)" value={profile.observation} />
+                  <TextBlock label="비고 (Comments)" value={profile.comments} />
+
+                  <div style={{ marginTop: 10 }}></div>
+                  <InfoRow label="사격팔" value={profile.shooting_arm} />
+                  <InfoRow label="SH1 세부등급" value={profile.sh1_subclass} />
+                  <InfoRow label="SH2 세부등급" value={profile.sh2_subclass} />
+                  <InfoRow label="휠체어 등 길이" value={profile.visible_free_height ? `${profile.visible_free_height} cm` : null} />
+
+                  <div style={{ fontSize: 12, color: C.gold, fontWeight: 600, marginTop: 14, marginBottom: 6 }}>보조장비</div>
+                  <InfoRow label="로더 사용여부" value={profile.loading_assistant_sh2} />
+                  <InfoRow label="장전보조기 여부" value={profile.loading_device_pistol} />
+                  <InfoRow label="보정블록" value={profile.compensating_block} />
+                  <InfoRow label="장전대(산탄총)" value={profile.loading_stand_shotgun} />
+                  <InfoRow label="적응장치(산탄총)" value={profile.adaptation_shotgun} />
+                  <InfoRow label="방아쇠 개조여부" value={profile.trigger_adaption} />
+
+                  <div style={{ padding: "5px 0", borderBottom: `1px solid ${C.border}33`, fontSize: 13 }}>
+                    <span style={{ color: C.textDim, fontWeight: 500 }}>의수/의족 (Prosthesis)</span>
+                    <div style={{ marginTop: 4 }}>
+                      {prosthesisList.length > 0 ? prosthesisList.map(p => <Badge key={p} text={p} color="#e67e22" />) : <span style={{ color: C.textDim }}>-</span>}
+                    </div>
+                  </div>
+                  <div style={{ padding: "5px 0", fontSize: 13 }}>
+                    <span style={{ color: C.textDim, fontWeight: 500 }}>보조기 (Orthosis)</span>
+                    <div style={{ marginTop: 4 }}>
+                      {orthosisList.length > 0 ? orthosisList.map(o => <Badge key={o} text={o} color="#9b59b6" />) : <span style={{ color: C.textDim }}>-</span>}
+                    </div>
+                  </div>
+                </Section>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ADMIN: Classification Edit Form ───
+    const clipDateYear = (v) => {
+      if (!v) return v;
+      const parts = v.split("-");
+      if (parts[0] && parts[0].length > 4) parts[0] = parts[0].slice(0, 4);
+      return parts.join("-");
+    };
+
+    function ClassificationForm({ cls, athleteId, onSave, onDelete, onCancel }) {
+      const [form, setForm] = useState(cls || {
+        athlete_id: athleteId, sport: "Shooting", class: "", status: "",
+        review: "", class_date: "", classifiers: "", limitation_group: "", limitation_category: "",
+        licence_number: "", season: "", date_of_issue: "", date_of_validity: "", date_of_expiry: "",
+        is_current: true
+      });
+      const [saving, setSaving] = useState(false);
+
+      const set = (k, v) => setForm(prev => ({ ...prev, [k]: ["class_date","date_of_issue","date_of_validity","date_of_expiry","dob"].includes(k) ? clipDateYear(v) : v }));
+
+      const inputStyle = {
+        width: "100%", padding: "8px 10px", background: C.input, border: `1px solid ${C.border}`,
+        borderRadius: 6, color: C.text, fontSize: 13, outline: "none"
+      };
+      const labelStyle = { fontSize: 11, color: C.textDim, fontWeight: 600, marginBottom: 3, display: "block" };
+      const fieldWrap = { marginBottom: 10 };
+
+      const handleSave = async () => {
+        setSaving(true);
+        await onSave(form);
+        setSaving(false);
+      };
+
+      return (
+        <div style={{ background: C.bg, borderRadius: 10, padding: 14, border: `1px solid ${C.border}` }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>종목 분류</label>
+              <select value={form.limitation_category || ""} onChange={e => { const cat = e.target.value; set("limitation_category", cat); if (cat && CATEGORY_CLASS_MAP[cat] && !CATEGORY_CLASS_MAP[cat].includes(form.class)) set("class", ""); }} style={inputStyle}>
+                <option value="">선택</option>
+                {CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>등급 (Class)</label>
+              <select value={form.class || ""} onChange={e => { set("class", e.target.value); if (!["SH1","SH2"].includes(e.target.value)) set("subclass", ""); }} style={inputStyle}>
+                <option value="">선택</option>
+                {(form.limitation_category && CATEGORY_CLASS_MAP[form.limitation_category] ? CATEGORY_CLASS_MAP[form.limitation_category] : ALL_CLASS_OPTIONS).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            {["SH1","SH2"].includes(form.class) && (
+              <div style={fieldWrap}>
+                <label style={labelStyle}>세부등급</label>
+                <select value={form.subclass || ""} onChange={e => set("subclass", e.target.value)} style={inputStyle}>
+                  <option value="">선택</option>
+                  {SH_SUBCLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            )}
+            <div style={fieldWrap}>
+              <label style={labelStyle}>상태 (Status)</label>
+              <select value={form.status || ""} onChange={e => set("status", e.target.value)} style={inputStyle}>
+                <option value="">선택</option>
+                {STATUS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>리뷰</label>
+              <input value={form.review || ""} onChange={e => set("review", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>분류일</label>
+              <input type="date" value={form.class_date || ""} max="9999-12-31" onChange={e => set("class_date", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>등급분류사</label>
+              <input value={form.classifiers || ""} onChange={e => set("classifiers", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>제한그룹</label>
+              <input value={form.limitation_group || ""} onChange={e => set("limitation_group", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>라이선스 번호</label>
+              <input value={form.licence_number || ""} onChange={e => set("licence_number", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>시즌</label>
+              <input value={form.season || ""} onChange={e => set("season", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>발급일</label>
+              <input type="date" value={form.date_of_issue || ""} max="9999-12-31" onChange={e => set("date_of_issue", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>유효기간 시작</label>
+              <input type="date" value={form.date_of_validity || ""} max="9999-12-31" onChange={e => set("date_of_validity", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>만료일</label>
+              <input type="date" value={form.date_of_expiry || ""} max="9999-12-31" onChange={e => set("date_of_expiry", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ ...fieldWrap, display: "flex", alignItems: "center", gap: 8, paddingTop: 20 }}>
+              <input type="checkbox" checked={form.is_current || false} onChange={e => set("is_current", e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: C.gold }} />
+              <label style={{ fontSize: 12, color: C.text }}>현재 등급 (is_current)</label>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button onClick={handleSave} disabled={saving} style={{
+              flex: 1, padding: "8px 0", background: C.gold, color: C.bg, border: "none",
+              borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer"
+            }}>{saving ? "저장 중..." : "저장"}</button>
+            {cls?.id && (
+              <button onClick={() => onDelete(cls.id)} style={{
+                padding: "8px 16px", background: C.danger + "22", color: C.danger, border: `1px solid ${C.danger}44`,
+                borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer"
+              }}>삭제</button>
+            )}
+            <button onClick={onCancel} style={{
+              padding: "8px 16px", background: "none", color: C.textDim, border: `1px solid ${C.border}`,
+              borderRadius: 8, fontSize: 13, cursor: "pointer"
+            }}>취소</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ADMIN: Profile Edit Form ───
+    function ProfileEditForm({ profile, onSave, onCancel }) {
+      const [form, setForm] = useState({ ...profile });
+      const [saving, setSaving] = useState(false);
+      const [uploading, setUploading] = useState(false);
+      const [photoMsg, setPhotoMsg] = useState("");
+      const fileInputRef = useRef(null);
+
+      const set = (k, v) => setForm(prev => ({ ...prev, [k]: k === "dob" ? clipDateYear(v) : v }));
+
+      const uploadFile = async (file) => {
+        if (!file || !sb) return;
+        if (!file.type.startsWith("image/")) { setPhotoMsg("이미지 파일만 업로드 가능합니다."); return; }
+        if (file.size > 5 * 1024 * 1024) { setPhotoMsg("5MB 이하 파일만 업로드 가능합니다."); return; }
+        setUploading(true); setPhotoMsg("");
+        const ext = file.type.split("/")[1]?.replace("jpeg","jpg") || "png";
+        const path = `${profile.id}.${ext}`;
+        if (form.photo_path) {
+          await sb.storage.from(PHOTO_BUCKET).remove([form.photo_path]);
+        }
+        const { error } = await sb.storage.from(PHOTO_BUCKET).upload(path, file, { upsert: true });
+        if (error) { setPhotoMsg("업로드 오류: " + error.message); setUploading(false); return; }
+        set("photo_path", path + "?t=" + Date.now());
+        setPhotoMsg("업로드 완료 — 저장 버튼을 눌러주세요.");
+        setUploading(false);
+      };
+
+      const handlePhotoUpload = (e) => {
+        uploadFile(e.target.files?.[0]);
+      };
+
+      const handlePaste = (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.startsWith("image/")) {
+            e.preventDefault();
+            uploadFile(items[i].getAsFile());
+            return;
+          }
+        }
+      };
+
+      // 클립보드 이벤트 등록
+      useEffect(() => {
+        document.addEventListener("paste", handlePaste);
+        return () => document.removeEventListener("paste", handlePaste);
+      });
+
+      const handlePhotoDelete = async () => {
+        if (!form.photo_path || !sb) return;
+        setUploading(true);
+        await sb.storage.from(PHOTO_BUCKET).remove([form.photo_path?.split("?")[0]]);
+        set("photo_path", null);
+        setPhotoMsg("사진 삭제됨 — 저장 버튼을 눌러주세요.");
+        setUploading(false);
+      };
+
+      const inputStyle = {
+        width: "100%", padding: "8px 10px", background: C.input, border: `1px solid ${C.border}`,
+        borderRadius: 6, color: C.text, fontSize: 13, outline: "none"
+      };
+      const labelStyle = { fontSize: 11, color: C.textDim, fontWeight: 600, marginBottom: 3, display: "block" };
+      const fieldWrap = { marginBottom: 10 };
+      const taStyle = { ...inputStyle, minHeight: 60, resize: "vertical" };
+
+      const toggleImpairment = (imp) => {
+        const current = form.impairment_types ? form.impairment_types.split(",").map(s => s.trim()).filter(Boolean) : [];
+        const idx = current.indexOf(imp);
+        if (idx >= 0) current.splice(idx, 1);
+        else current.push(imp);
+        set("impairment_types", current.join(","));
+      };
+
+      const toggleProsthesis = (p) => {
+        const current = form.prosthesis ? form.prosthesis.split(",").map(s => s.trim()).filter(Boolean) : [];
+        const idx = current.indexOf(p);
+        if (idx >= 0) current.splice(idx, 1);
+        else current.push(p);
+        set("prosthesis", current.join(","));
+      };
+
+      const toggleOrthosis = (o) => {
+        const current = form.orthosis ? form.orthosis.split(",").map(s => s.trim()).filter(Boolean) : [];
+        const idx = current.indexOf(o);
+        if (idx >= 0) current.splice(idx, 1);
+        else current.push(o);
+        set("orthosis", current.join(","));
+      };
+
+      const selectedImpairments = form.impairment_types ? form.impairment_types.split(",").map(s => s.trim()).filter(Boolean) : [];
+      const selectedProsthesis = form.prosthesis ? form.prosthesis.split(",").map(s => s.trim()).filter(Boolean) : [];
+      const selectedOrthosis = form.orthosis ? form.orthosis.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+      const handleSave = async () => {
+        setSaving(true);
+        await onSave(form);
+        setSaving(false);
+      };
+
+      const checkboxRowStyle = { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 };
+      const checkLabel = (checked) => ({
+        display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: checked ? C.gold : C.textDim,
+        background: checked ? C.gold + "22" : "transparent", border: `1px solid ${checked ? C.gold + "66" : C.border}`,
+        borderRadius: 6, padding: "4px 8px", cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap"
+      });
+
+      return (
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.gold, marginBottom: 12 }}>프로필 편집</div>
+
+          {/* 사진 업로드 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, padding: 12, background: C.bg, borderRadius: 10, border: `1px solid ${C.border}` }}>
+            {form.photo_path ? (
+              <img src={getPhotoUrl(form.photo_path)} alt="" style={{ width: 72, height: 90, borderRadius: 8, objectFit: "cover", border: `1px solid ${C.border}` }} />
+            ) : (
+              <div style={{ width: 72, height: 90, borderRadius: 8, background: C.gold + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 800, color: C.gold, border: `1px solid ${C.border}` }}>
+                {form.name?.charAt(0) || "?"}
+              </div>
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: C.textDim, fontWeight: 600, marginBottom: 6 }}>선수 사진</div>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: "none" }} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => fileInputRef.current?.click()} disabled={uploading} style={{
+                  padding: "6px 14px", background: C.gold, color: C.bg, border: "none", borderRadius: 6,
+                  fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: uploading ? 0.6 : 1
+                }}>{uploading ? "업로드 중..." : form.photo_path ? "사진 교체" : "사진 등록"}</button>
+                {form.photo_path && (
+                  <button onClick={handlePhotoDelete} disabled={uploading} style={{
+                    padding: "6px 12px", background: C.danger + "22", color: C.danger, border: `1px solid ${C.danger}44`,
+                    borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer"
+                  }}>삭제</button>
+                )}
+              </div>
+              {photoMsg && <div style={{ fontSize: 11, color: photoMsg.includes("오류") ? C.danger : C.success, marginTop: 4 }}>{photoMsg}</div>}
+              <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>JPG/PNG, 5MB 이하 | Ctrl+V로 클립보드 이미지 붙여넣기 가능</div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>이름</label>
+              <input value={form.name || ""} onChange={e => set("name", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>생년월일</label>
+              <input type="date" value={form.dob || ""} max="9999-12-31" onChange={e => set("dob", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>성별</label>
+              <select value={form.gender || ""} onChange={e => set("gender", e.target.value)} style={inputStyle}>
+                <option value="">선택</option>
+                <option value="남">남</option>
+                <option value="여">여</option>
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>NPC</label>
+              <input value={form.npc || ""} onChange={e => set("npc", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ ...fieldWrap, gridColumn: "span 2" }}>
+              <label style={labelStyle}>SDMS ID</label>
+              <input value={form.sdms_id || ""} onChange={e => set("sdms_id", e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={labelStyle}>진단명</label>
+            <textarea value={form.diagnosis || ""} onChange={e => set("diagnosis", e.target.value)} style={taStyle} />
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={labelStyle}>장애유형</label>
+            <div style={checkboxRowStyle}>
+              {IMPAIRMENT_OPTIONS.map(imp => (
+                <label key={imp} style={checkLabel(selectedImpairments.includes(imp))} onClick={() => toggleImpairment(imp)}>
+                  <input type="checkbox" checked={selectedImpairments.includes(imp)} readOnly
+                    style={{ width: 14, height: 14, accentColor: C.gold }} />
+                  {imp}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={labelStyle}>신체평가 (Physical Assessment)</label>
+            <textarea value={form.physical_assessment || ""} onChange={e => set("physical_assessment", e.target.value)} style={taStyle} />
+          </div>
+          <div style={fieldWrap}>
+            <label style={labelStyle}>의료평가 (Medical Assessment)</label>
+            <textarea value={form.medical_assessment || ""} onChange={e => set("medical_assessment", e.target.value)} style={taStyle} />
+          </div>
+          <div style={fieldWrap}>
+            <label style={labelStyle}>관찰 (Observation)</label>
+            <textarea value={form.observation || ""} onChange={e => set("observation", e.target.value)} style={taStyle} />
+          </div>
+          <div style={fieldWrap}>
+            <label style={labelStyle}>비고 (Comments)</label>
+            <textarea value={form.comments || ""} onChange={e => set("comments", e.target.value)} style={taStyle} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>사격팔</label>
+              <select value={form.shooting_arm || ""} onChange={e => set("shooting_arm", e.target.value)} style={inputStyle}>
+                <option value="">선택</option>
+                {SHOOTING_ARM_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>휠체어 등 길이 (cm)</label>
+              <input type="number" value={form.visible_free_height || ""} onChange={e => set("visible_free_height", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>SH1 세부등급</label>
+              <select value={form.sh1_subclass || ""} onChange={e => set("sh1_subclass", e.target.value)} style={inputStyle}>
+                <option value="">선택</option>
+                {SH_SUBCLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>SH2 세부등급</label>
+              <select value={form.sh2_subclass || ""} onChange={e => set("sh2_subclass", e.target.value)} style={inputStyle}>
+                <option value="">선택</option>
+                {SH_SUBCLASS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: C.gold, fontWeight: 600, marginTop: 10, marginBottom: 8 }}>보조장비</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>로더 사용여부</label>
+              <input value={form.loading_assistant_sh2 || ""} onChange={e => set("loading_assistant_sh2", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>장전보조기 여부</label>
+              <input value={form.loading_device_pistol || ""} onChange={e => set("loading_device_pistol", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>보정블록</label>
+              <input value={form.compensating_block || ""} onChange={e => set("compensating_block", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>장전대(산탄총)</label>
+              <input value={form.loading_stand_shotgun || ""} onChange={e => set("loading_stand_shotgun", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>적응장치(산탄총)</label>
+              <input value={form.adaptation_shotgun || ""} onChange={e => set("adaptation_shotgun", e.target.value)} style={inputStyle} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}>방아쇠 개조여부</label>
+              <input value={form.trigger_adaption || ""} onChange={e => set("trigger_adaption", e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={labelStyle}>의수/의족 (Prosthesis)</label>
+            <div style={checkboxRowStyle}>
+              {PROSTHESIS_OPTIONS.map(p => (
+                <label key={p} style={checkLabel(selectedProsthesis.includes(p))} onClick={() => toggleProsthesis(p)}>
+                  <input type="checkbox" checked={selectedProsthesis.includes(p)} readOnly
+                    style={{ width: 14, height: 14, accentColor: C.gold }} />
+                  {p}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={fieldWrap}>
+            <label style={labelStyle}>보조기 (Orthosis)</label>
+            <div style={checkboxRowStyle}>
+              {PROSTHESIS_OPTIONS.map(o => (
+                <label key={o} style={checkLabel(selectedOrthosis.includes(o))} onClick={() => toggleOrthosis(o)}>
+                  <input type="checkbox" checked={selectedOrthosis.includes(o)} readOnly
+                    style={{ width: 14, height: 14, accentColor: C.gold }} />
+                  {o}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button onClick={handleSave} disabled={saving} style={{
+              flex: 1, padding: "10px 0", background: C.gold, color: C.bg, border: "none",
+              borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer"
+            }}>{saving ? "저장 중..." : "프로필 저장"}</button>
+            <button onClick={onCancel} style={{
+              padding: "10px 20px", background: "none", color: C.textDim, border: `1px solid ${C.border}`,
+              borderRadius: 8, fontSize: 13, cursor: "pointer"
+            }}>취소</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ADMIN: Athlete Detail (Edit) ───
+    function AdminAthleteDetail({ athleteId, onBack }) {
+      const [profile, setProfile] = useState(null);
+      const [classifications, setClassifications] = useState([]);
+      const [tab, setTab] = useState("classification");
+      const [editingCls, setEditingCls] = useState(null);
+      const [addingCls, setAddingCls] = useState(false);
+      const [loading, setLoading] = useState(true);
+      const [msg, setMsg] = useState("");
+
+      useEffect(() => { loadData(); }, [athleteId]);
+
+      const loadData = async () => {
+        setLoading(true);
+        if (!sb) { setLoading(false); return; }
+        const { data: p, error: pErr } = await sb.from("athlete_profiles").select("*").eq("id", athleteId).single();
+        if (pErr) console.error("profile load error:", pErr);
+        setProfile(p);
+        const { data: cls, error: clsErr } = await sb.from("athlete_classifications").select("*").eq("athlete_id", athleteId).order("class_date", { ascending: false });
+        if (clsErr) console.error("classification load error:", clsErr);
+        console.log("loaded classifications:", cls);
+        setClassifications(cls || []);
+        setLoading(false);
+      };
+
+      const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+
+      const cleanForm = (f) => {
+        const cleaned = { ...f };
+        // 빈 문자열을 null로 변환 (특히 DATE 컬럼)
+        Object.keys(cleaned).forEach(k => { if (cleaned[k] === "") cleaned[k] = null; });
+        return cleaned;
+      };
+
+      const saveClassification = async (form) => {
+        if (!sb) return;
+        if (form.is_current) {
+          await sb.from("athlete_classifications").update({ is_current: false }).eq("athlete_id", athleteId).eq("is_current", true);
+        }
+        if (form.id) {
+          const { id, created_at, ...rest } = cleanForm(form);
+          const { error } = await sb.from("athlete_classifications").update(rest).eq("id", form.id);
+          if (error) { flash("오류: " + error.message); return; }
+        } else {
+          const { id, ...rest } = cleanForm(form);
+          const { data: inserted, error } = await sb.from("athlete_classifications").insert(rest).select();
+          if (error) { flash("오류: " + error.message); return; }
+        }
+        flash("등급분류 저장 완료");
+        setEditingCls(null);
+        setAddingCls(false);
+        await loadData();
+      };
+
+      const deleteClassification = async (clsId) => {
+        if (!sb) return;
+        if (!confirm("이 등급분류 기록을 삭제하시겠습니까?")) return;
+        const { error } = await sb.from("athlete_classifications").delete().eq("id", clsId);
+        if (error) { flash("오류: " + error.message); return; }
+        flash("삭제 완료");
+        setEditingCls(null);
+        await loadData();
+      };
+
+      const saveProfile = async (form) => {
+        if (!sb) return;
+        const { id, created_at, updated_at, ...rest } = cleanForm(form);
+        rest.updated_at = new Date().toISOString();
+        const { error } = await sb.from("athlete_profiles").update(rest).eq("id", id);
+        if (error) { flash("오류: " + error.message); return; }
+        flash("프로필 저장 완료");
+        await loadData();
+      };
+
+      const deleteAthlete = async () => {
+        if (!sb) return;
+        if (!confirm("이 선수의 모든 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+        await sb.from("athlete_classifications").delete().eq("athlete_id", athleteId);
+        const { error } = await sb.from("athlete_profiles").delete().eq("id", athleteId);
+        if (error) { flash("오류: " + error.message); return; }
+        onBack();
+      };
+
+      if (loading) return <div style={{ padding: 40, textAlign: "center", color: C.textDim }}>로딩 중...</div>;
+      if (!profile) return <div style={{ padding: 40, textAlign: "center", color: C.danger }}>선수를 찾을 수 없습니다.</div>;
+
+      const tabStyle = (active) => ({
+        flex: 1, padding: "10px 0", background: active ? C.gold + "22" : "transparent",
+        border: "none", borderBottom: active ? `2px solid ${C.gold}` : `2px solid transparent`,
+        color: active ? C.gold : C.textDim, fontSize: 13, fontWeight: active ? 700 : 500,
+        cursor: "pointer", transition: "all 0.2s"
+      });
+
+      const statusColor = (s) => {
+        if (s === "Confirmed") return C.success;
+        if (s === "Review") return "#f39c12";
+        if (s === "New") return C.info;
+        return C.danger;
+      };
+
+      return (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <button onClick={onBack} style={{
+              background: "none", border: `1px solid ${C.border}`, borderRadius: 8,
+              color: C.textDim, fontSize: 12, padding: "6px 12px", cursor: "pointer"
+            }}>&#8592; 목록</button>
+            {profile.photo_path ? (
+              <img src={getPhotoUrl(profile.photo_path)} alt="" style={{ width: 40, height: 50, borderRadius: 6, objectFit: "cover", border: `1px solid ${C.border}` }} />
+            ) : null}
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{profile.name}</div>
+              <div style={{ fontSize: 12, color: C.textDim }}>{formatDate(profile.dob)} | {profile.npc || "KOR"}</div>
+            </div>
+          </div>
+
+          {msg && (
+            <div style={{ padding: "8px 14px", borderRadius: 8, marginBottom: 12, fontSize: 13, fontWeight: 600,
+              background: msg.includes("오류") ? C.danger + "22" : C.success + "22",
+              color: msg.includes("오류") ? C.danger : C.success
+            }}>{msg}</div>
+          )}
+
+          <div style={{ display: "flex", marginBottom: 16, borderRadius: "10px 10px 0 0", overflow: "hidden", background: C.card }}>
+            <button style={tabStyle(tab === "classification")} onClick={() => setTab("classification")}>등급분류</button>
+            <button style={tabStyle(tab === "profile")} onClick={() => setTab("profile")}>프로필</button>
+          </div>
+
+          {tab === "classification" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.gold }}>등급분류 기록</div>
+                {!addingCls && !editingCls && (
+                  <button onClick={() => setAddingCls(true)} style={{
+                    background: C.gold, color: C.bg, border: "none", borderRadius: 8,
+                    padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                  }}>+ 추가</button>
+                )}
+              </div>
+
+              {addingCls && (
+                <div style={{ marginBottom: 16 }}>
+                  <ClassificationForm athleteId={athleteId} onSave={saveClassification}
+                    onDelete={() => {}} onCancel={() => setAddingCls(false)} />
+                </div>
+              )}
+
+              {classifications.map(c => (
+                <div key={c.id} style={{
+                  background: C.card, borderRadius: 10, padding: 14, marginBottom: 10,
+                  border: `1px solid ${c.is_current ? C.gold + "44" : C.border}`
+                }}>
+                  {editingCls === c.id ? (
+                    <ClassificationForm cls={c} athleteId={athleteId}
+                      onSave={saveClassification} onDelete={deleteClassification}
+                      onCancel={() => setEditingCls(null)} />
+                  ) : (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <Badge text={(c.limitation_category ? c.limitation_category + ":" : "") + (c.class || "-") + (c.subclass && ["SH1","SH2"].includes(c.class) ? c.subclass : "")} color={C.gold} />
+                          <Badge text={dispStatus(c.status)} color={statusColor(c.status)} />
+                          {c.is_current && <Badge text="현재" color={C.success} />}
+                        </div>
+                        <button onClick={() => setEditingCls(c.id)} style={{
+                          background: "none", border: `1px solid ${C.border}`, borderRadius: 6,
+                          color: C.textDim, fontSize: 11, padding: "4px 10px", cursor: "pointer"
+                        }}>편집</button>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.textDim }}>
+                        {c.limitation_category || "-"} | 분류일: {formatDate(c.class_date)} | {c.classifiers || "-"}
+                      </div>
+                      {c.licence_number && (
+                        <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>
+                          라이선스: {c.licence_number} | 시즌: {c.season || "-"} | 만료: {formatDate(c.date_of_expiry)}
+                        </div>
+                      )}
+                      {(c.limitation_group || c.limitation_category) && (
+                        <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>
+                          제한: {c.limitation_group || "-"} / {c.limitation_category || "-"}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {classifications.length === 0 && !addingCls && (
+                <div style={{ textAlign: "center", padding: 20, color: C.textDim, fontSize: 13 }}>등급분류 기록이 없습니다.</div>
+              )}
+            </div>
+          )}
+
+          {tab === "profile" && (
+            <ProfileEditForm profile={profile} onSave={saveProfile} onCancel={onBack} />
+          )}
+
+          <div style={{ marginTop: 24, textAlign: "center" }}>
+            <button onClick={deleteAthlete} style={{
+              background: C.danger + "22", color: C.danger, border: `1px solid ${C.danger}44`,
+              borderRadius: 8, padding: "8px 24px", fontSize: 13, fontWeight: 600, cursor: "pointer"
+            }}>선수 삭제</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ADMIN: Add New Athlete ───
+    function AdminAddAthlete({ onBack, onCreated }) {
+      const [form, setForm] = useState({ name: "", dob: "", gender: "", npc: "KOR", sdms_id: "" });
+      const [saving, setSaving] = useState(false);
+      const [error, setError] = useState("");
+
+      const set = (k, v) => setForm(prev => ({ ...prev, [k]: k === "dob" ? clipDateYear(v) : v }));
+
+      const inputStyle = {
+        width: "100%", padding: "8px 10px", background: C.input, border: `1px solid ${C.border}`,
+        borderRadius: 6, color: C.text, fontSize: 13, outline: "none"
+      };
+      const labelStyle = { fontSize: 11, color: C.textDim, fontWeight: 600, marginBottom: 3, display: "block" };
+
+      const handleSave = async () => {
+        if (!form.name.trim()) { setError("이름을 입력하세요."); return; }
+        if (!form.dob) { setError("생년월일을 입력하세요."); return; }
+        if (!sb) { setError("DB 연결 오류"); return; }
+        setSaving(true);
+        setError("");
+        const { data, error: err } = await sb.from("athlete_profiles").insert({
+          name: form.name.trim(), dob: form.dob, gender: form.gender || null,
+          npc: form.npc || "KOR", sdms_id: form.sdms_id || null
+        }).select().single();
+        if (err) { setError("오류: " + err.message); setSaving(false); return; }
+        setSaving(false);
+        onCreated(data.id);
+      };
+
+      return (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+            <button onClick={onBack} style={{
+              background: "none", border: `1px solid ${C.border}`, borderRadius: 8,
+              color: C.textDim, fontSize: 12, padding: "6px 12px", cursor: "pointer"
+            }}>&#8592; 목록</button>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.gold }}>선수 추가</div>
+          </div>
+
+          <div style={{ background: C.card, borderRadius: 12, padding: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div><label style={labelStyle}>이름 *</label><input value={form.name} onChange={e => set("name", e.target.value)} style={inputStyle} /></div>
+              <div><label style={labelStyle}>생년월일 *</label><input type="date" value={form.dob || ""} max="9999-12-31" onChange={e => set("dob", e.target.value)} style={inputStyle} /></div>
+              <div>
+                <label style={labelStyle}>성별</label>
+                <select value={form.gender} onChange={e => set("gender", e.target.value)} style={inputStyle}>
+                  <option value="">선택</option><option value="남">남</option><option value="여">여</option>
+                </select>
+              </div>
+              <div><label style={labelStyle}>NPC</label><input value={form.npc} onChange={e => set("npc", e.target.value)} style={inputStyle} /></div>
+              <div style={{ gridColumn: "span 2" }}><label style={labelStyle}>SDMS ID</label><input value={form.sdms_id} onChange={e => set("sdms_id", e.target.value)} style={inputStyle} /></div>
+            </div>
+
+            {error && <div style={{ color: C.danger, fontSize: 13, marginTop: 10 }}>{error}</div>}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button onClick={handleSave} disabled={saving} style={{
+                flex: 1, padding: "10px 0", background: C.gold, color: C.bg, border: "none",
+                borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer"
+              }}>{saving ? "저장 중..." : "선수 등록"}</button>
+              <button onClick={onBack} style={{
+                padding: "10px 20px", background: "none", color: C.textDim, border: `1px solid ${C.border}`,
+                borderRadius: 8, fontSize: 13, cursor: "pointer"
+              }}>취소</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ADMIN VIEW ───
+    function AdminView({ onLogout }) {
+      const [athletes, setAthletes] = useState([]);
+      const [search, setSearch] = useState("");
+      const [view, setView] = useState("list");
+      const [selectedId, setSelectedId] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [clsMap, setClsMap] = useState({});
+
+      const loadAthletes = useCallback(async () => {
+        setLoading(true);
+        if (!sb) { setLoading(false); return; }
+        const { data, error } = await sb.from("athlete_profiles").select("*").order("name");
+        if (!error && data) {
+          setAthletes(data);
+          const { data: allCls } = await sb.from("athlete_classifications").select("*").eq("is_current", true);
+          const map = {};
+          (allCls || []).forEach(c => { map[c.athlete_id] = c; });
+          setClsMap(map);
+        }
+        setLoading(false);
+      }, []);
+
+      useEffect(() => { loadAthletes(); }, [loadAthletes]);
+
+      const filtered = athletes.filter(a => {
+        if (!search.trim()) return true;
+        return a.name.includes(search.trim()) || (a.sdms_id || "").includes(search.trim());
+      });
+
+      if (view === "detail" && selectedId) {
+        return (
+          <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+            <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+              <div>
+                <a href="Entry.html" style={{ color: C.textDim, fontSize: 11, textDecoration: "none" }}>&#8592; 참가신청으로</a>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.gold }}>등급분류 관리</div>
+              </div>
+              <button onClick={onLogout} style={{
+                background: "none", border: `1px solid ${C.border}`, borderRadius: 8,
+                color: C.textDim, fontSize: 12, padding: "6px 12px", cursor: "pointer"
+              }}>로그아웃</button>
+            </div>
+            <div style={{ maxWidth: 700, margin: "0 auto", padding: "16px 12px" }}>
+              <AdminAthleteDetail athleteId={selectedId} onBack={() => { setView("list"); setSelectedId(null); loadAthletes(); }} />
+            </div>
+          </div>
+        );
+      }
+
+      if (view === "add") {
+        return (
+          <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+            <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+              <div>
+                <a href="Entry.html" style={{ color: C.textDim, fontSize: 11, textDecoration: "none" }}>&#8592; 참가신청으로</a>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.gold }}>등급분류 관리</div>
+              </div>
+              <button onClick={onLogout} style={{
+                background: "none", border: `1px solid ${C.border}`, borderRadius: 8,
+                color: C.textDim, fontSize: 12, padding: "6px 12px", cursor: "pointer"
+              }}>로그아웃</button>
+            </div>
+            <div style={{ maxWidth: 700, margin: "0 auto", padding: "16px 12px" }}>
+              <AdminAddAthlete onBack={() => { setView("list"); loadAthletes(); }}
+                onCreated={(id) => { setSelectedId(id); setView("detail"); }} />
+            </div>
+          </div>
+        );
+      }
+
+      const statusColor = (s) => {
+        if (s === "Confirmed") return C.success;
+        if (s === "Review") return "#f39c12";
+        if (s === "New") return C.info;
+        return C.danger;
+      };
+
+      return (
+        <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+          <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
+            display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+            <div>
+              <a href="Entry.html" style={{ color: C.textDim, fontSize: 11, textDecoration: "none" }}>&#8592; 참가신청으로</a>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.gold }}>등급분류 관리</div>
+            </div>
+            <button onClick={onLogout} style={{
+              background: "none", border: `1px solid ${C.border}`, borderRadius: 8,
+              color: C.textDim, fontSize: 12, padding: "6px 12px", cursor: "pointer"
+            }}>로그아웃</button>
+          </div>
+
+          <div style={{ maxWidth: 700, margin: "0 auto", padding: "16px 12px" }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="선수 이름 또는 SDMS ID 검색..."
+                style={{
+                  flex: 1, padding: "10px 14px", background: C.input, border: `1px solid ${C.border}`,
+                  borderRadius: 10, color: C.text, fontSize: 14, outline: "none"
+                }}
+                onFocus={e => e.target.style.borderColor = C.gold}
+                onBlur={e => e.target.style.borderColor = C.border} />
+              <button onClick={() => setView("add")} style={{
+                background: C.gold, color: C.bg, border: "none", borderRadius: 10,
+                padding: "0 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap"
+              }}>+ 선수 추가</button>
+            </div>
+
+            {loading ? (
+              <div style={{ textAlign: "center", padding: 40, color: C.textDim }}>로딩 중...</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40, color: C.textDim }}>
+                {search ? "검색 결과가 없습니다." : "등록된 선수가 없습니다."}
+              </div>
+            ) : (
+              filtered.map(a => {
+                const cls = clsMap[a.id];
+                return (
+                  <div key={a.id} onClick={() => { setSelectedId(a.id); setView("detail"); }}
+                    style={{
+                      background: C.card, borderRadius: 10, padding: "12px 16px", marginBottom: 8,
+                      border: `1px solid ${C.border}`, cursor: "pointer", transition: "all 0.2s"
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.background = C.cardHover; e.currentTarget.style.borderColor = C.gold + "44"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = C.card; e.currentTarget.style.borderColor = C.border; }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{a.name}</div>
+                        <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>
+                          {formatDate(a.dob)} | {a.npc || "KOR"}
+                          {a.sdms_id && ` | SDMS: ${a.sdms_id}`}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        {cls ? (
+                          <>
+                            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                              <Badge text={(cls.limitation_category ? cls.limitation_category + ":" : "") + (cls.class || "-") + (cls.subclass && ["SH1","SH2"].includes(cls.class) ? cls.subclass : "")} color={C.gold} />
+                              <Badge text={dispStatus(cls.status)} color={statusColor(cls.status)} />
+                            </div>
+                            {cls.date_of_expiry && (
+                              <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>
+                                만료: {formatDate(cls.date_of_expiry)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <Badge text="미분류" color={C.textDim} />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+
+            <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>
+              총 {filtered.length}명{search && ` (전체 ${athletes.length}명 중)`}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── ATHLETE LANDING (중간 화면) ───
+    function AthleteLanding({ athlete, onProceed, onLogout }) {
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>대한장애인사격연맹</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.gold, marginBottom: 24 }}>등급분류정보</div>
+
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
+              {athlete.photo_path ? (
+                <img src={getPhotoUrl(athlete.photo_path)} alt="" style={{ width: 100, height: 125, borderRadius: 12, objectFit: "cover", border: `2px solid ${C.gold}44`, marginBottom: 14 }} />
+              ) : (
+                <div style={{ width: 100, height: 125, borderRadius: 12, background: C.gold + "22",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 40, fontWeight: 800, color: C.gold, marginBottom: 14,
+                  border: `2px solid ${C.gold}44`
+                }}>{athlete.name?.charAt(0)}</div>
+              )}
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{athlete.name}</div>
+              <div style={{ fontSize: 13, color: C.textDim, marginTop: 4 }}>{formatDate(athlete.dob)}</div>
+            </div>
+
+            <button onClick={onProceed} style={{
+              width: "100%", padding: "14px 0", background: C.gold, color: C.bg, border: "none",
+              borderRadius: 12, fontSize: 16, fontWeight: 700, cursor: "pointer", marginBottom: 12,
+              transition: "opacity 0.2s"
+            }} onMouseOver={e => e.target.style.opacity = "0.85"} onMouseOut={e => e.target.style.opacity = "1"}>
+              등급분류 정보확인
+            </button>
+
+            <button onClick={onLogout} style={{
+              width: "100%", padding: "12px 0", background: "none", color: C.textDim, border: `1px solid ${C.border}`,
+              borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 0.2s"
+            }} onMouseOver={e => { e.target.style.borderColor = C.danger + "66"; e.target.style.color = C.danger; }}
+               onMouseOut={e => { e.target.style.borderColor = C.border; e.target.style.color = C.textDim; }}>
+              로그아웃
+            </button>
+
+            <div style={{ marginTop: 24 }}>
+              <a href="Entry.html" style={{ color: C.textDim, fontSize: 12, textDecoration: "none" }}>&#8592; 참가신청으로</a>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── MAIN APP ───
+    const LS_KEY = "ksfd_cls_athlete";
+
+    function App() {
+      const [user, setUser] = useState(null);
+      const [athletePage, setAthletePage] = useState("landing"); // "landing" | "detail"
+      const [restoring, setRestoring] = useState(true);
+
+      // 저장된 선수 로그인 복원
+      useEffect(() => {
+        try {
+          const saved = localStorage.getItem(LS_KEY);
+          if (saved) {
+            const { name, dob } = JSON.parse(saved);
+            if (name && dob && sb) {
+              sb.from("athlete_profiles").select("*").eq("name", name).eq("dob", dob).then(({ data }) => {
+                if (data && data.length > 0) {
+                  setUser({ role: "athlete", name, athlete: data[0] });
+                  setAthletePage("landing");
+                } else {
+                  localStorage.removeItem(LS_KEY);
+                }
+                setRestoring(false);
+              });
+              return;
+            }
+          }
+        } catch (e) {}
+        setRestoring(false);
+      }, []);
+
+      const handleLogin = (userData) => {
+        if (userData.role === "athlete") {
+          localStorage.setItem(LS_KEY, JSON.stringify({ name: userData.athlete.name, dob: userData.athlete.dob }));
+          setAthletePage("landing");
+        }
+        setUser(userData);
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem(LS_KEY);
+        setUser(null);
+        setAthletePage("landing");
+      };
+
+      if (restoring) {
+        return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.textDim }}>로딩 중...</div>;
+      }
+
+      if (!user) {
+        return <LoginScreen onLogin={handleLogin} />;
+      }
+
+      if (user.role === "athlete") {
+        if (athletePage === "landing") {
+          return <AthleteLanding athlete={user.athlete} onProceed={() => setAthletePage("detail")} onLogout={handleLogout} />;
+        }
+        return <AthleteView athlete={user.athlete} onLogout={() => setAthletePage("landing")} />;
+      }
+
+      if (user.role === "admin") {
+        return <AdminView onLogout={handleLogout} />;
+      }
+
+      return null;
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
