@@ -134,10 +134,11 @@
     const CATEGORY_CLASS_MAP = {
       "소총": ["SH1", "SH2"],
       "권총": ["SH1"],
-      "산탄총": ["SG-L", "SG-U", "SG-S"]
+      "산탄총": ["SG-L", "SG-U", "SG-S"],
+      "공통": ["청각"]
     };
-    const CATEGORY_OPTIONS = ["소총", "권총", "산탄총"];
-    const ALL_CLASS_OPTIONS = ["SH1", "SH2", "SG-L", "SG-U", "SG-S"];
+    const CATEGORY_OPTIONS = ["소총", "권총", "산탄총", "공통"];
+    const ALL_CLASS_OPTIONS = ["SH1", "SH2", "SG-L", "SG-U", "SG-S", "청각"];
     const STATUS_OPTIONS = ["Confirmed", "Review", "New", "Not eligible"];
     const SHOOTING_ARM_OPTIONS = ["Right", "Left", "Both"];
     const SH_SUBCLASS_OPTIONS = ["A", "B", "C"];
@@ -415,8 +416,7 @@
         setLoading(false);
       };
 
-      const currentClsList = classifications.filter(c => c.is_current);
-      if (currentClsList.length === 0 && classifications.length > 0) currentClsList.push(classifications[0]);
+      // 등급분류 이력은 모두 공존 (is_current 구분 없음)
       const impairments = profile.impairment_types ? profile.impairment_types.split(",").map(s => s.trim()).filter(Boolean) : [];
       const prosthesisList = profile.prosthesis ? profile.prosthesis.split(",").map(s => s.trim()).filter(Boolean) : [];
       const orthosisList = profile.orthosis ? profile.orthosis.split(",").map(s => s.trim()).filter(Boolean) : [];
@@ -472,7 +472,7 @@
                     <>
                       <div style={{ marginTop: 12, marginBottom: 8, fontSize: 12, color: C.textDim, fontWeight: 600 }}>등급분류 이력</div>
                       {classifications.map((cls, i) => (
-                        <div key={cls.id || i} style={{ padding: "8px 12px", marginBottom: 6, background: C.bg, borderRadius: 8, border: `1px solid ${cls.is_current ? C.gold + "44" : C.border}33` }}>
+                        <div key={cls.id || i} style={{ padding: "8px 12px", marginBottom: 6, background: C.bg, borderRadius: 8, border: `1px solid ${C.border}33` }}>
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
                             <Badge text={(cls.limitation_category ? cls.limitation_category + ":" : "") + (cls.class || "-") + (cls.subclass && ["SH1","SH2"].includes(cls.class) ? cls.subclass : "")} color={C.gold} />
                             <Badge text={dispStatus(cls.status)} color={statusColor(cls.status)} />
@@ -566,7 +566,7 @@
         athlete_id: athleteId, sport: "Shooting", class: "", status: "",
         review: "", class_date: "", classifiers: "", limitation_group: "", limitation_category: "",
         licence_number: "", season: "", date_of_issue: "", date_of_validity: "", date_of_expiry: "",
-        is_current: true
+        is_current: true  // DB 기본값 유지용
       });
       const [saving, setSaving] = useState(false);
 
@@ -653,11 +653,6 @@
             <div style={fieldWrap}>
               <label style={labelStyle}>만료일</label>
               <input type="date" value={form.date_of_expiry || ""} max="9999-12-31" onChange={e => set("date_of_expiry", e.target.value)} style={inputStyle} />
-            </div>
-            <div style={{ ...fieldWrap, display: "flex", alignItems: "center", gap: 8, paddingTop: 20 }}>
-              <input type="checkbox" checked={form.is_current || false} onChange={e => set("is_current", e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: C.gold }} />
-              <label style={{ fontSize: 12, color: C.text }}>현재 등급 (is_current)</label>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -1014,9 +1009,6 @@
 
       const saveClassification = async (form) => {
         if (!sb) return;
-        if (form.is_current) {
-          await sb.from("athlete_classifications").update({ is_current: false }).eq("athlete_id", athleteId).eq("is_current", true);
-        }
         if (form.id) {
           const { id, created_at, ...rest } = cleanForm(form);
           const { error } = await sb.from("athlete_classifications").update(rest).eq("id", form.id);
@@ -1128,7 +1120,7 @@
               {classifications.map(c => (
                 <div key={c.id} style={{
                   background: C.card, borderRadius: 10, padding: 14, marginBottom: 10,
-                  border: `1px solid ${c.is_current ? C.gold + "44" : C.border}`
+                  border: `1px solid ${C.border}`
                 }}>
                   {editingCls === c.id ? (
                     <ClassificationForm cls={c} athleteId={athleteId}
@@ -1140,7 +1132,6 @@
                         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                           <Badge text={(c.limitation_category ? c.limitation_category + ":" : "") + (c.class || "-") + (c.subclass && ["SH1","SH2"].includes(c.class) ? c.subclass : "")} color={C.gold} />
                           <Badge text={dispStatus(c.status)} color={statusColor(c.status)} />
-                          {c.is_current && <Badge text="현재" color={C.success} />}
                         </div>
                         <button onClick={() => setEditingCls(c.id)} style={{
                           background: "none", border: `1px solid ${C.border}`, borderRadius: 6,
@@ -1270,9 +1261,9 @@
         const { data, error } = await sb.from("athlete_profiles").select("*").order("name");
         if (!error && data) {
           setAthletes(data);
-          const { data: allCls } = await sb.from("athlete_classifications").select("*").eq("is_current", true);
+          const { data: allCls } = await sb.from("athlete_classifications").select("*");
           const map = {};
-          (allCls || []).forEach(c => { map[c.athlete_id] = c; });
+          (allCls || []).forEach(c => { if (!map[c.athlete_id]) map[c.athlete_id] = []; map[c.athlete_id].push(c); });
           setClsMap(map);
         }
         setLoading(false);
@@ -1391,18 +1382,12 @@
                         </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        {cls ? (
-                          <>
-                            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-                              <Badge text={(cls.limitation_category ? cls.limitation_category + ":" : "") + (cls.class || "-") + (cls.subclass && ["SH1","SH2"].includes(cls.class) ? cls.subclass : "")} color={C.gold} />
-                              <Badge text={dispStatus(cls.status)} color={statusColor(cls.status)} />
-                            </div>
-                            {cls.date_of_expiry && (
-                              <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>
-                                만료: {formatDate(cls.date_of_expiry)}
-                              </div>
-                            )}
-                          </>
+                        {cls && cls.length > 0 ? (
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            {cls.map((c, ci) => (
+                              <Badge key={ci} text={(c.limitation_category ? c.limitation_category + ":" : "") + (c.class || "-") + (c.subclass && ["SH1","SH2"].includes(c.class) ? c.subclass : "")} color={C.gold} />
+                            ))}
+                          </div>
                         ) : (
                           <Badge text="미분류" color={C.textDim} />
                         )}
