@@ -995,6 +995,13 @@ function TournamentRegistration() {
                 <div style={styles.btnSub}>Results and Start List</div>
               </span>
             </button>
+            <button className="landing-btn" style={styles.primaryBtn} onClick={() => { window.location.href = "Classification.html"; }}>
+              <span style={styles.btnIcon}>🏅</span>
+              <span>
+                <div style={styles.btnMain}>등급분류정보</div>
+                <div style={styles.btnSub}>Classification</div>
+              </span>
+            </button>
           </div>
         </div>
         <div style={{ position: "absolute", bottom: 18, left: "50%", transform: "translateX(-50%)", opacity: adminMode ? 0.85 : 0.25, cursor: "pointer", transition: "opacity .2s" }}
