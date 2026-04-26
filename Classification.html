@@ -104,6 +104,12 @@
     const SUPABASE_URL = "https://tkdvyxouknhjhaqjrotb.supabase.co";
     const SUPABASE_KEY = "sb_publishable_vka5Jqtl7JtyzV5BOv9ZcQ_2E5e76Iy";
     const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+    const LOGO_IMG = "https://ksfd0427.github.io/KSFD-Repository/images/logo.png";
+
+    // ─── Background Logo ───
+    function BgLogo() {
+      return <img src={LOGO_IMG} alt="" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 600, maxWidth: "90%", opacity: 0.12, pointerEvents: "none", zIndex: 0 }} />;
+    }
 
     const HARDCODED_ADMINS = [
       { name: "관리자", dob: "2000-01-01" }
@@ -273,8 +279,9 @@
 
       if (!role) {
         return (
-          <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-            <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+          <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, position: "relative" }}>
+            <BgLogo />
+            <div style={{ width: "100%", maxWidth: 380, textAlign: "center", position: "relative", zIndex: 1 }}>
               <div style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>대한장애인사격연맹</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: C.gold, marginBottom: 6 }}>등급분류정보</div>
               <div style={{ fontSize: 12, color: C.textDim, marginBottom: 36 }}>Classification Information System</div>
@@ -342,8 +349,9 @@
       };
 
       return (
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, position: "relative" }}>
+          <BgLogo />
+          <div style={{ width: "100%", maxWidth: 380, textAlign: "center", position: "relative", zIndex: 1 }}>
             <div style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>대한장애인사격연맹</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: C.gold, marginBottom: 6 }}>등급분류정보</div>
             <div style={{ fontSize: 12, color: C.textDim, marginBottom: 30 }}>
@@ -421,9 +429,10 @@
       };
 
       return (
-        <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+        <div style={{ minHeight: "100vh", paddingBottom: 40, position: "relative" }}>
+          <BgLogo />
           {/* Header */}
-          <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "12px 16px",
+          <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "12px 16px", position: "relative", zIndex: 1,
             display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
             <div>
               <a href="Entry.html" style={{ color: C.textDim, fontSize: 11, textDecoration: "none" }}>&#8592; 참가신청으로</a>
@@ -1415,8 +1424,9 @@
     // ─── ATHLETE LANDING (중간 화면) ───
     function AthleteLanding({ athlete, onProceed, onLogout }) {
       return (
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, position: "relative" }}>
+          <BgLogo />
+          <div style={{ width: "100%", maxWidth: 380, textAlign: "center", position: "relative", zIndex: 1 }}>
             <div style={{ fontSize: 13, color: C.textDim, marginBottom: 6 }}>대한장애인사격연맹</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: C.gold, marginBottom: 24 }}>등급분류정보</div>
 
