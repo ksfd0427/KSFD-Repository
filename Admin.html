@@ -340,10 +340,10 @@ ALTER TABLE tournament_events ADD COLUMN IF NOT EXISTS final_format VARCHAR(20) 
 ALTER TABLE tournament_events ADD COLUMN IF NOT EXISTS distance VARCHAR(10) DEFAULT '10M';
 
 ALTER TABLE competition_results DROP CONSTRAINT IF EXISTS competition_results_result_type_check;
-ALTER TABLE competition_results ADD CONSTRAINT competition_results_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold'));
+ALTER TABLE competition_results ADD CONSTRAINT competition_results_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold','league'));
 
 ALTER TABLE best_records DROP CONSTRAINT IF EXISTS best_records_result_type_check;
-ALTER TABLE best_records ADD CONSTRAINT best_records_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold'));
+ALTER TABLE best_records ADD CONSTRAINT best_records_result_type_check CHECK (result_type IN ('prelim','final','team','bronze','gold','league'));
 
 ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS is_league BOOLEAN DEFAULT FALSE;`}
       </code>
