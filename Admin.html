@@ -613,6 +613,10 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   const [resViewMode, setResViewMode]=useState("category"); // "category"|"daily"
   const [resData, setResData]=useState([]);
   const [resDirty, setResDirty]=useState(false);
+  const [numpadActive, setNumpadActive]=useState(false);
+  const [numpadPos, setNumpadPos]=useState({x:0,y:0,above:true}); // 말풍선 위치
+  const numpadTargetRef=React.useRef(null); // 현재 포커스된 input element
+  const numpadTouchRef=React.useRef(false); // 터치디바이스 여부
   const [teamData, setTeamData]=useState([]);
   const [leagueData, setLeagueData]=useState([]);
   const [resPrintMode, setResPrintMode]=useState(false);
@@ -1683,7 +1687,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   };
 
   // ── 신청 수정 ──
-  const openEditApp=(tab)=>{
+  const openEditApp=async(tab)=>{
     // 개인전 종목: memberId → [eventCode,...]
     const ie={}; appEntries.forEach(e=>{if(!ie[e.member_id])ie[e.member_id]=[]; ie[e.member_id].push(e.event_code);}); setEditIndEntries(ie);
     // catMap: 모든 종목(individual+team+mixed)의 카테고리 매핑
@@ -1708,11 +1712,63 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     }));
     // 단체전/혼성팀 - new key format: team-CODE_1 for team, pair-CODE-NUM for mixed
     const tc={}; const grouped={};
-    appTeamEntries.forEach(t=>{const k=t.event_code+"_"+t.team_number; if(!grouped[k])grouped[k]={code:t.event_code,type:t.team_type,num:t.team_number,members:[],isUnion:t.is_union,unionMemo:t.union_memo||""}; grouped[k].members.push(t);});
+    appTeamEntries.forEach(t=>{const k=t.team_type+"_"+t.event_code+"_"+t.team_number; if(!grouped[k])grouped[k]={code:t.event_code,type:t.team_type,num:t.team_number,members:[],isUnion:t.is_union,unionMemo:t.union_memo||""}; grouped[k].members.push(t);});
+    // ★ 리그전 크로스-참조: DB에서 직접 최신 리그 엔트리 조회 (캐시 의존 X)
+    const existingLeagueCodes=new Set();
+    Object.values(grouped).forEach(g=>{if(g.type==="league") existingLeagueCodes.add(g.code);});
+    if(selectedT&&detailApp){
+      try{
+        const appMemberNames=new Map();
+        appMembers.forEach(m=>{appMemberNames.set(m.name,m.id);});
+        const nameSet=new Set(appMembers.map(m=>m.name));
+        // 같은 대회의 모든 리그 team_entries를 DB에서 직접 조회
+        const allAppsR=await sb.from("applications").select("id").eq("tournament_id",selectedT.id);
+        if(allAppsR.data&&allAppsR.data.length>0){
+          const allAppIds=allAppsR.data.map(a=>a.id).filter(id=>id!==detailApp.id);
+          if(allAppIds.length>0){
+            const[teR,mR]=await Promise.all([
+              sb.from("team_entries").select("*").in("application_id",allAppIds).eq("team_type","league"),
+              sb.from("members").select("id,name,application_id").in("application_id",allAppIds)
+            ]);
+            if(teR.data&&mR.data){
+              const memberMap={};mR.data.forEach(m=>{memberMap[m.id]=m;});
+              // event_code별로 그룹화, 최신 application_id 우선
+              const otherLeagueAll={};
+              teR.data.forEach(t=>{
+                const mem=memberMap[t.member_id];
+                if(!mem||!nameSet.has(mem.name)) return;
+                const ek=t.event_code+"_"+t.team_number;
+                if(!otherLeagueAll[ek]) otherLeagueAll[ek]=[];
+                otherLeagueAll[ek].push({...t,_mappedMid:appMemberNames.get(mem.name)});
+              });
+              Object.entries(otherLeagueAll).forEach(([ek,entries])=>{
+                const maxAppId=Math.max(...entries.map(e=>e.application_id));
+                const latest=entries.filter(e=>e.application_id===maxAppId);
+                if(latest.length===0) return;
+                const evCode=latest[0].event_code;
+                if(existingLeagueCodes.has(evCode)) return;
+                const gk="league_"+evCode+"_"+latest[0].team_number;
+                grouped[gk]={code:evCode,type:"league",num:latest[0].team_number,members:latest.map(m=>({...m,member_id:m._mappedMid})),isUnion:latest[0].is_union,unionMemo:latest[0].union_memo||""};
+              });
+            }
+          }
+        }
+      }catch(e){console.warn("리그 크로스참조 실패:",e);}
+    }
     Object.entries(grouped).forEach(([k,g])=>{
       g.members.sort((a,b)=>a.slot_order-b.slot_order);
       const newKey=g.type==="mixed"?"pair-"+g.code+"-"+g.num:g.type==="league"?"league-"+g.code:"team-"+g.code+"_"+g.num;
-      tc[newKey]={memberIds:g.members.map(m=>m.member_id),isUnion:g.isUnion,unionMemo:g.unionMemo,teamType:g.type};
+      const tcEntry={memberIds:g.members.map(m=>m.member_id),isUnion:g.isUnion,unionMemo:g.unionMemo,teamType:g.type};
+      // ★ 리그 연합: union_memo에서 unionAppId/unionMemberId 복원
+      if(g.type==="league"&&g.isUnion&&g.unionMemo){
+        try{
+          const um=JSON.parse(g.unionMemo);
+          if(um.appId) tcEntry.unionAppId=um.appId;
+          if(um.memberId) tcEntry.unionMemberId=um.memberId;
+          tcEntry.unionMemo=um.display||g.unionMemo;
+        }catch(e){/* 기존 텍스트 메모 - 파싱 불가 시 그대로 유지 */}
+      }
+      tc[newKey]=tcEntry;
     });
     setEditTeamComps(tc);
     // 총기
@@ -1781,9 +1837,14 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
           teamNum=parseInt(k.substring(idx+1));
           teamType=comp.teamType||"team";
         }
+        // ★ 리그 연합: union_memo에 외부 선수 정보를 JSON으로 저장
+        let saveMemo=comp.unionMemo||null;
+        if(teamType==="league"&&comp.isUnion&&comp.unionAppId&&comp.unionMemberId){
+          saveMemo=JSON.stringify({appId:comp.unionAppId,memberId:comp.unionMemberId,display:comp.unionMemo||""});
+        }
         comp.memberIds.forEach((mid,slot)=>{
           const newMid=memberIdMap[mid];
-          if(newMid) teRows.push({application_id:appId, event_code:evCode, team_type:teamType, team_number:teamNum||1, member_id:newMid, slot_order:slot, is_union:comp.isUnion||false, union_memo:comp.unionMemo||null});
+          if(newMid) teRows.push({application_id:appId, event_code:evCode, team_type:teamType, team_number:teamNum||1, member_id:newMid, slot_order:slot, is_union:comp.isUnion||false, union_memo:saveMemo});
         });
       });
       if(teRows.length>0){const{error}=await sb.from("team_entries").insert(teRows); if(error) throw new Error("팀 저장 실패: "+error.message);}
@@ -1800,6 +1861,22 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
       setEditAppMode(null);
       // 리로드
       await openAppDetail(detailApp);
+      // evPData 갱신 (멤버 ID 변경 반영)
+      if(selectedT){
+        try{
+          const appR2=await sb.from("applications").select("id").eq("tournament_id",selectedT.id);
+          const aIds2=(appR2.data||[]).map(a=>a.id);
+          if(aIds2.length>0){
+            const[mR3,ieR3,teR3]=await Promise.all([
+              sb.from("members").select("*").in("application_id",aIds2).limit(10000),
+              sb.from("individual_entries").select("*").in("application_id",aIds2).limit(10000),
+              sb.from("team_entries").select("*").in("application_id",aIds2).limit(10000),
+            ]);
+            const aMap2={};(appR2.data||[]).forEach(a=>{aMap2[a.id]=a;});
+            setEvPData({allMembers:(mR3.data||[]).map(m=>m.gender==="녀"?{...m,gender:"여"}:m),allEntries:ieR3.data||[],allTeamEntries:teR3.data||[],appMap:aMap2});
+          }
+        }catch(e2){console.warn("evPData 갱신 실패:",e2);}
+      }
     }catch(e){flash("수정 저장 실패: "+e.message,"error");}
     finally{setEditSaving(false);}
   };
@@ -2138,10 +2215,21 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     } else {
       // 개인전 / 결선
       const rows=active.filter(r=>r.bib!=="sub");
+      // 마지막 시리즈 점수 파싱 (동점 시 타이브레이크)
+      const parseLastS=(r)=>{
+        for(let i=12;i>=1;i--){const v=r["s"+i];if(v&&v!=="")return parseFloat(v)||0;}
+        return 0;
+      };
       rows.sort((a,b)=>{
         const d=parseTotal(b.total)-parseTotal(a.total);
         if(d!==0)return d;
-        return parseXC(b.x_count)-parseXC(a.x_count);
+        // x_count가 있는 종목(권총 등): x_count → 마지막 시리즈
+        // x_count가 없는 종목(소총 등): 바로 마지막 시리즈
+        if(cfg.xcount){
+          const xd=parseXC(b.x_count)-parseXC(a.x_count);
+          if(xd!==0)return xd;
+        }
+        return parseLastS(b)-parseLastS(a);
       });
       const deleted=data.filter(r=>r._deleted);
       const nr=rows.map((r,i)=>({...r,rank:i+1,_dirty:true}));
@@ -3052,58 +3140,8 @@ td{border:1px solid #333;padding:4px 6px}
     if(!prelim||prelim.length===0){setTeamData([]); return;}
     const cfg=getEventCfg(ec,getEvFmt(ec));
 
-    // ── 단체번호 매핑: team_entries(team_type='team') + orgNumOverrides에서만 ──
-    const evOv=orgNumOverrides[ec]||{};
-    // team_entries에서 이 종목의 단체전 참가자 조회
-    const teamMembers={}; // {memberId: teamNumber}
-    if(evPData&&evPData.allTeamEntries){
-      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===ec&&t.team_type==="team");
-      const memberMap2={};(evPData.allMembers||[]).forEach(m=>{memberMap2[m.id]=m;});
-      const memberAppMap2={};(evPData.allMembers||[]).forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
-      // application+team_number 그룹 → 단체번호
-      const teamByApp={};
-      const regionOrder0=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
-      evTE.forEach(te=>{
-        if(!memberMap2[te.member_id]) return;
-        const app=memberAppMap2[te.member_id];
-        // 시도+단체번호로 그룹핑 (application_id가 null이면 다른 지역이 합쳐지는 버그 방지)
-        const regionKey=app?.region_name||"-";
-        const k=regionKey+"_"+(te.team_number||1);
-        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:regionKey,members:new Set()};
-        teamByApp[k].members.add(te.member_id);
-      });
-      const teamList0=Object.values(teamByApp);
-      teamList0.sort((a,b)=>{const ai=regionOrder0.indexOf(a.regionName),bi=regionOrder0.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
-      teamList0.forEach((t,i)=>{t.members.forEach(mid=>{teamMembers[mid]=i+1;});});
-    }
-    // 이름 → memberId 매핑: evPData(현재 ID)를 우선, 스타트리스트는 보조
-    const nameToSL={};
-    // 1) 스타트리스트에서 이름 → memberId 초기 매핑
-    Object.keys(startLists).forEach(sk=>{
-      const parts=sk.match(/^(.+?)_(\d+)$/);
-      const evCode=parts?parts[1]:sk;
-      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId&&p.name)nameToSL[p.name]=p;});
-    });
-    // 2) evPData로 현재 memberId 오버레이 (stale ID 해결)
-    if(evPData){
-      const{allMembers,allEntries,appMap}=evPData;
-      const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
-      const memberAppMap2={};allMembers.forEach(m=>{memberAppMap2[m.id]=appMap[m.application_id];});
-      allEntries.filter(e=>e.event_code===ec).forEach(e=>{
-        const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];
-        if(m) nameToSL[m.name]={memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"};
-      });
-    }
-    // getTeamNum: team_entries에 있거나 orgNumOverrides에 수동 배정된 경우만 번호 반환
-    const getTeamNum=(r)=>{
-      const slP=nameToSL[r.name];
-      if(!slP) return null;
-      const mid=String(slP.memberId);
-      // override 우선 (null이면 명시적 해제)
-      if(evOv[mid]!==undefined) return evOv[mid];
-      // team_entries 원본
-      return teamMembers[slP.memberId]||null;
-    };
+    // ── 단체번호: getResultTeamNum을 직접 사용하여 UI 표시와 100% 일치 ──
+    const getTeamNum=(r)=>getResultTeamNum(ec,r.name);
 
     // 모든 본선 선수 (bib=team/sub 제외) → 단체번호로 그룹핑
     const allPlayers=prelim.filter(r=>r.bib!=="team"&&r.bib!=="sub");
@@ -3192,48 +3230,8 @@ td{border:1px solid #333;padding:4px 6px}
       .order("rank",{ascending:true});
     if(!prelim||prelim.length===0){setLeagueData([]); return;}
     const cfg=getEventCfg(ec,getEvFmt(ec));
-    // team_entries에서 league 참가자 조회
-    const leagueMembers={}; // {memberId: teamNumber}
-    if(evPData&&evPData.allTeamEntries){
-      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===ec&&t.team_type==="league");
-      const memberMap2={};(evPData.allMembers||[]).forEach(m=>{memberMap2[m.id]=m;});
-      const memberAppMap2={};(evPData.allMembers||[]).forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
-      const teamByApp={};
-      const regionOrder0=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
-      evTE.forEach(te=>{
-        if(!memberMap2[te.member_id]) return;
-        const app=memberAppMap2[te.member_id];
-        // 시도+단체번호로 그룹핑 (application_id가 null이면 다른 지역이 합쳐지는 버그 방지)
-        const regionKey=app?.region_name||"-";
-        const k=regionKey+"_"+(te.team_number||1);
-        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:regionKey,members:new Set()};
-        teamByApp[k].members.add(te.member_id);
-      });
-      const teamList0=Object.values(teamByApp);
-      teamList0.sort((a,b)=>{const ai=regionOrder0.indexOf(a.regionName),bi=regionOrder0.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
-      teamList0.forEach((t,i)=>{t.members.forEach(mid=>{leagueMembers[mid]=i+1;});});
-    }
-    // 이름 → memberId 매핑: evPData(현재 ID)를 우선, 스타트리스트는 보조
-    const nameToSL={};
-    Object.keys(startLists).forEach(sk=>{
-      const parts=sk.match(/^(.+?)_(\d+)$/);
-      const evCode=parts?parts[1]:sk;
-      if(evCode===ec)(startLists[sk]||[]).forEach(p=>{if(p.memberId&&p.name)nameToSL[p.name]=p;});
-    });
-    if(evPData){
-      const{allMembers,allEntries,appMap}=evPData;
-      const memberMap2={};allMembers.forEach(m=>{memberMap2[m.id]=m;});
-      const memberAppMap2={};allMembers.forEach(m=>{memberAppMap2[m.id]=appMap[m.application_id];});
-      allEntries.filter(e=>e.event_code===ec).forEach(e=>{
-        const m=memberMap2[e.member_id];const app=memberAppMap2[e.member_id];
-        if(m) nameToSL[m.name]={memberId:m.id,name:m.name,subOrg:m.sub_org,orgName:app?.org_name||"-",regionName:app?.region_name||"-"};
-      });
-    }
-    const getLeagueNum=(r)=>{
-      const slP=nameToSL[r.name];
-      if(!slP) return null;
-      return leagueMembers[slP.memberId]||null;
-    };
+    // ── 리그번호: getResultTeamNum("league")을 직접 사용 ──
+    const getLeagueNum=(r)=>getResultTeamNum(ec,r.name,"league");
     // 본선 선수 → 리그 번호로 그룹핑
     const allPlayers=prelim.filter(r=>r.bib!=="team"&&r.bib!=="sub");
     // sub_org 보충
@@ -3252,6 +3250,39 @@ td{border:1px solid #333;padding:4px 6px}
       if(!groups[tn]) groups[tn]=[];
       groups[tn].push(r);
     });
+    // ★ 연합팀 처리: is_union + union_memo(JSON)인 엔트리에서 외부 선수를 같은 팀으로 병합
+    if(evPData&&evPData.allTeamEntries){
+      const leagueTE=evPData.allTeamEntries.filter(t=>t.event_code===ec&&t.team_type==="league"&&t.is_union);
+      const memberMap3={};evPData.allMembers.forEach(m=>{memberMap3[m.id]=m;});
+      leagueTE.forEach(te=>{
+        if(!te.union_memo) return;
+        let um; try{um=JSON.parse(te.union_memo);}catch(e){return;}
+        if(!um.memberId) return;
+        // 로컬 선수의 리그번호 찾기
+        const localMem=memberMap3[te.member_id];
+        if(!localMem) return;
+        const localPlayer=allPlayers.find(r=>r.name===localMem.name);
+        if(!localPlayer) return;
+        const localTN=getLeagueNum(localPlayer);
+        if(localTN===null) return;
+        // 외부 선수 찾기 (이름으로)
+        const extMem=memberMap3[um.memberId];
+        if(!extMem) return;
+        const extPlayer=allPlayers.find(r=>r.name===extMem.name);
+        if(!extPlayer) return;
+        // 외부 선수가 이미 같은 그룹에 있으면 스킵
+        if(groups[localTN]&&groups[localTN].includes(extPlayer)) return;
+        // 외부 선수를 기존 그룹에서 제거하고 로컬 그룹으로 이동
+        Object.entries(groups).forEach(([tn,members])=>{
+          const idx=members.indexOf(extPlayer);
+          if(idx!==-1&&Number(tn)!==localTN) members.splice(idx,1);
+        });
+        if(!groups[localTN]) groups[localTN]=[];
+        if(!groups[localTN].includes(extPlayer)) groups[localTN].push(extPlayer);
+      });
+      // 빈 그룹 제거
+      Object.keys(groups).forEach(tn=>{if(groups[tn].length===0) delete groups[tn];});
+    }
     // 2인 팀 구성
     const regionOrder=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
     const teams=Object.entries(groups).filter(([,members])=>members.length>=2).map(([teamNum,members])=>{
@@ -3286,20 +3317,22 @@ td{border:1px solid #333;padding:4px 6px}
     return regions.join("/");
   };
   // ── 단체전 DB 저장 ──
-  // ── 결과 행의 단체번호 조회 (스타트리스트/참가자 매칭) ──
-  const getResultTeamNum=(ec,playerName)=>{
+  // ── 결과 행의 단체/리그 번호 조회 ──
+  // 우선순위: ① orgNumOverrides(수동) → ② team_entries(등록 데이터) → ③ startlist _orgNum(폴백)
+  const getResultTeamNum=(ec,playerName,teamType)=>{
     if(!ec||!playerName) return null;
+    const tt=teamType||"team";
     const evOv=orgNumOverrides[ec]||{};
-    // 0. ⭐ 스타트리스트에 이미 _orgNum 이 박혀있으면 그 값을 최우선 사용 (스타트리스트 = 눈으로 보는 진실)
-    //    같은 이름이 여러 조에 있을 수 있으므로 먼저 만나는 할당값을 채택
+    // memberId 탐색: 스타트리스트 + evPData
     let matchMid=null;
+    let slOrgNum=null; // 스타트리스트 _orgNum (폴백용으로만 보관)
     for(const sk of Object.keys(startLists)){
       const parts=sk.match(/^(.+?)_(\d+)$/);
       const evCode=parts?parts[1]:sk;
       if(evCode!==ec) continue;
       const hit=(startLists[sk]||[]).find(p=>p.name===playerName);
       if(hit){
-        if(hit._orgNum!=null&&hit._orgNum!=="") return hit._orgNum;
+        if(tt==="team"&&hit._orgNum!=null&&hit._orgNum!==""&&slOrgNum===null) slOrgNum=hit._orgNum;
         if(hit.memberId&&!matchMid) matchMid=hit.memberId;
       }
     }
@@ -3307,29 +3340,40 @@ td{border:1px solid #333;padding:4px 6px}
       const m=evPData.allMembers.find(m=>m.name===playerName);
       if(m) matchMid=m.id;
     }
-    if(!matchMid) return null;
+    if(!matchMid) return slOrgNum; // memberId 못 찾으면 _orgNum이라도 반환
     const mid=String(matchMid);
-    // override 우선
-    if(evOv[mid]!==undefined) return evOv[mid];
-    // team_entries에서 team_type='team'인 것만
+    // ① orgNumOverrides 최우선 (수동 배정)
+    if(tt==="team"&&evOv[mid]!==undefined) return evOv[mid];
+    // ② team_entries 기반 순번
     if(evPData&&evPData.allTeamEntries){
-      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===ec&&t.team_type==="team"&&evPData.allMembers.some(m=>m.id===t.member_id));
-      const memberMap2={};evPData.allMembers.forEach(m=>{memberMap2[m.id]=m;});
-      const memberAppMap2={};evPData.allMembers.forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
-      const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
-      const teamByApp={};
-      evTE.forEach(te=>{
-        const app=memberAppMap2[te.member_id];
-        const k=(te.application_id||"?")+"_"+(te.team_number||1);
-        if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:app?.region_name||"-",members:new Set()};
-        teamByApp[k].members.add(te.member_id);
-      });
-      const tl=Object.values(teamByApp);
-      tl.sort((a,b)=>{const ai=regionOrd.indexOf(a.regionName),bi=regionOrd.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
-      const mToTN={};tl.forEach((t,i)=>{t.members.forEach(mid2=>{mToTN[mid2]=i+1;});});
-      return mToTN[matchMid]||null;
+      const evTE=evPData.allTeamEntries.filter(t=>t.event_code===ec&&t.team_type===tt&&evPData.allMembers.some(m=>m.id===t.member_id));
+      if(evTE.length>0){
+        const memberMap2={};evPData.allMembers.forEach(m=>{memberMap2[m.id]=m;});
+        const memberAppMap2={};evPData.allMembers.forEach(m=>{memberAppMap2[m.id]=evPData.appMap[m.application_id];});
+        const regionOrd=["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+        const teamByApp={};
+        evTE.forEach(te=>{
+          const app=memberAppMap2[te.member_id];
+          const k=(te.application_id||"?")+"_"+(te.team_number||1);
+          if(!teamByApp[k]) teamByApp[k]={appId:te.application_id,teamNumber:te.team_number||1,regionName:app?.region_name||"-",members:new Set()};
+          teamByApp[k].members.add(te.member_id);
+        });
+        const tl=Object.values(teamByApp);
+        tl.sort((a,b)=>{const ai=regionOrd.indexOf(a.regionName),bi=regionOrd.indexOf(b.regionName);return(ai===-1?99:ai)-(bi===-1?99:bi)||(a.teamNumber-b.teamNumber);});
+        const mToTN={};tl.forEach((t,i)=>{t.members.forEach(mid2=>{mToTN[mid2]=i+1;});});
+        // memberId 직접 매칭 시도
+        if(mToTN[matchMid]) return mToTN[matchMid];
+        // memberId 불일치 시 이름 기반 폴백 (재등록으로 member_id가 바뀐 경우)
+        const nameToTN={};
+        evTE.forEach(te=>{
+          const m=memberMap2[te.member_id];
+          if(m&&m.name&&mToTN[te.member_id]) nameToTN[m.name]=mToTN[te.member_id];
+        });
+        if(nameToTN[playerName]) return nameToTN[playerName];
+      }
     }
-    return null;
+    // ③ 스타트리스트 _orgNum (폴백)
+    return slOrgNum;
   };
   const teamSaveToDB=async()=>{
     if(!sb||!selectedT||!resEvCode||teamData.length===0) return;
@@ -3586,6 +3630,185 @@ td{border:1px solid #333;padding:4px 6px}
     e.target.value="";
   };
   const resInp={background:"#0d1520",border:"1px solid #2a3a5c",borderRadius:4,color:"#e8dcc8",padding:"4px 6px",fontSize:12,width:"100%",boxSizing:"border-box"};
+
+  // ─── 커스텀 숫자 키패드 (iPad/터치 디바이스용) ───
+  const isScoreInput=(el)=>{
+    if(!el||el.tagName!=="INPUT") return false;
+    const gc=el.getAttribute("data-gc");
+    if(!gc) return false;
+    return /^(s\d+|pos_\d+|total|x_count|rank)$/.test(gc);
+  };
+  const numpadCalcPos=(el)=>{
+    const r=el.getBoundingClientRect();
+    const padW=280,padH=220; // 키패드 예상 크기
+    let cx=r.left+r.width/2;
+    let above=true;
+    // 위쪽 공간 부족하면 아래로
+    if(r.top<padH+16){above=false;}
+    // 좌우 오버플로우 방지
+    const halfW=padW/2;
+    if(cx-halfW<8) cx=halfW+8;
+    if(cx+halfW>window.innerWidth-8) cx=window.innerWidth-halfW-8;
+    const y=above?r.top-8:r.bottom+8;
+    return {x:cx,y,above};
+  };
+  const numpadShow=(el)=>{
+    if(!isScoreInput(el)) return;
+    numpadTargetRef.current=el;
+    setNumpadPos(numpadCalcPos(el));
+    setNumpadActive(true);
+  };
+  const numpadHide=()=>{
+    numpadTargetRef.current=null;
+    setNumpadActive(false);
+  };
+  const numpadMoveTo=(el)=>{
+    numpadTargetRef.current=el;
+    setNumpadPos(numpadCalcPos(el));
+  };
+  const numpadInsert=(key)=>{
+    const el=numpadTargetRef.current;
+    if(!el) return;
+    el.focus();
+    const nativeSet=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
+    if(key==="BS"){
+      nativeSet.call(el,el.value.slice(0,-1));
+    } else if(key==="DOT"){
+      if(!el.value.includes(".")) nativeSet.call(el,el.value+".");
+    } else if(key==="AUTO"){
+      // 자동 소수점: 마지막 1자리를 소수부로 (예: 1010 → 101.0, 985 → 98.5)
+      const raw=el.value.replace(/[^0-9]/g,"");
+      if(raw.length>=2){
+        nativeSet.call(el,raw.slice(0,-1)+"."+raw.slice(-1));
+      } else if(raw.length===1){
+        nativeSet.call(el,"0."+raw);
+      }
+    } else if(key==="TAB"){
+      // 같은 행의 다음 점수 셀로 이동
+      const row=parseInt(el.getAttribute("data-gr"));
+      const col=el.getAttribute("data-gc");
+      if(!isNaN(row)&&col){
+        const tbl=el.closest("table");
+        if(tbl){
+          const allInRow=[...tbl.querySelectorAll("[data-gr='"+row+"']")].filter(e2=>isScoreInput(e2));
+          const idx=allInRow.indexOf(el);
+          const next=allInRow[idx+1]||allInRow[0];
+          if(next&&next!==el){next.focus();next.select&&next.select();numpadMoveTo(next);return;}
+        }
+      }
+    } else if(key==="ENTER"){
+      // 같은 열의 다음 행으로 이동
+      const row=parseInt(el.getAttribute("data-gr"));
+      const col=el.getAttribute("data-gc");
+      if(!isNaN(row)&&col){
+        const tbl=el.closest("table");
+        if(tbl){
+          const next=tbl.querySelector("[data-gr='"+(row+1)+"'][data-gc='"+col+"']");
+          if(next){next.focus();next.select&&next.select();numpadMoveTo(next);return;}
+        }
+      }
+    } else if(key==="CLOSE"){
+      numpadHide(); return;
+    } else {
+      nativeSet.call(el,el.value+key);
+    }
+    el.dispatchEvent(new Event("input",{bubbles:true}));
+  };
+  // 터치 디바이스 감지 + inputmode 자동 설정
+  React.useEffect(()=>{
+    const onTouch=()=>{
+      numpadTouchRef.current=true;
+      document.querySelectorAll("input[data-gc]").forEach(el=>{
+        if(isScoreInput(el)) el.setAttribute("inputmode","none");
+      });
+      window.removeEventListener("touchstart",onTouch);
+    };
+    window.addEventListener("touchstart",onTouch,{once:true});
+    return ()=>window.removeEventListener("touchstart",onTouch);
+  },[]);
+  React.useEffect(()=>{
+    if(numpadTouchRef.current){
+      setTimeout(()=>{
+        document.querySelectorAll("input[data-gc]").forEach(el=>{
+          if(isScoreInput(el)&&!el.getAttribute("inputmode")) el.setAttribute("inputmode","none");
+        });
+      },50);
+    }
+  },[resData]);
+  // 점수 입력 셀 포커스 시 키패드 표시 (이벤트 위임)
+  React.useEffect(()=>{
+    const onFocusIn=(e)=>{
+      if(!numpadTouchRef.current) return; // 터치 디바이스만
+      if(isScoreInput(e.target)){numpadShow(e.target);}
+    };
+    const onFocusOut=(e)=>{
+      setTimeout(()=>{
+        const active=document.activeElement;
+        const pad=document.getElementById("custom-numpad");
+        if(pad&&pad.contains(active)) return;
+        if(pad&&pad.contains(e.relatedTarget)) return;
+        if(!isScoreInput(active)) numpadHide();
+      },150);
+    };
+    document.addEventListener("focusin",onFocusIn);
+    document.addEventListener("focusout",onFocusOut);
+    return ()=>{document.removeEventListener("focusin",onFocusIn);document.removeEventListener("focusout",onFocusOut);};
+  },[]);
+  const renderNumpad=()=>{
+    if(!numpadActive) return null;
+    const padW=280,padH=212;
+    const left=numpadPos.x-padW/2;
+    const top=numpadPos.above?numpadPos.y-padH:numpadPos.y;
+    // 말풍선 꼬리 위치
+    const tailStyle={
+      position:"absolute",left:"50%",transform:"translateX(-50%)",
+      width:0,height:0,borderLeft:"10px solid transparent",borderRight:"10px solid transparent",
+      ...(numpadPos.above
+        ?{bottom:-10,borderTop:"10px solid #fbbf24"}
+        :{top:-10,borderBottom:"10px solid #fbbf24"})
+    };
+    const btnNum={
+      width:44,height:42,border:"1px solid #475569",borderRadius:6,
+      background:"#1e293b",color:"#e8dcc8",fontSize:18,fontWeight:700,
+      cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+      userSelect:"none",WebkitTapHighlightColor:"transparent"
+    };
+    const btnFunc={
+      border:"1px solid #475569",borderRadius:6,
+      cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+      userSelect:"none",WebkitTapHighlightColor:"transparent",fontWeight:600
+    };
+    const mk=(label,key,style)=>React.createElement("div",{
+      key:key,style:style||btnNum,
+      onTouchStart:(e)=>{e.preventDefault();e.stopPropagation();numpadInsert(key);},
+      onMouseDown:(e)=>{e.preventDefault();e.stopPropagation();numpadInsert(key);}
+    },label);
+    return React.createElement("div",{id:"custom-numpad",style:{
+      position:"fixed",left,top,width:padW,zIndex:99999,
+      background:"#0f172a",border:"2px solid #fbbf24",borderRadius:12,
+      padding:"8px 10px 10px",boxShadow:"0 8px 30px rgba(0,0,0,0.7)",
+      display:"flex",gap:8
+    }},[
+      // 말풍선 꼬리
+      React.createElement("div",{key:"tail",style:tailStyle}),
+      // 왼쪽: 숫자 키패드 (3x4 그리드 + 0)
+      React.createElement("div",{key:"nums",style:{display:"grid",gridTemplateColumns:"repeat(3,44px)",gap:4}},[
+        mk("1","1"),mk("2","2"),mk("3","3"),
+        mk("4","4"),mk("5","5"),mk("6","6"),
+        mk("7","7"),mk("8","8"),mk("9","9"),
+        mk("⌫","BS",{...btnNum,background:"#7f1d1d",color:"#fca5a5",fontSize:16}),
+        mk("0","0"),
+        mk(".","DOT",{...btnNum,background:"#334155",color:"#fbbf24",fontSize:20}),
+      ]),
+      // 오른쪽: 기능 버튼들
+      React.createElement("div",{key:"fns",style:{display:"flex",flexDirection:"column",gap:4,flex:1}},[
+        mk(".0",  "AUTO",{...btnFunc,background:"#92400e",color:"#fbbf24",fontSize:13,flex:1}),
+        mk("Tab", "TAB", {...btnFunc,background:"#1e3a5f",color:"#93c5fd",fontSize:13,flex:1}),
+        mk("Enter","ENTER",{...btnFunc,background:"#166534",color:"#86efac",fontSize:13,flex:1}),
+        mk("✕ 닫기","CLOSE",{...btnFunc,background:"#334155",color:"#94a3b8",fontSize:11,flex:1}),
+      ]),
+    ]);
+  };
 
   // ─── 인쇄 미리보기 ───
   const renderPrintPreview=()=>{
@@ -10130,7 +10353,7 @@ td{border:1px solid #333;padding:4px 6px}
               const catGrp={};
               leagueTargetEvs.forEach(ev=>{const cat=CAT_ORD.includes(ev.category)?ev.category:(ev.category||"기타");if(!catGrp[cat])catGrp[cat]=[];catGrp[cat].push(ev);});
               const catKeys=[...CAT_ORD.filter(c=>catGrp[c]),...Object.keys(catGrp).filter(c=>!CAT_ORD.includes(c))];
-              const filledCount=Object.entries(editTeamComps).filter(([k,c])=>k.startsWith("league-")&&c.memberIds&&c.memberIds.length===2).length;
+              const filledCount=Object.entries(editTeamComps).filter(([k,c])=>k.startsWith("league-")&&c.memberIds&&(c.isUnion?(c.memberIds.length>=1&&!!c.unionMemberId):c.memberIds.length===2)).length;
 
               return <div style={{maxWidth:800,margin:"0 auto"}}>
                 <div style={{fontSize:16,fontWeight:700,color:"#f59e0b",marginBottom:4}}>🏆 리그전 등록</div>
@@ -10157,7 +10380,7 @@ td{border:1px solid #333;padding:4px 6px}
                       const registered=Object.entries(editIndEntries).filter(([mid,codes])=>codes.includes(ev.code)).map(([mid])=>parseInt(mid));
                       const eligible=players.filter(p=>registered.includes(p.id));
                       const usedIds=slots.filter(Boolean);
-                      const isFilled=usedIds.length===2;
+                      const isFilled=comp.isUnion?(usedIds.length>=1&&!!comp.unionMemberId):usedIds.length===2;
                       return <div key={ev.code} style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:6,padding:"8px 4px",borderBottom:"1px solid #1e2f4a22",background:isFilled?"#f59e0b08":"transparent"}}>
                         {/* 종목 정보 */}
                         <div style={{flex:"1 1 160px",minWidth:0}}>
@@ -10168,28 +10391,83 @@ td{border:1px solid #333;padding:4px 6px}
                           </div>
                         </div>
                         {/* 2인 슬롯 */}
-                        <div style={{flex:"0 0 auto",minWidth:260,maxWidth:340}}>
+                        <div style={{flex:"0 0 auto",minWidth:260,maxWidth:420}}>
                           <div style={{display:"flex",gap:6}}>
-                            {[0,1].map(idx=>{
-                              const mid=slots[idx];
+                            {/* 슬롯0: 항상 우리팀 선수 */}
+                            {(()=>{
+                              const mid=slots[0];
                               const player=mid?editMembers.find(mm=>mm.id===mid):null;
-                              return <div key={idx} style={{flex:1}}>
+                              return <div style={{flex:1}}>
                                 {player?<div style={{borderRadius:6,padding:"4px 10px",border:"1px solid #f59e0b",background:"#f59e0b",display:"flex",alignItems:"center",justifyContent:"center",gap:4,fontSize:12,fontWeight:600,lineHeight:"22px"}}>
                                   <span style={{color:"#000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{player.name}</span>
-                                  <button onClick={()=>{const n=[...slots];n[idx]=null;setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:n.filter(Boolean),teamType:"league"}}));}} style={{background:"none",border:"none",color:"#00000066",fontSize:12,cursor:"pointer",padding:0,flexShrink:0}}>✕</button>
+                                  <button onClick={()=>{setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:slots[1]?[slots[1]]:[],teamType:"league"}}));}} style={{background:"none",border:"none",color:"#00000066",fontSize:12,cursor:"pointer",padding:0,flexShrink:0}}>✕</button>
                                 </div>
-                                :<select style={{...eSelect,fontSize:11,padding:"4px 6px"}} value="" onChange={e=>{if(e.target.value){const n=[...slots];n[idx]=parseInt(e.target.value);setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:n.filter(Boolean),teamType:"league"}}));}}}>
-                                  <option value="">선수{idx+1}</option>
-                                  {eligible.filter(p=>!usedIds.includes(p.id)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                :<select style={{...eSelect,fontSize:11,padding:"4px 6px"}} value="" onChange={e=>{if(e.target.value){const newIds=[parseInt(e.target.value)];if(slots[1])newIds.push(slots[1]);setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:newIds,teamType:"league"}}));}}}>
+                                  <option value="">선수1 (우리팀)</option>
+                                  {eligible.filter(p=>p.id!==slots[1]).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                                 </select>}
                               </div>;
-                            })}
+                            })()}
+                            {/* 슬롯1: 연합이면 타팀 단계별 드롭다운, 아니면 우리팀 */}
+                            {(()=>{
+                              if(!comp.isUnion){
+                                // 일반: 우리팀 선수 드롭다운
+                                const mid=slots[1];
+                                const player=mid?editMembers.find(mm=>mm.id===mid):null;
+                                return <div style={{flex:1}}>
+                                  {player?<div style={{borderRadius:6,padding:"4px 10px",border:"1px solid #f59e0b",background:"#f59e0b",display:"flex",alignItems:"center",justifyContent:"center",gap:4,fontSize:12,fontWeight:600,lineHeight:"22px"}}>
+                                    <span style={{color:"#000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{player.name}</span>
+                                    <button onClick={()=>{setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:slots[0]?[slots[0]]:[],teamType:"league"}}));}} style={{background:"none",border:"none",color:"#00000066",fontSize:12,cursor:"pointer",padding:0,flexShrink:0}}>✕</button>
+                                  </div>
+                                  :<select style={{...eSelect,fontSize:11,padding:"4px 6px"}} value="" onChange={e=>{if(e.target.value){const newIds=slots[0]?[slots[0],parseInt(e.target.value)]:[parseInt(e.target.value)];setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,memberIds:newIds,teamType:"league"}}));}}}>
+                                    <option value="">선수2 (우리팀)</option>
+                                    {eligible.filter(p=>p.id!==slots[0]).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </select>}
+                                </div>;
+                              }
+                              // ★ 연합: 타팀 신청서 → 선수 단계별 드롭다운
+                              const uAppId=comp.unionAppId||null;
+                              const uMemId=comp.unionMemberId||null;
+                              const otherApps=apps.filter(a=>a.id!==detailApp.id);
+                              // 선택된 타팀 신청서의 선수 중 해당 종목 등록자
+                              let extEligible=[];
+                              let extPlayer=null;
+                              if(uAppId&&evPData){
+                                const extMembers=evPData.allMembers.filter(m=>m.application_id===uAppId);
+                                const extEntries=evPData.allEntries.filter(e=>e.application_id===uAppId&&e.event_code===ev.code);
+                                const extMids=new Set(extEntries.map(e=>e.member_id));
+                                extEligible=extMembers.filter(m=>extMids.has(m.id)&&m.role==="선수");
+                                if(uMemId) extPlayer=extMembers.find(m=>m.id===uMemId)||null;
+                              }
+                              // evPData에서 못 찾아도 unionMemo로 표시 (저장된 정보 보존)
+                              const hasUnionPlayer=!!(extPlayer||(uMemId&&comp.unionMemo));
+                              const unionDisplayName=extPlayer?extPlayer.name:(comp.unionMemo||"").replace(/^.*\//,"");
+                              const selApp=uAppId?otherApps.find(a=>a.id===uAppId):null;
+                              const unionRegion=selApp?.region_name||(comp.unionMemo||"").split("/")[0]||"";
+                              return <div style={{flex:"1 1 auto",minWidth:140}}>
+                                {hasUnionPlayer?<div style={{borderRadius:6,padding:"4px 10px",border:"1px solid #8b5cf6",background:"#8b5cf6",display:"flex",alignItems:"center",justifyContent:"center",gap:4,fontSize:12,fontWeight:600,lineHeight:"22px"}}>
+                                  <span style={{color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{unionDisplayName}</span>
+                                  <span style={{color:"#ffffff99",fontSize:9,flexShrink:0}}>({unionRegion})</span>
+                                  <button onClick={()=>{setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,unionAppId:null,unionMemberId:null,unionMemo:"",teamType:"league"}}));}} style={{background:"none",border:"none",color:"#ffffff88",fontSize:12,cursor:"pointer",padding:0,flexShrink:0}}>✕</button>
+                                </div>
+                                :<div style={{display:"flex",flexDirection:"column",gap:3}}>
+                                  <select style={{...eSelect,fontSize:10,padding:"3px 4px",borderColor:"#8b5cf6"}} value={uAppId||""} onChange={e=>{const v=e.target.value?parseInt(e.target.value):null;setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,unionAppId:v,unionMemberId:null,unionMemo:"",teamType:"league"}}));}}>
+                                    <option value="">① 타팀 선택...</option>
+                                    {otherApps.map(a=><option key={a.id} value={a.id}>{a.region_name} {a.org_name} (#{a.id})</option>)}
+                                  </select>
+                                  {uAppId&&<select style={{...eSelect,fontSize:10,padding:"3px 4px",borderColor:"#8b5cf6"}} value="" onChange={e=>{if(e.target.value){const eMid=parseInt(e.target.value);const eMem=extEligible.find(m=>m.id===eMid);setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,unionMemberId:eMid,unionMemo:eMem?(selApp?.region_name||"")+"/"+eMem.name:"",teamType:"league"}}));}}}>
+                                    <option value="">② 선수 선택...</option>
+                                    {extEligible.length===0&&<option value="" disabled>해당 종목 등록 선수 없음</option>}
+                                    {extEligible.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </select>}
+                                </div>}
+                              </div>;
+                            })()}
                           </div>
                           <label style={{display:"flex",alignItems:"center",gap:5,marginTop:5,cursor:"pointer"}}>
-                            <input type="checkbox" checked={comp.isUnion} onChange={e=>setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,isUnion:e.target.checked,teamType:"league"}}))} style={{accentColor:"#f59e0b",width:14,height:14}}/>
+                            <input type="checkbox" checked={comp.isUnion} onChange={e=>{const checked=e.target.checked;setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,isUnion:checked,unionAppId:checked?comp.unionAppId:null,unionMemberId:checked?comp.unionMemberId:null,unionMemo:checked?comp.unionMemo:"",teamType:"league"}}));}} style={{accentColor:"#8b5cf6",width:14,height:14}}/>
                             <span style={{fontSize:11,color:"#8899aa"}}>타시도 연합</span>
                           </label>
-                          {comp.isUnion&&<input placeholder="연합 선수 시도/이름" value={comp.unionMemo||""} onChange={e=>setEditTeamComps(prev=>({...prev,[lgKey]:{...comp,unionMemo:e.target.value,teamType:"league"}}))} style={{...eInput,fontSize:11,padding:"4px 8px",marginTop:4}}/>}
                         </div>
                       </div>;
                     })}
@@ -11008,6 +11286,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}</pre>
         {Object.keys(editRow).filter(k=>!["id","created_at","updated_at"].includes(k)).map(c=><div key={c} style={{marginBottom:10}}><label style={{fontSize:11,color:"#6b7d94",fontWeight:600,display:"block",marginBottom:3}}>{c}</label><input style={S.input} value={editVal[c]??""} onChange={e=>setEditVal({...editVal,[c]:e.target.value||null})}/></div>)}
         <div style={{display:"flex",gap:8,marginTop:16}}><button style={S.btn(C.gold,C.bg)} onClick={save}>저장</button><button style={S.btn(C.border,"#8899aa")} onClick={()=>setEditRow(null)}>취소</button></div>
       </div></div>}
+      {renderNumpad()}
     </div>
   );
 }
