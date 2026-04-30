@@ -67,6 +67,17 @@
   </style>
 </head>
 <body>
+  <script>
+  // ★ 키패드 디버그: 이 스크립트가 실행되면 alert가 뜸
+  window.__NUMPAD_LOADED = true;
+  document.addEventListener("DOMContentLoaded",function(){
+    var d=document.createElement("div");
+    d.id="numpad-dbg";
+    d.style.cssText="position:fixed;bottom:4px;left:4px;z-index:999999;background:red;color:#fff;font-size:12px;padding:6px 12px;border-radius:6px;font-weight:bold;";
+    d.textContent="NUMPAD SCRIPT OK - touch="+(('ontouchstart' in window)||(navigator.maxTouchPoints>0));
+    document.body.appendChild(d);
+  });
+  </script>
   <div id="root"></div>
   <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo } = React;
@@ -11142,7 +11153,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 .np-close{background:#334155 !important;color:#94a3b8 !important;font-size:11px !important;font-weight:600 !important;flex:1;}
 </style>
 <script>
-(function(){
+window.addEventListener("load",function(){
   // 터치 디바이스 확인
   var isTouch=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
   // 디버그: 스크립트 실행 확인용 (좌하단에 표시)
@@ -11280,7 +11291,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     var btn=e.target.closest(".np-btn");
     if(btn) handleKey(btn.getAttribute("data-k"));
   });
-})();
+});
 </script>
 </body>
 </html>
