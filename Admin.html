@@ -3714,20 +3714,19 @@ td{border:1px solid #333;padding:4px 6px}
     }
     el.dispatchEvent(new Event("input",{bubbles:true}));
   };
-  // 터치 디바이스 감지 + inputmode 자동 설정
+  // 터치 디바이스 감지: 기능 감지 방식 (iPad Safari 호환)
+  const isTouchDevice=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
   React.useEffect(()=>{
-    const onTouch=()=>{
-      numpadTouchRef.current=true;
+    numpadTouchRef.current=isTouchDevice;
+    if(isTouchDevice){
       document.querySelectorAll("input[data-gc]").forEach(el=>{
         if(isScoreInput(el)) el.setAttribute("inputmode","none");
       });
-      window.removeEventListener("touchstart",onTouch);
-    };
-    window.addEventListener("touchstart",onTouch,{once:true});
-    return ()=>window.removeEventListener("touchstart",onTouch);
+    }
   },[]);
+  // resData 변경 시 새 input에도 inputmode 적용
   React.useEffect(()=>{
-    if(numpadTouchRef.current){
+    if(isTouchDevice){
       setTimeout(()=>{
         document.querySelectorAll("input[data-gc]").forEach(el=>{
           if(isScoreInput(el)&&!el.getAttribute("inputmode")) el.setAttribute("inputmode","none");
@@ -3735,11 +3734,23 @@ td{border:1px solid #333;padding:4px 6px}
       },50);
     }
   },[resData]);
-  // 점수 입력 셀 포커스 시 키패드 표시 (이벤트 위임)
+  // 점수 입력 셀 포커스 시 키패드 표시 (이벤트 위임, touchstart + focusin 모두 지원)
   React.useEffect(()=>{
-    const onFocusIn=(e)=>{
-      if(!numpadTouchRef.current) return; // 터치 디바이스만
-      if(isScoreInput(e.target)){numpadShow(e.target);}
+    if(!isTouchDevice) return;
+    // touchstart로 직접 감지 (Safari에서 focusin보다 먼저 발생)
+    const onTouchStart=(e)=>{
+      const el=e.target;
+      if(isScoreInput(el)){
+        e.preventDefault(); // 네이티브 키보드 방지
+        el.focus();
+        numpadShow(el);
+      } else {
+        // 키패드 밖을 터치하면 닫기
+        const pad=document.getElementById("custom-numpad");
+        if(pad&&!pad.contains(el)&&!isScoreInput(el)){
+          numpadHide();
+        }
+      }
     };
     const onFocusOut=(e)=>{
       setTimeout(()=>{
@@ -3748,11 +3759,14 @@ td{border:1px solid #333;padding:4px 6px}
         if(pad&&pad.contains(active)) return;
         if(pad&&pad.contains(e.relatedTarget)) return;
         if(!isScoreInput(active)) numpadHide();
-      },150);
+      },200);
     };
-    document.addEventListener("focusin",onFocusIn);
+    document.addEventListener("touchstart",onTouchStart,{passive:false});
     document.addEventListener("focusout",onFocusOut);
-    return ()=>{document.removeEventListener("focusin",onFocusIn);document.removeEventListener("focusout",onFocusOut);};
+    return ()=>{
+      document.removeEventListener("touchstart",onTouchStart);
+      document.removeEventListener("focusout",onFocusOut);
+    };
   },[]);
   const renderNumpad=()=>{
     if(!numpadActive) return null;
