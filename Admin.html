@@ -11145,6 +11145,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 (function(){
   // 터치 디바이스 확인
   var isTouch=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
+  // 디버그: 스크립트 실행 확인용 (좌하단에 표시)
+  var dbg=document.createElement("div");
+  dbg.style.cssText="position:fixed;bottom:4px;left:4px;z-index:999999;background:#000;color:#0f0;font-size:10px;padding:4px 8px;border-radius:4px;opacity:.8;pointer-events:none;";
+  dbg.textContent="[numpad] touch="+isTouch+" tp="+navigator.maxTouchPoints;
+  document.body.appendChild(dbg);
   if(!isTouch) return; // PC에서는 키패드 비활성
 
   var pad=document.getElementById("custom-numpad");
@@ -11246,18 +11251,21 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     el.focus();
   }
 
-  // focusin으로 키패드 표시
+  // focusin + touchstart 모두로 키패드 표시 (Safari inputmode="none" 대응)
   document.addEventListener("focusin",function(e){
+    dbg.textContent="[focusin] gc="+(e.target.getAttribute&&e.target.getAttribute("data-gc")||"X")+" match="+isScore(e.target);
     if(isScore(e.target)) showPad(e.target);
   });
-
-  // 키패드 밖 터치 시 닫기
-  document.addEventListener("touchend",function(e){
-    if(pad.style.display!=="block") return;
-    if(pad.contains(e.target)) return;
-    if(isScore(e.target)) return;
-    hidePad();
-  });
+  document.addEventListener("touchstart",function(e){
+    var el=e.target;
+    if(isScore(el)){
+      dbg.textContent="[touch] gc="+el.getAttribute("data-gc")+" → 키패드 표시";
+      el.focus();
+      showPad(el);
+    } else if(pad.style.display==="block"&&!pad.contains(el)){
+      hidePad();
+    }
+  },{passive:true});
 
   // 키패드 버튼 이벤트
   pad.addEventListener("touchstart",function(e){
