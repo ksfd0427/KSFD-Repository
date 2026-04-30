@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>키패드 테스트</title>
+<style>
+body{background:#0a0f1a;color:#e8dcc8;font-family:sans-serif;padding:20px;}
+#log{background:#1a2332;border:1px solid #334;padding:10px;margin:10px 0;border-radius:8px;font-size:13px;min-height:100px;white-space:pre-wrap;}
+table{border-collapse:collapse;margin:20px 0;}
+td{padding:4px;}
+input{background:#0d1520;border:1px solid #2a3a5c;border-radius:4px;color:#e8dcc8;padding:6px 8px;font-size:14px;width:60px;text-align:center;}
+#numpad{display:none;position:fixed;z-index:99999;background:#0f172a;border:2px solid #fbbf24;border-radius:12px;padding:10px;box-shadow:0 8px 30px rgba(0,0,0,.7);}
+#numpad .btn{display:inline-flex;align-items:center;justify-content:center;width:48px;height:44px;border:1px solid #475569;border-radius:6px;background:#1e293b;color:#e8dcc8;font-size:18px;font-weight:700;margin:2px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+</style>
+</head><body>
+<h2>커스텀 키패드 테스트</h2>
+<div id="log">로딩중...</div>
+
+<h3>점수 입력 테스트 (셀을 터치하세요)</h3>
+<table>
+<tr><td>S1</td><td><input type="text" data-gc="s1" data-gr="0" inputmode="none"/></td>
+    <td>S2</td><td><input type="text" data-gc="s2" data-gr="0" inputmode="none"/></td>
+    <td>합계</td><td><input type="text" data-gc="total" data-gr="0" inputmode="none"/></td></tr>
+<tr><td>S1</td><td><input type="text" data-gc="s1" data-gr="1" inputmode="none"/></td>
+    <td>S2</td><td><input type="text" data-gc="s2" data-gr="1" inputmode="none"/></td>
+    <td>합계</td><td><input type="text" data-gc="total" data-gr="1" inputmode="none"/></td></tr>
+</table>
+
+<div id="numpad">
+  <div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px;float:left;">
+    <div class="btn" data-k="1">1</div><div class="btn" data-k="2">2</div><div class="btn" data-k="3">3</div>
+    <div class="btn" data-k="4">4</div><div class="btn" data-k="5">5</div><div class="btn" data-k="6">6</div>
+    <div class="btn" data-k="7">7</div><div class="btn" data-k="8">8</div><div class="btn" data-k="9">9</div>
+    <div class="btn" data-k="BS" style="background:#7f1d1d;color:#fca5a5;font-size:14px;">⌫</div>
+    <div class="btn" data-k="0">0</div>
+    <div class="btn" data-k="DOT" style="background:#334155;color:#fbbf24;">.</div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;margin-left:160px;">
+    <div class="btn" data-k="AUTO" style="background:#92400e;color:#fbbf24;font-size:13px;width:60px;">.0</div>
+    <div class="btn" data-k="TAB" style="background:#1e3a5f;color:#93c5fd;font-size:13px;width:60px;">Tab</div>
+    <div class="btn" data-k="ENTER" style="background:#166534;color:#86efac;font-size:13px;width:60px;">Enter</div>
+    <div class="btn" data-k="CLOSE" style="background:#334155;color:#94a3b8;font-size:11px;width:60px;">✕ 닫기</div>
+  </div>
+</div>
+
+<script>
+var log = document.getElementById("log");
+var numpad = document.getElementById("numpad");
+var currentInput = null;
+
+function addLog(msg) {
+  log.textContent += "\n" + new Date().toLocaleTimeString() + " " + msg;
+  log.scrollTop = log.scrollHeight;
+}
+
+// 터치 디바이스 감지
+var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+var ua = navigator.userAgent;
+var isIPad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+log.textContent = "터치 디바이스: " + isTouch +
+  "\nmaxTouchPoints: " + navigator.maxTouchPoints +
+  "\niPad 감지: " + isIPad +
+  "\nUA: " + ua.substring(0, 100);
+
+function isScoreInput(el) {
+  if (!el || el.tagName !== "INPUT") return false;
+  var gc = el.getAttribute("data-gc");
+  return gc && /^(s\d+(_\d+)?|pos_\d+|total|x_count|rank)$/.test(gc);
+}
+
+function showNumpad(el) {
+  currentInput = el;
+  var r = el.getBoundingClientRect();
+  var cx = r.left + r.width / 2;
+  var above = r.top > 260;
+  var left = cx - 130;
+  if (left < 8) left = 8;
+  if (left + 260 > window.innerWidth) left = window.innerWidth - 268;
+  numpad.style.left = left + "px";
+  numpad.style.top = (above ? r.top - 250 : r.bottom + 10) + "px";
+  numpad.style.display = "block";
+  addLog("키패드 표시: " + el.getAttribute("data-gc"));
+}
+
+function hideNumpad() {
+  numpad.style.display = "none";
+  currentInput = null;
+  addLog("키패드 숨김");
+}
+
+// focusin 이벤트로 키패드 표시
+document.addEventListener("focusin", function(e) {
+  addLog("focusin: " + (e.target.tagName) + " gc=" + (e.target.getAttribute && e.target.getAttribute("data-gc")));
+  if (isScoreInput(e.target)) {
+    showNumpad(e.target);
+  }
+});
+
+// 키패드 밖 터치 시 닫기
+document.addEventListener("touchend", function(e) {
+  if (!numpad.contains(e.target) && !isScoreInput(e.target) && numpad.style.display === "block") {
+    hideNumpad();
+  }
+});
+
+// 키패드 버튼 클릭
+numpad.addEventListener("touchstart", function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  var btn = e.target.closest(".btn");
+  if (!btn || !currentInput) return;
+  var k = btn.getAttribute("data-k");
+  addLog("키 입력: " + k);
+  if (k === "BS") { currentInput.value = currentInput.value.slice(0, -1); }
+  else if (k === "DOT") { if (!currentInput.value.includes(".")) currentInput.value += "."; }
+  else if (k === "AUTO") {
+    var raw = currentInput.value.replace(/[^0-9]/g, "");
+    if (raw.length >= 2) currentInput.value = raw.slice(0, -1) + "." + raw.slice(-1);
+    else if (raw.length === 1) currentInput.value = "0." + raw;
+  }
+  else if (k === "CLOSE") { hideNumpad(); }
+  else if (k === "TAB" || k === "ENTER") { addLog("이동 기능"); }
+  else { currentInput.value += k; }
+  currentInput.focus();
+});
+
+// 마우스용 (PC 테스트)
+numpad.addEventListener("mousedown", function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  var btn = e.target.closest(".btn");
+  if (!btn || !currentInput) return;
+  var k = btn.getAttribute("data-k");
+  addLog("키 입력(mouse): " + k);
+  if (k === "BS") { currentInput.value = currentInput.value.slice(0, -1); }
+  else if (k === "DOT") { if (!currentInput.value.includes(".")) currentInput.value += "."; }
+  else if (k === "AUTO") {
+    var raw = currentInput.value.replace(/[^0-9]/g, "");
+    if (raw.length >= 2) currentInput.value = raw.slice(0, -1) + "." + raw.slice(-1);
+    else if (raw.length === 1) currentInput.value = "0." + raw;
+  }
+  else if (k === "CLOSE") { hideNumpad(); }
+  else { currentInput.value += k; }
+  currentInput.focus();
+});
+
+addLog("초기화 완료 — 위 셀을 터치해보세요");
+</script>
+</body></html>
