@@ -65,19 +65,130 @@
       .print-page-header { display:flex; justify-content:space-between; font-size:7pt; color:#888; margin-bottom:2mm; padding:0 1mm; }
     }
   </style>
+<script>
+// ═══ 커스텀 숫자 키패드 (iPad/터치 전용) ═══
+// head에 배치 + load 이벤트로 Babel 비동기 처리와 독립 실행
+window.addEventListener("load",function(){
+  var isTouch=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
+  if(!isTouch) return;
+
+  var css=document.createElement("style");
+  css.textContent=".np-btn{display:flex;align-items:center;justify-content:center;height:44px;border:1px solid #475569;border-radius:6px;background:#1e293b;color:#e8dcc8;font-size:18px;font-weight:700;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;}.np-btn:active{opacity:.7;}";
+  document.head.appendChild(css);
+
+  var pad=document.createElement("div");
+  pad.id="custom-numpad";
+  pad.style.cssText="display:none;position:fixed;z-index:99999;background:#0f172a;border:2px solid #fbbf24;border-radius:12px;padding:10px;box-shadow:0 8px 30px rgba(0,0,0,.7);";
+  pad.innerHTML='<div id="numpad-tail" style="position:absolute;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;"></div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px;">'
+    +'<div class="np-btn" data-k="1">1</div><div class="np-btn" data-k="2">2</div><div class="np-btn" data-k="3">3</div>'
+    +'<div class="np-btn" data-k="4">4</div><div class="np-btn" data-k="5">5</div><div class="np-btn" data-k="6">6</div>'
+    +'<div class="np-btn" data-k="7">7</div><div class="np-btn" data-k="8">8</div><div class="np-btn" data-k="9">9</div>'
+    +'<div class="np-btn" data-k="BS" style="background:#7f1d1d;color:#fca5a5;font-size:16px;">&#9003;</div>'
+    +'<div class="np-btn" data-k="0">0</div>'
+    +'<div class="np-btn" data-k="DOT" style="background:#334155;color:#fbbf24;font-size:20px;">.</div>'
+    +'</div>'
+    +'<div style="display:flex;flex-direction:column;gap:4px;width:64px;">'
+    +'<div class="np-btn" data-k="AUTO" style="background:#92400e;color:#fbbf24;font-size:13px;font-weight:600;flex:1;">.0</div>'
+    +'<div class="np-btn" data-k="TAB" style="background:#1e3a5f;color:#93c5fd;font-size:13px;font-weight:600;flex:1;">Tab</div>'
+    +'<div class="np-btn" data-k="ENTER" style="background:#166534;color:#86efac;font-size:13px;font-weight:600;flex:1;">Enter</div>'
+    +'<div class="np-btn" data-k="CLOSE" style="background:#334155;color:#94a3b8;font-size:11px;font-weight:600;flex:1;">&#10005; 닫기</div>'
+    +'</div></div>';
+  document.body.appendChild(pad);
+  var tail=document.getElementById("numpad-tail");
+  var currentEl=null;
+
+  function isScore(el){
+    if(!el||el.tagName!=="INPUT") return false;
+    var gc=el.getAttribute("data-gc");
+    if(!gc) return false;
+    return /^(s\d+(_\d+)?|pos_\d+|total|x_count|rank)$/.test(gc);
+  }
+
+  function applyInputMode(){
+    document.querySelectorAll("input[data-gc]").forEach(function(el){
+      if(isScore(el)&&el.getAttribute("inputmode")!=="none"){
+        el.setAttribute("inputmode","none");
+      }
+    });
+  }
+  var obs=new MutationObserver(function(){setTimeout(applyInputMode,50);});
+  obs.observe(document.body,{childList:true,subtree:true});
+  applyInputMode();
+
+  function showPad(el){
+    currentEl=el;
+    var r=el.getBoundingClientRect();
+    var padW=240,padH=220;
+    var cx=r.left+r.width/2;
+    var above=r.top>padH+20;
+    var left=cx-padW/2;
+    if(left<8) left=8;
+    if(left+padW>window.innerWidth-8) left=window.innerWidth-padW-8;
+    pad.style.left=left+"px";
+    pad.style.top=(above?(r.top-padH-12):(r.bottom+12))+"px";
+    pad.style.display="block";
+    tail.style.left=(cx-left)+"px";
+    if(above){tail.style.bottom="-10px";tail.style.top="";tail.style.borderTop="10px solid #fbbf24";tail.style.borderBottom="none";}
+    else{tail.style.top="-10px";tail.style.bottom="";tail.style.borderBottom="10px solid #fbbf24";tail.style.borderTop="none";}
+  }
+  function hidePad(){pad.style.display="none";currentEl=null;}
+
+  var nativeSet=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
+
+  function handleKey(k){
+    var el=currentEl;
+    if(!el) return;
+    if(k==="CLOSE"){hidePad();return;}
+    if(k==="BS"){nativeSet.call(el,el.value.slice(0,-1));}
+    else if(k==="DOT"){if(!el.value.includes(".")) nativeSet.call(el,el.value+".");}
+    else if(k==="AUTO"){
+      var raw=el.value.replace(/[^0-9]/g,"");
+      if(raw.length>=2) nativeSet.call(el,raw.slice(0,-1)+"."+raw.slice(-1));
+      else if(raw.length===1) nativeSet.call(el,"0."+raw);
+    } else if(k==="TAB"){
+      var row=el.getAttribute("data-gr"),tbl=el.closest("table");
+      if(tbl&&row){
+        var all=Array.from(tbl.querySelectorAll("[data-gr='"+row+"']")).filter(isScore);
+        var idx=all.indexOf(el);
+        var nx=all[idx+1]||all[0];
+        if(nx&&nx!==el){nx.focus();try{nx.select();}catch(e){} showPad(nx);return;}
+      }
+    } else if(k==="ENTER"){
+      var row2=parseInt(el.getAttribute("data-gr")),gc2=el.getAttribute("data-gc"),tbl2=el.closest("table");
+      if(tbl2&&!isNaN(row2)){
+        var nx2=tbl2.querySelector("[data-gr='"+(row2+1)+"'][data-gc='"+gc2+"']");
+        if(nx2){nx2.focus();try{nx2.select();}catch(e){} showPad(nx2);return;}
+      }
+    } else {nativeSet.call(el,el.value+k);}
+    el.dispatchEvent(new Event("input",{bubbles:true}));
+    el.focus();
+  }
+
+  document.addEventListener("focusin",function(e){
+    if(isScore(e.target)) showPad(e.target);
+  });
+  document.addEventListener("touchstart",function(e){
+    var el=e.target;
+    if(isScore(el)){el.focus();showPad(el);}
+    else if(pad.style.display==="block"&&!pad.contains(el)){hidePad();}
+  },{passive:true});
+
+  pad.addEventListener("touchstart",function(e){
+    e.preventDefault();e.stopPropagation();
+    var btn=e.target.closest(".np-btn");
+    if(btn) handleKey(btn.getAttribute("data-k"));
+  });
+  pad.addEventListener("mousedown",function(e){
+    e.preventDefault();e.stopPropagation();
+    var btn=e.target.closest(".np-btn");
+    if(btn) handleKey(btn.getAttribute("data-k"));
+  });
+});
+</script>
 </head>
 <body>
-  <script>
-  // ★ 키패드 디버그: 이 스크립트가 실행되면 alert가 뜸
-  window.__NUMPAD_LOADED = true;
-  document.addEventListener("DOMContentLoaded",function(){
-    var d=document.createElement("div");
-    d.id="numpad-dbg";
-    d.style.cssText="position:fixed;bottom:4px;left:4px;z-index:999999;background:red;color:#fff;font-size:12px;padding:6px 12px;border-radius:6px;font-weight:bold;";
-    d.textContent="NUMPAD SCRIPT OK - touch="+(('ontouchstart' in window)||(navigator.maxTouchPoints>0));
-    document.body.appendChild(d);
-  });
-  </script>
   <div id="root"></div>
   <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo } = React;
@@ -11122,176 +11233,5 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}</pre>
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 
-<!-- ═══ 커스텀 숫자 키패드 (iPad/터치 디바이스 전용, React 외부) ═══ -->
-<div id="custom-numpad" style="display:none;position:fixed;z-index:99999;background:#0f172a;border:2px solid #fbbf24;border-radius:12px;padding:10px;box-shadow:0 8px 30px rgba(0,0,0,.7);">
-  <div id="numpad-tail" style="position:absolute;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;"></div>
-  <div style="display:flex;gap:8px;">
-    <div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px;">
-      <div class="np-btn" data-k="1">1</div><div class="np-btn" data-k="2">2</div><div class="np-btn" data-k="3">3</div>
-      <div class="np-btn" data-k="4">4</div><div class="np-btn" data-k="5">5</div><div class="np-btn" data-k="6">6</div>
-      <div class="np-btn" data-k="7">7</div><div class="np-btn" data-k="8">8</div><div class="np-btn" data-k="9">9</div>
-      <div class="np-btn np-del" data-k="BS">&#9003;</div>
-      <div class="np-btn" data-k="0">0</div>
-      <div class="np-btn np-dot" data-k="DOT">.</div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:4px;width:64px;">
-      <div class="np-btn np-auto" data-k="AUTO">.0</div>
-      <div class="np-btn np-tab" data-k="TAB">Tab</div>
-      <div class="np-btn np-enter" data-k="ENTER">Enter</div>
-      <div class="np-btn np-close" data-k="CLOSE">&#10005; &#xB2EB;&#xAE30;</div>
-    </div>
-  </div>
-</div>
-<style>
-.np-btn{display:flex;align-items:center;justify-content:center;height:44px;border:1px solid #475569;border-radius:6px;background:#1e293b;color:#e8dcc8;font-size:18px;font-weight:700;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;}
-.np-btn:active{opacity:.7;}
-.np-del{background:#7f1d1d !important;color:#fca5a5 !important;font-size:16px !important;}
-.np-dot{background:#334155 !important;color:#fbbf24 !important;font-size:20px !important;}
-.np-auto{background:#92400e !important;color:#fbbf24 !important;font-size:13px !important;font-weight:600 !important;flex:1;}
-.np-tab{background:#1e3a5f !important;color:#93c5fd !important;font-size:13px !important;font-weight:600 !important;flex:1;}
-.np-enter{background:#166534 !important;color:#86efac !important;font-size:13px !important;font-weight:600 !important;flex:1;}
-.np-close{background:#334155 !important;color:#94a3b8 !important;font-size:11px !important;font-weight:600 !important;flex:1;}
-</style>
-<script>
-window.addEventListener("load",function(){
-  // 터치 디바이스 확인
-  var isTouch=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
-  // 디버그: 스크립트 실행 확인용 (좌하단에 표시)
-  var dbg=document.createElement("div");
-  dbg.style.cssText="position:fixed;bottom:4px;left:4px;z-index:999999;background:#000;color:#0f0;font-size:10px;padding:4px 8px;border-radius:4px;opacity:.8;pointer-events:none;";
-  dbg.textContent="[numpad] touch="+isTouch+" tp="+navigator.maxTouchPoints;
-  document.body.appendChild(dbg);
-  if(!isTouch) return; // PC에서는 키패드 비활성
-
-  var pad=document.getElementById("custom-numpad");
-  var tail=document.getElementById("numpad-tail");
-  var currentEl=null;
-
-  function isScore(el){
-    if(!el||el.tagName!=="INPUT") return false;
-    var gc=el.getAttribute("data-gc");
-    if(!gc) return false;
-    return /^(s\d+(_\d+)?|pos_\d+|total|x_count|rank)$/.test(gc);
-  }
-
-  // inputmode="none" 동적 설정 (MutationObserver)
-  function applyInputMode(){
-    document.querySelectorAll("input[data-gc]").forEach(function(el){
-      if(isScore(el)&&el.getAttribute("inputmode")!=="none"){
-        el.setAttribute("inputmode","none");
-      }
-    });
-  }
-  applyInputMode();
-  var obs=new MutationObserver(function(){setTimeout(applyInputMode,50);});
-  obs.observe(document.body,{childList:true,subtree:true});
-
-  // 키패드 위치 계산 + 표시
-  function showPad(el){
-    currentEl=el;
-    var r=el.getBoundingClientRect();
-    var padW=240, padH=220;
-    var cx=r.left+r.width/2;
-    var above=r.top>padH+20;
-    // 좌우 오버플로우 방지
-    var left=cx-padW/2;
-    if(left<8) left=8;
-    if(left+padW>window.innerWidth-8) left=window.innerWidth-padW-8;
-    var top2=above?(r.top-padH-12):(r.bottom+12);
-    pad.style.left=left+"px";
-    pad.style.top=top2+"px";
-    pad.style.display="block";
-    // 말풍선 꼬리
-    tail.style.left=(cx-left)+"px";
-    if(above){
-      tail.style.bottom="-10px"; tail.style.top="";
-      tail.style.borderTop="10px solid #fbbf24";
-      tail.style.borderBottom="none";
-    } else {
-      tail.style.top="-10px"; tail.style.bottom="";
-      tail.style.borderBottom="10px solid #fbbf24";
-      tail.style.borderTop="none";
-    }
-  }
-  function hidePad(){
-    pad.style.display="none";
-    currentEl=null;
-  }
-
-  // React의 onChange를 트리거하기 위한 nativeInputValueSetter
-  var nativeSet=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
-
-  function fireInput(el){
-    el.dispatchEvent(new Event("input",{bubbles:true}));
-  }
-
-  function handleKey(k){
-    var el=currentEl;
-    if(!el) return;
-    if(k==="CLOSE"){hidePad();return;}
-    if(k==="BS"){
-      nativeSet.call(el,el.value.slice(0,-1));
-    } else if(k==="DOT"){
-      if(!el.value.includes(".")) nativeSet.call(el,el.value+".");
-    } else if(k==="AUTO"){
-      var raw=el.value.replace(/[^0-9]/g,"");
-      if(raw.length>=2) nativeSet.call(el,raw.slice(0,-1)+"."+raw.slice(-1));
-      else if(raw.length===1) nativeSet.call(el,"0."+raw);
-    } else if(k==="TAB"){
-      // 같은 행의 다음 점수 셀
-      var row=el.getAttribute("data-gr"), gc=el.getAttribute("data-gc");
-      var tbl=el.closest("table");
-      if(tbl&&row){
-        var all=Array.from(tbl.querySelectorAll("[data-gr='"+row+"']")).filter(isScore);
-        var idx=all.indexOf(el);
-        var next2=all[idx+1]||all[0];
-        if(next2&&next2!==el){next2.focus();try{next2.select();}catch(e){} showPad(next2);return;}
-      }
-    } else if(k==="ENTER"){
-      // 같은 열의 다음 행
-      var row2=parseInt(el.getAttribute("data-gr")), gc2=el.getAttribute("data-gc");
-      var tbl2=el.closest("table");
-      if(tbl2&&!isNaN(row2)){
-        var next3=tbl2.querySelector("[data-gr='"+(row2+1)+"'][data-gc='"+gc2+"']");
-        if(next3){next3.focus();try{next3.select();}catch(e){} showPad(next3);return;}
-      }
-    } else {
-      nativeSet.call(el,el.value+k);
-    }
-    fireInput(el);
-    el.focus();
-  }
-
-  // focusin + touchstart 모두로 키패드 표시 (Safari inputmode="none" 대응)
-  document.addEventListener("focusin",function(e){
-    dbg.textContent="[focusin] gc="+(e.target.getAttribute&&e.target.getAttribute("data-gc")||"X")+" match="+isScore(e.target);
-    if(isScore(e.target)) showPad(e.target);
-  });
-  document.addEventListener("touchstart",function(e){
-    var el=e.target;
-    if(isScore(el)){
-      dbg.textContent="[touch] gc="+el.getAttribute("data-gc")+" → 키패드 표시";
-      el.focus();
-      showPad(el);
-    } else if(pad.style.display==="block"&&!pad.contains(el)){
-      hidePad();
-    }
-  },{passive:true});
-
-  // 키패드 버튼 이벤트
-  pad.addEventListener("touchstart",function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    var btn=e.target.closest(".np-btn");
-    if(btn) handleKey(btn.getAttribute("data-k"));
-  });
-  pad.addEventListener("mousedown",function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    var btn=e.target.closest(".np-btn");
-    if(btn) handleKey(btn.getAttribute("data-k"));
-  });
-});
-</script>
 </body>
 </html>
