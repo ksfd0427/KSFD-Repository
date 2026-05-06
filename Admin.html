@@ -10904,7 +10904,7 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
             {/* 종목별 모드일 때만 종목 버튼 */}
             {!brViewAll&&<>
             <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
-              {DEFAULT_EVENTS.filter(e=>e.type==="individual").map(ev=>(
+              {DEFAULT_EVENTS.map(ev=>(
                 <button key={ev.code} onClick={()=>{setBrEvCode(ev.code);loadBestRecords(ev.code,brType);}} style={{
                   padding:"5px 10px",borderRadius:5,fontSize:11,fontWeight:brEvCode===ev.code?700:400,cursor:"pointer",
                   border:"1px solid "+(brEvCode===ev.code?C.gold:C.border),
