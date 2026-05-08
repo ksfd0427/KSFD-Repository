@@ -6120,21 +6120,20 @@ td{border:1px solid #333;padding:4px 6px}
                   const fee=cat==="10M"?FEE_10M:FEE_OTHER;
                   feeByApp[appId].players[pk].entries.push({code:e.event_code,cat,fee,type:"개인"});
                 });
-                // 혼성팀 entries (팀 단위 1건 → 각 멤버에게 표시하되 fee는 팀당 1번만)
-                const mixedCounted={};
+                // 혼성팀 entries: R10, R11, P6 등 type==="mixed" 종목만 (참가자 개개인 참가비 부과)
+                // ※ R3, R6, P3 등은 개인전(type==="individual")이므로 위 개인전 루프에서만 과금
+                const mixedEvCodes=new Set(events.filter(e=>e.type==="mixed").map(e=>e.code));
                 fTE.forEach(t=>{
+                  if(!mixedEvCodes.has(t.event_code)) return; // 혼성팀이 아닌 종목 무시
                   const app=fAM[t.application_id];if(!app)return;
                   const m=fMemberMap[t.member_id];if(!m)return;
                   const appId=t.application_id;
                   if(!feeByApp[appId])feeByApp[appId]={appId,orgName:app.org_name,regionName:app.region_name,players:{}};
-                  const teamKey=appId+"_"+t.event_code+"_"+(t.team_number||1);
-                  const isFirstOfTeam=!mixedCounted[teamKey];
-                  if(isFirstOfTeam)mixedCounted[teamKey]=true;
                   const pk=t.member_id;
                   if(!feeByApp[appId].players[pk])feeByApp[appId].players[pk]={memberId:pk,name:m.name,subOrg:m.sub_org||"",entries:[]};
                   const cat=evToCategory(t.event_code);
-                  const fee=isFirstOfTeam?(cat==="10M"?FEE_10M:FEE_OTHER):0;
-                  feeByApp[appId].players[pk].entries.push({code:t.event_code,cat,fee,type:"혼성"+(t.team_number||1),counted:isFirstOfTeam});
+                  const fee=cat==="10M"?FEE_10M:FEE_OTHER;
+                  feeByApp[appId].players[pk].entries.push({code:t.event_code,cat,fee,type:"혼성팀"});
                 });
                 const feeList=Object.values(feeByApp).map(f=>({...f,players:Object.values(f.players).sort((a,b)=>a.name.localeCompare(b.name))})).sort((a,b)=>a.appId-b.appId);
                 const getAppTotal=(f)=>f.players.reduce((s,p)=>s+p.entries.reduce((ss,e)=>ss+e.fee,0),0);
