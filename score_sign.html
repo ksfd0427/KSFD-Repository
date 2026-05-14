@@ -17,6 +17,7 @@
   .nav-pill.active { background: #e8b931; border-color: #e8b931; color: #0a2647; }
   .nav-pill.summary-pill { border-color: #e8b931; color: #e8b931; }
   .nav-pill.summary-pill.active { background: #e8b931; color: #0a2647; }
+  .nav-pill.add-pill { border-color: #16a34a; color: #16a34a; font-weight: 800; }
   .nav-actions { display: flex; gap: 5px; margin-left: auto; }
   .btn { padding: 6px 12px; border-radius: 8px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
   .btn-pdf { background: #205295; color: #fff; }
@@ -33,39 +34,40 @@
 
   /* === SCORE TABLE (fills remaining space) === */
   .table-wrap { flex: 1; overflow: auto; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
-  .score-table { width: 100%; border-collapse: collapse; background: #fff; height: 100%; }
+  .score-table { width: 100%; border-collapse: collapse; background: #fff; height: 100%; table-layout: fixed; }
   .score-table th, .score-table td { border: 1px solid #e2e8f0; text-align: center; vertical-align: middle; }
-  .score-table thead th { background: #0a2647; color: #fff; font-size: 12px; font-weight: 700; padding: 8px 2px; position: sticky; top: 0; z-index: 2; }
+  .score-table thead th { background: #0a2647; color: #fff; font-size: 14px; font-weight: 700; padding: 10px 4px; position: sticky; top: 0; z-index: 2; }
   .score-table thead th.col-total { background: #144272; }
   .score-table thead th.col-sign { background: #205295; }
   .score-table tbody tr { height: 25%; }
-  .score-table tbody td { padding: 4px 2px; }
+  .score-table tbody td { padding: 6px 4px; }
 
-  .name-input { width: 100%; border: none; background: #f8fafc; padding: 10px 4px; font-size: 15px; text-align: center; font-weight: 700; border-radius: 4px; }
+  .group-num-cell { font-size: 20px; font-weight: 900; color: #0a2647; background: #eef2ff; }
+  .lane-cell { font-size: 20px; font-weight: 800; color: #205295; }
+
+  .name-input { width: 100%; height: 60%; border: none; background: #f8fafc; padding: 0 6px; font-size: clamp(18px, 4vh, 36px); text-align: center; font-weight: 700; border-radius: 4px; }
   .name-input:focus { outline: 2px solid #205295; background: #fff; }
 
-  .score-input { width: 100%; border: none; background: #f8fafc; padding: 10px 2px; font-size: 18px; font-weight: 800; text-align: center; border-radius: 4px; -moz-appearance: textfield; cursor: pointer; }
-  .score-input::-webkit-outer-spin-button,
-  .score-input::-webkit-inner-spin-button { -webkit-appearance: none; }
-  .score-input:focus { outline: 2px solid #e8b931; background: #fffbeb; }
-
-  .total-cell { font-size: 22px; font-weight: 900; color: #0a2647; background: #f0f4f8; }
+  .total-cell { background: #f0f4f8; }
+  .total-input { width: 100%; border: none; background: transparent; padding: 0; font-size: clamp(24px, 5vh, 48px); font-weight: 900; color: #0a2647; text-align: center; cursor: pointer; -moz-appearance: textfield; }
+  .total-input::-webkit-outer-spin-button,
+  .total-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .total-input:focus { outline: 2px solid #e8b931; background: #fffbeb; border-radius: 4px; }
 
   /* === SIGNATURE CELL (thumbnail) === */
-  .sign-cell { padding: 4px !important; cursor: pointer; }
-  .sign-thumb { width: 100%; height: 48px; border: 1.5px dashed #cbd5e1; border-radius: 6px; background: #fafbfc; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #94a3b8; transition: all .15s; }
+  .sign-cell { padding: 6px !important; cursor: pointer; }
+  .sign-thumb { width: 100%; height: 100%; border: 1.5px dashed #cbd5e1; border-radius: 6px; background: #fafbfc; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #94a3b8; transition: all .15s; }
   .sign-thumb.signed { border-color: #205295; border-style: solid; background: #fff; }
   .sign-thumb img { width: 100%; height: 100%; object-fit: contain; }
-  .sign-thumb .sign-placeholder { pointer-events: none; }
 
   /* === SIGNATURE MODAL === */
   .sign-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; align-items: center; justify-content: center; }
   .sign-modal-overlay.show { display: flex; }
-  .sign-modal { background: #fff; border-radius: 16px; padding: 16px; width: 90vw; max-width: 600px; box-shadow: 0 8px 40px rgba(0,0,0,.25); }
+  .sign-modal { background: #fff; border-radius: 16px; padding: 20px; width: 94vw; max-width: 1100px; box-shadow: 0 8px 40px rgba(0,0,0,.25); }
   .sign-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
   .sign-modal-header h3 { font-size: 16px; color: #0a2647; }
   .sign-modal-canvas-wrap { border: 2px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fafbfc; }
-  .sign-modal-canvas { width: 100%; height: 200px; display: block; touch-action: none; cursor: crosshair; }
+  .sign-modal-canvas { width: 100%; height: 400px; display: block; touch-action: none; cursor: crosshair; }
   .sign-modal-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
   .sign-modal-actions .btn { padding: 10px 24px; font-size: 14px; }
   .btn-sign-clear { background: #f1f5f9; color: #64748b; }
@@ -86,41 +88,48 @@
 
   /* === SUMMARY PAGE === */
   .summary-table { width: 100%; border-collapse: collapse; background: #fff; }
-  .summary-table th, .summary-table td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: center; font-size: 13px; }
+  .summary-table th, .summary-table td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: center; font-size: 14px; }
   .summary-table thead th { background: #0a2647; color: #fff; font-weight: 700; position: sticky; top: 0; z-index: 2; }
   .summary-table tbody tr:nth-child(even) { background: #f8fafc; }
   .summary-table tbody tr:hover { background: #eef2ff; }
-  .summary-table .group-header { background: #144272; color: #fff; font-weight: 700; text-align: left; padding-left: 16px; }
   .summary-table .rank-1 { color: #b45309; font-weight: 900; }
   .summary-table .rank-2 { color: #205295; font-weight: 800; }
   .summary-table .rank-3 { color: #64748b; font-weight: 700; }
   .summary-total-row { background: #f0f4f8 !important; font-weight: 800; border-top: 2px solid #0a2647; }
 
-  /* === PRINT VIEW (hidden on screen, visible on print) === */
+  /* === PRINT === */
   .print-view { display: none; }
-
+  .print-page { page: groupPage; }
+  .print-page-summary { page: summaryPage; }
+  @page groupPage { size: A4 landscape; margin: 10mm; }
+  @page summaryPage { size: A4 portrait; margin: 12mm 10mm; }
   @media print {
-    /* Hide everything except print view */
     body { overflow: visible !important; height: auto !important; background: #fff !important; }
     .nav, .content, .sign-modal-overlay, .numpad-overlay { display: none !important; }
     .print-view { display: block !important; }
-
-    .print-page { page-break-after: always; padding: 12mm 10mm; }
-    .print-page:last-child { page-break-after: avoid; }
-    .print-page h2 { text-align: center; font-size: 18pt; color: #0a2647; margin-bottom: 2mm; }
-    .print-page .print-sub { text-align: center; font-size: 10pt; color: #666; margin-bottom: 6mm; }
-
+    .print-page, .print-page-summary { page-break-after: always; padding: 0; }
+    .print-page:last-child, .print-page-summary:last-child { page-break-after: avoid; }
+    .print-page h2, .print-page-summary h2 { text-align: center; font-size: 18pt; color: #0a2647; margin-bottom: 2mm; }
+    .print-page .print-sub, .print-page-summary .print-sub { text-align: center; font-size: 10pt; color: #666; margin-bottom: 6mm; }
     .print-table { width: 100%; border-collapse: collapse; }
-    .print-table th, .print-table td { border: 1.5px solid #888; padding: 8px 4px; text-align: center; font-size: 11pt; }
-    .print-table thead th { background: #0a2647 !important; color: #fff !important; font-weight: 700; font-size: 10pt;
+    .print-table th, .print-table td { border: 1.5px solid #888; padding: 10px 6px; text-align: center; font-size: 12pt; }
+    .print-table thead th { background: #0a2647 !important; color: #fff !important; font-weight: 700; font-size: 11pt;
       -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .print-table tbody tr { height: 20mm; }
+    .print-table tbody tr { height: 25mm; }
     .print-table tbody td { font-weight: 600; vertical-align: middle; }
-    .print-table .pt-name { font-weight: 700; width: 22mm; }
-    .print-table .pt-total { font-size: 14pt; font-weight: 900; background: #f0f0f0 !important;
+    .print-table .pt-group { font-weight: 900; font-size: 14pt; }
+    .print-table .pt-lane { font-weight: 800; font-size: 13pt; }
+    .print-table .pt-name { font-weight: 700; font-size: 13pt; }
+    .print-table .pt-total { font-size: 16pt; font-weight: 900; background: #f0f0f0 !important;
       -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .print-table .pt-sign { width: 35mm; }
-    .print-table .pt-sign img { max-width: 32mm; max-height: 16mm; }
+    .print-table .pt-sign { width: 50mm; }
+    .print-table .pt-sign img { max-width: 46mm; max-height: 20mm; }
+    /* summary print page */
+    .print-page-summary .print-table tbody tr { height: auto; }
+    .print-page-summary .print-table tbody td { padding: 6px 5px; font-size: 11pt; }
+    .print-page-summary .print-table .pt-rank-1 { color: #b45309; font-weight: 900; }
+    .print-page-summary .print-table .pt-rank-2 { color: #205295; font-weight: 800; }
+    .print-page-summary .print-table .pt-rank-3 { color: #64748b; font-weight: 700; }
   }
 </style>
 </head>
@@ -163,11 +172,11 @@
       <button class="numpad-key" onclick="numKey('1')">1</button>
       <button class="numpad-key" onclick="numKey('2')">2</button>
       <button class="numpad-key" onclick="numKey('3')">3</button>
-      <button class="numpad-key del" onclick="numKey('del')">⌫</button>
+      <button class="numpad-key del" onclick="numKey('del')">&#x232B;</button>
       <button class="numpad-key" onclick="numKey('4')">4</button>
       <button class="numpad-key" onclick="numKey('5')">5</button>
       <button class="numpad-key" onclick="numKey('6')">6</button>
-      <button class="numpad-key next" id="numpadNext" onclick="numKey('next')">다음칸 ▶</button>
+      <button class="numpad-key next" id="numpadNext" onclick="numKey('next')">다음줄 &#x25BC;</button>
       <button class="numpad-key" onclick="numKey('7')">7</button>
       <button class="numpad-key" onclick="numKey('8')">8</button>
       <button class="numpad-key" onclick="numKey('9')">9</button>
@@ -177,47 +186,38 @@
   </div>
 </div>
 
-<!-- Print view (hidden on screen, shown only during print) -->
+<!-- Print view -->
 <div class="print-view" id="printView"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const GROUPS = 12, PLAYERS = 4, SHOTS = 10;
+let groupCount = 12;
+const PLAYERS = 4;
 let currentPage = 0, numpadTarget = null, numpadValue = '';
-// Store signature data per player: signData[g][p] = dataURL or null
-const signData = Array.from({length: GROUPS}, () => Array(PLAYERS).fill(null));
+const signData = [];
 
-// ============================================================
-// BUILD PAGES
-// ============================================================
 const contentEl = document.getElementById('content');
 const pillsEl = document.getElementById('navPills');
 
-for (let g = 0; g < GROUPS; g++) {
-  const pill = document.createElement('button');
-  pill.className = 'nav-pill' + (g === 0 ? ' active' : '');
-  pill.textContent = `${g+1}조`;
-  pill.onclick = () => showPage(g);
-  pillsEl.appendChild(pill);
-
-  const page = document.createElement('div');
-  page.className = 'page' + (g === 0 ? ' active' : '');
-  page.id = `page-${g}`;
-
+// ============================================================
+// BUILD GROUP PAGE
+// ============================================================
+function buildGroupPage(g) {
   let tbody = '';
   for (let p = 0; p < PLAYERS; p++) {
     tbody += `<tr>
-      <td><input class="name-input" type="text" placeholder="선수명" data-g="${g}" data-p="${p}"></td>`;
-    for (let s = 0; s < SHOTS; s++) {
-      tbody += `<td><input class="score-input" type="text" inputmode="none" readonly
-        data-g="${g}" data-p="${p}" data-s="${s}" onfocus="openNumpad(this)" placeholder="·"></td>`;
-    }
-    tbody += `<td class="total-cell" id="total-${g}-${p}">0</td>
+      <td class="group-num-cell">${g+1}</td>
+      <td class="lane-cell">${p+1}</td>
+      <td><input class="name-input" type="text" placeholder="선수명" data-g="${g}" data-p="${p}"></td>
+      <td class="total-cell"><input class="total-input" type="text" inputmode="none" readonly
+          id="total-${g}-${p}" value="" onfocus="openNumpad(this)" data-g="${g}" data-p="${p}" placeholder="점수"></td>
       <td class="sign-cell" onclick="openSignModal(${g},${p})">
         <div class="sign-thumb" id="thumb-${g}-${p}"><span class="sign-placeholder">터치하여 서명</span></div>
       </td></tr>`;
   }
-
+  const page = document.createElement('div');
+  page.className = 'page';
+  page.id = `page-${g}`;
   page.innerHTML = `
     <div class="page-header">
       <h2>${g+1}조 점수 확인 서명</h2>
@@ -226,22 +226,49 @@ for (let g = 0; g < GROUPS; g++) {
     <div class="table-wrap">
       <table class="score-table">
         <thead><tr>
-          <th style="width:80px">이름</th>
-          ${Array.from({length:SHOTS},(_,i)=>`<th>${i+1}</th>`).join('')}
-          <th class="col-total" style="width:60px">합계</th>
-          <th class="col-sign" style="width:120px">서명</th>
+          <th style="width:60px">조</th>
+          <th style="width:70px">사대번호</th>
+          <th style="width:calc((100% - 130px)/3)">이름</th>
+          <th class="col-total" style="width:calc((100% - 130px)/3)">합계</th>
+          <th class="col-sign" style="width:calc((100% - 130px)/3)">서명</th>
         </tr></thead>
         <tbody>${tbody}</tbody>
       </table>
     </div>`;
+  return page;
+}
+
+// ============================================================
+// INITIAL BUILD
+// ============================================================
+for (let g = 0; g < groupCount; g++) {
+  signData.push(Array(PLAYERS).fill(null));
+  const pill = document.createElement('button');
+  pill.className = 'nav-pill' + (g === 0 ? ' active' : '');
+  pill.textContent = `${g+1}조`;
+  pill.id = `pill-${g}`;
+  pill.onclick = () => showPage(g);
+  pillsEl.appendChild(pill);
+
+  const page = buildGroupPage(g);
+  if (g === 0) page.classList.add('active');
   contentEl.appendChild(page);
 }
 
-// Summary pill
+// +조 button
+const addPill = document.createElement('button');
+addPill.className = 'nav-pill add-pill';
+addPill.id = 'addGroupPill';
+addPill.textContent = '+조';
+addPill.onclick = addGroup;
+pillsEl.appendChild(addPill);
+
+// 합산 button
 const sumPill = document.createElement('button');
 sumPill.className = 'nav-pill summary-pill';
+sumPill.id = 'summaryPill';
 sumPill.textContent = '합산';
-sumPill.onclick = () => showPage(GROUPS);
+sumPill.onclick = () => showPage(groupCount);
 pillsEl.appendChild(sumPill);
 
 // Summary page
@@ -257,6 +284,27 @@ sumPage.innerHTML = `
 contentEl.appendChild(sumPage);
 
 // ============================================================
+// ADD GROUP
+// ============================================================
+function addGroup() {
+  const g = groupCount;
+  groupCount++;
+  signData.push(Array(PLAYERS).fill(null));
+
+  const pill = document.createElement('button');
+  pill.className = 'nav-pill';
+  pill.textContent = `${g+1}조`;
+  pill.id = `pill-${g}`;
+  pill.onclick = () => showPage(g);
+  pillsEl.insertBefore(pill, document.getElementById('addGroupPill'));
+
+  const page = buildGroupPage(g);
+  contentEl.insertBefore(page, document.getElementById('page-summary'));
+
+  showPage(g);
+}
+
+// ============================================================
 // PAGE NAVIGATION
 // ============================================================
 function showPage(idx) {
@@ -265,7 +313,7 @@ function showPage(idx) {
   const pills = document.querySelectorAll('.nav-pill');
   pills.forEach((p, i) => p.classList.toggle('active', i === idx));
   currentPage = idx;
-  if (idx === GROUPS) buildSummary();
+  if (idx === groupCount) buildSummary();
 }
 
 // ============================================================
@@ -275,17 +323,12 @@ function openNumpad(el) {
   numpadTarget = el;
   numpadValue = el.value || '';
   document.getElementById('numpadDisplay').textContent = numpadValue || '0';
-  const g = el.dataset.g, p = el.dataset.p, s = parseInt(el.dataset.s);
+  const g = parseInt(el.dataset.g), p = parseInt(el.dataset.p);
   const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
-  const name = nameEl && nameEl.value ? nameEl.value : `선수${parseInt(p)+1}`;
-  document.getElementById('numpadLabel').textContent = `${name} — ${parseInt(s)+1}발`;
-  // Update next button label: 10th shot (index 9) → "다음줄", otherwise "다음칸"
+  const name = nameEl && nameEl.value ? nameEl.value : `선수${p+1}`;
+  document.getElementById('numpadLabel').textContent = `${name} — 합계 점수 입력`;
   const nextBtn = document.getElementById('numpadNext');
-  if (parseInt(s) === SHOTS - 1) {
-    nextBtn.textContent = '다음줄 ▼';
-  } else {
-    nextBtn.textContent = '다음칸 ▶';
-  }
+  nextBtn.style.display = (p < PLAYERS - 1) ? '' : 'none';
   document.getElementById('numpadOverlay').classList.add('show');
 }
 function closeNumpad() {
@@ -296,48 +339,26 @@ function numKey(k) {
   if (k === 'del') {
     numpadValue = numpadValue.slice(0, -1);
   } else if (k === 'enter') {
-    // Save and close (no auto-advance)
     if (numpadTarget) {
       numpadTarget.value = numpadValue;
-      updateTotal(numpadTarget.dataset.g, numpadTarget.dataset.p);
     }
     closeNumpad();
     return;
   } else if (k === 'next') {
-    // Save current value, then advance
     if (!numpadTarget) return;
     numpadTarget.value = numpadValue;
-    const g = parseInt(numpadTarget.dataset.g), p = parseInt(numpadTarget.dataset.p), s = parseInt(numpadTarget.dataset.s);
-    updateTotal(g, p);
+    const g = parseInt(numpadTarget.dataset.g), p = parseInt(numpadTarget.dataset.p);
     closeNumpad();
-
-    if (s === SHOTS - 1) {
-      // 10th shot → go to first shot of next player row
-      const nextP = p + 1;
-      if (nextP < PLAYERS) {
-        const nx = document.querySelector(`input.score-input[data-g="${g}"][data-p="${nextP}"][data-s="0"]`);
-        if (nx) setTimeout(() => nx.focus(), 100);
-      }
-    } else {
-      // Go to next column (s+1) same row
-      const nx = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s+1}"]`);
+    const nextP = p + 1;
+    if (nextP < PLAYERS) {
+      const nx = document.getElementById(`total-${g}-${nextP}`);
       if (nx) setTimeout(() => nx.focus(), 100);
     }
     return;
   } else {
-    if (numpadValue.length < 3) numpadValue += k;
+    if (numpadValue.length < 4) numpadValue += k;
   }
   document.getElementById('numpadDisplay').textContent = numpadValue || '0';
-}
-
-function updateTotal(g, p) {
-  let sum = 0;
-  for (let s = 0; s < SHOTS; s++) {
-    const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
-    const v = parseInt(el.value);
-    if (!isNaN(v)) sum += v;
-  }
-  document.getElementById(`total-${g}-${p}`).textContent = sum;
 }
 
 // ============================================================
@@ -364,8 +385,7 @@ function openSignModal(g, p) {
   const name = nameEl && nameEl.value ? nameEl.value : `선수${p+1}`;
   document.getElementById('signModalTitle').textContent = `${name} — 서명`;
   signCtx.clearRect(0, 0, signCanvas.width, signCanvas.height);
-  // If already signed, redraw
-  if (signData[g][p]) {
+  if (signData[g] && signData[g][p]) {
     const img = new Image();
     img.onload = () => signCtx.drawImage(img, 0, 0);
     img.src = signData[g][p];
@@ -397,33 +417,34 @@ function saveModalSign() {
 }
 
 // ============================================================
-// SUMMARY PAGE
+// COLLECT ALL PLAYERS & SUMMARY
 // ============================================================
-function buildSummary() {
-  const wrap = document.getElementById('summaryWrap');
+function collectAllPlayers() {
   let allPlayers = [];
-  for (let g = 0; g < GROUPS; g++) {
+  for (let g = 0; g < groupCount; g++) {
     for (let p = 0; p < PLAYERS; p++) {
       const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
       const name = nameEl ? nameEl.value : '';
       if (!name) continue;
-      let sum = 0, scores = [];
-      for (let s = 0; s < SHOTS; s++) {
-        const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
-        const v = parseInt(el.value);
-        scores.push(isNaN(v) ? '' : v);
-        if (!isNaN(v)) sum += v;
-      }
-      allPlayers.push({ group: g+1, name, scores, sum, signed: !!signData[g][p] });
+      const totalEl = document.getElementById(`total-${g}-${p}`);
+      const sum = parseInt(totalEl.value) || 0;
+      const signed = !!(signData[g] && signData[g][p]);
+      allPlayers.push({ group: g+1, lane: p+1, name, sum, signed });
     }
   }
-  // Sort by total desc
   allPlayers.sort((a, b) => b.sum - a.sum);
+  return allPlayers;
+}
+
+function buildSummary() {
+  const wrap = document.getElementById('summaryWrap');
+  const allPlayers = collectAllPlayers();
 
   let html = `<table class="summary-table"><thead><tr>
-    <th style="width:50px">순위</th><th style="width:50px">조</th><th style="width:80px">이름</th>`;
-  for (let i = 1; i <= SHOTS; i++) html += `<th>${i}</th>`;
-  html += `<th style="width:60px">합계</th><th style="width:60px">서명</th></tr></thead><tbody>`;
+    <th style="width:50px">순위</th><th style="width:50px">조</th>
+    <th style="width:70px">사대번호</th><th>이름</th>
+    <th style="width:80px">합계</th><th style="width:70px">서명</th>
+  </tr></thead><tbody>`;
 
   let grandTotal = 0, count = 0;
   allPlayers.forEach((pl, idx) => {
@@ -431,18 +452,16 @@ function buildSummary() {
     html += `<tr>
       <td class="${rankClass}">${idx+1}</td>
       <td>${pl.group}조</td>
-      <td style="font-weight:700">${pl.name}</td>`;
-    pl.scores.forEach(sc => html += `<td>${sc}</td>`);
-    html += `<td style="font-weight:900;font-size:15px">${pl.sum}</td>`;
-    html += `<td>${pl.signed ? '✔' : ''}</td></tr>`;
+      <td>${pl.lane}</td>
+      <td style="font-weight:700">${pl.name}</td>
+      <td style="font-weight:900;font-size:16px">${pl.sum}</td>
+      <td>${pl.signed ? '✔' : ''}</td></tr>`;
     grandTotal += pl.sum; count++;
   });
-
   if (count > 0) {
     html += `<tr class="summary-total-row">
-      <td colspan="3">전체 합계 / 평균</td>`;
-    for (let i = 0; i < SHOTS; i++) html += `<td></td>`;
-    html += `<td>${grandTotal}</td><td>${count}명</td></tr>`;
+      <td colspan="4">전체 합계 / 평균</td>
+      <td>${grandTotal}</td><td>${count}명</td></tr>`;
   }
   html += '</tbody></table>';
   if (count === 0) html = '<div style="padding:40px;text-align:center;color:#94a3b8;font-size:16px">입력된 선수 데이터가 없습니다.</div>';
@@ -450,45 +469,62 @@ function buildSummary() {
 }
 
 // ============================================================
-// PDF SAVE — build print view then trigger window.print()
+// PDF SAVE — window.print()
 // ============================================================
 function savePDF() {
   const printView = document.getElementById('printView');
   let html = '';
 
-  for (let g = 0; g < GROUPS; g++) {
+  // Group pages (landscape)
+  for (let g = 0; g < groupCount; g++) {
     let tbody = '';
     for (let p = 0; p < PLAYERS; p++) {
       const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
       const name = nameEl ? nameEl.value || '' : '';
-      let scores = '', sum = 0;
-      for (let s = 0; s < SHOTS; s++) {
-        const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
-        const v = parseInt(el.value);
-        scores += `<td>${isNaN(v) ? '' : v}</td>`;
-        if (!isNaN(v)) sum += v;
-      }
-      const signImg = signData[g][p] ? `<img src="${signData[g][p]}">` : '';
-      tbody += `<tr><td class="pt-name">${name}</td>${scores}<td class="pt-total">${sum}</td><td class="pt-sign">${signImg}</td></tr>`;
+      const totalEl = document.getElementById(`total-${g}-${p}`);
+      const sum = totalEl.value || '';
+      const signImg = (signData[g] && signData[g][p]) ? `<img src="${signData[g][p]}">` : '';
+      tbody += `<tr>
+        <td class="pt-group">${g+1}</td>
+        <td class="pt-lane">${p+1}</td>
+        <td class="pt-name">${name}</td>
+        <td class="pt-total">${sum}</td>
+        <td class="pt-sign">${signImg}</td></tr>`;
     }
-
     html += `<div class="print-page">
       <h2>${g+1}조 점수 확인 서명</h2>
       <div class="print-sub">2026 대한장애인사격연맹 리그 챔피언십 어울림대회</div>
       <table class="print-table">
-        <thead><tr>
-          <th>이름</th>
-          ${Array.from({length:SHOTS},(_,i)=>`<th>${i+1}</th>`).join('')}
-          <th>합계</th>
-          <th>서명</th>
-        </tr></thead>
+        <thead><tr><th>조</th><th>사대번호</th><th>이름</th><th>합계</th><th>서명</th></tr></thead>
         <tbody>${tbody}</tbody>
       </table>
     </div>`;
   }
 
+  // Summary page (portrait)
+  const allPlayers = collectAllPlayers();
+  if (allPlayers.length > 0) {
+    let sumTbody = '';
+    allPlayers.forEach((pl, idx) => {
+      const rc = idx === 0 ? ' class="pt-rank-1"' : idx === 1 ? ' class="pt-rank-2"' : idx === 2 ? ' class="pt-rank-3"' : '';
+      sumTbody += `<tr>
+        <td${rc}>${idx+1}</td>
+        <td>${pl.group}조</td>
+        <td>${pl.lane}</td>
+        <td class="pt-name">${pl.name}</td>
+        <td class="pt-total">${pl.sum}</td></tr>`;
+    });
+    html += `<div class="print-page-summary">
+      <h2>전체 합산 결과</h2>
+      <div class="print-sub">2026 대한장애인사격연맹 리그 챔피언십 어울림대회 — 전 조 점수 종합</div>
+      <table class="print-table">
+        <thead><tr><th>순위</th><th>조</th><th>사대번호</th><th>이름</th><th>합계</th></tr></thead>
+        <tbody>${sumTbody}</tbody>
+      </table>
+    </div>`;
+  }
+
   printView.innerHTML = html;
-  // Let images render, then print
   setTimeout(() => window.print(), 200);
 }
 
@@ -497,50 +533,29 @@ function savePDF() {
 // ============================================================
 function saveXLSX() {
   const wb = XLSX.utils.book_new();
-  for (let g = 0; g < GROUPS; g++) {
-    const header = ['이름','1','2','3','4','5','6','7','8','9','10','합계','서명'];
+  for (let g = 0; g < groupCount; g++) {
+    const header = ['조','사대번호','이름','합계','서명'];
     const rows = [header];
     for (let p = 0; p < PLAYERS; p++) {
       const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
       const name = nameEl ? nameEl.value || '' : '';
-      const scores = []; let sum = 0;
-      for (let s = 0; s < SHOTS; s++) {
-        const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
-        const v = parseInt(el.value);
-        if (!isNaN(v)) { scores.push(v); sum += v; } else scores.push('');
-      }
-      rows.push([name, ...scores, sum, signData[g][p] ? '서명완료' : '']);
+      const totalEl = document.getElementById(`total-${g}-${p}`);
+      const sum = parseInt(totalEl.value) || 0;
+      const signed = (signData[g] && signData[g][p]) ? '예' : '아니오';
+      rows.push([g+1, p+1, name, sum, signed]);
     }
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:10},...Array(SHOTS).fill({wch:6}),{wch:8},{wch:10}];
+    ws['!cols'] = [{wch:6},{wch:10},{wch:12},{wch:8},{wch:10}];
     XLSX.utils.book_append_sheet(wb, ws, `${g+1}조`);
   }
 
   // Summary sheet
-  const sumHeader = ['순위','조','이름','1','2','3','4','5','6','7','8','9','10','합계'];
-  const sumRows = [sumHeader];
-  let allP = [];
-  for (let g = 0; g < GROUPS; g++) {
-    for (let p = 0; p < PLAYERS; p++) {
-      const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
-      const name = nameEl ? nameEl.value : '';
-      if (!name) continue;
-      let sum = 0, scores = [];
-      for (let s = 0; s < SHOTS; s++) {
-        const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
-        const v = parseInt(el.value);
-        scores.push(isNaN(v) ? '' : v);
-        if (!isNaN(v)) sum += v;
-      }
-      allP.push({ group: g+1, name, scores, sum });
-    }
-  }
-  allP.sort((a, b) => b.sum - a.sum);
-  allP.forEach((pl, i) => sumRows.push([i+1, `${pl.group}조`, pl.name, ...pl.scores, pl.sum]));
+  const sumRows = [['순위','조','사대번호','이름','합계']];
+  const allP = collectAllPlayers();
+  allP.forEach((pl, i) => sumRows.push([i+1, `${pl.group}조`, pl.lane, pl.name, pl.sum]));
   const sumWs = XLSX.utils.aoa_to_sheet(sumRows);
-  sumWs['!cols'] = [{wch:6},{wch:6},{wch:10},...Array(SHOTS).fill({wch:6}),{wch:8}];
+  sumWs['!cols'] = [{wch:6},{wch:6},{wch:10},{wch:12},{wch:8}];
   XLSX.utils.book_append_sheet(wb, sumWs, '합산');
-
   XLSX.writeFile(wb, '2026_리그챔피언십_점수확인서명.xlsx');
 }
 
@@ -549,14 +564,14 @@ function saveXLSX() {
 // ============================================================
 function resetAll() {
   if (!confirm('모든 입력과 서명을 초기화하시겠습니까?')) return;
-  document.querySelectorAll('.name-input, .score-input').forEach(el => el.value = '');
-  for (let g = 0; g < GROUPS; g++)
+  document.querySelectorAll('.name-input').forEach(el => el.value = '');
+  for (let g = 0; g < groupCount; g++)
     for (let p = 0; p < PLAYERS; p++) {
-      document.getElementById(`total-${g}-${p}`).textContent = '0';
-      signData[g][p] = null;
+      const totalEl = document.getElementById(`total-${g}-${p}`);
+      if (totalEl) totalEl.value = '';
+      if (signData[g]) signData[g][p] = null;
       const thumb = document.getElementById(`thumb-${g}-${p}`);
-      thumb.innerHTML = '<span class="sign-placeholder">터치하여 서명</span>';
-      thumb.classList.remove('signed');
+      if (thumb) { thumb.innerHTML = '<span class="sign-placeholder">터치하여 서명</span>'; thumb.classList.remove('signed'); }
     }
 }
 </script>
