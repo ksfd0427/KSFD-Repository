@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>2026 리그 챔피언십 점수 확인 서명</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Apple SD Gothic Neo','맑은 고딕',sans-serif; background: #f0f4f8; color: #1e293b; }
+
+  /* === NAV === */
+  .nav { position: sticky; top: 0; z-index: 100; background: #0a2647; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .nav h1 { color: #fff; font-size: 14px; flex: 1; min-width: 200px; line-height: 1.3; }
+  .nav-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+  .nav-pill { padding: 6px 14px; border-radius: 20px; border: 1.5px solid rgba(255,255,255,.3); background: transparent; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .nav-pill.active { background: #e8b931; border-color: #e8b931; color: #0a2647; }
+  .nav-actions { display: flex; gap: 6px; margin-left: auto; }
+  .btn { padding: 8px 16px; border-radius: 8px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .btn-pdf { background: #205295; color: #fff; }
+  .btn-pdf:active { background: #144272; }
+  .btn-xlsx { background: #16a34a; color: #fff; }
+  .btn-xlsx:active { background: #15803d; }
+  .btn-reset { background: #dc2626; color: #fff; }
+  .btn-reset:active { background: #b91c1c; }
+
+  /* === PAGE === */
+  .page { display: none; padding: 12px; max-width: 1100px; margin: 0 auto; }
+  .page.active { display: block; }
+  .page-header { text-align: center; margin-bottom: 10px; }
+  .page-header h2 { font-size: 18px; color: #0a2647; }
+  .page-header .sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+  /* === TABLE === */
+  .score-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .score-table th, .score-table td { border: 1px solid #e2e8f0; padding: 6px 4px; text-align: center; font-size: 13px; }
+  .score-table thead th { background: #0a2647; color: #fff; font-size: 12px; font-weight: 700; }
+  .score-table thead th.col-name { width: 80px; }
+  .score-table thead th.col-score { width: auto; }
+  .score-table thead th.col-total { background: #144272; width: 60px; }
+  .score-table thead th.col-sign { background: #205295; width: 140px; }
+
+  .name-input { width: 100%; border: none; background: #f8fafc; padding: 8px 4px; font-size: 14px; text-align: center; font-weight: 600; border-radius: 4px; }
+  .name-input:focus { outline: 2px solid #205295; background: #fff; }
+
+  .score-input { width: 100%; border: none; background: #f8fafc; padding: 8px 2px; font-size: 16px; font-weight: 700; text-align: center; border-radius: 4px; -moz-appearance: textfield; }
+  .score-input::-webkit-outer-spin-button,
+  .score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .score-input:focus { outline: 2px solid #e8b931; background: #fffbeb; }
+
+  .total-cell { font-size: 18px; font-weight: 800; color: #0a2647; background: #f0f4f8; }
+
+  /* === SIGNATURE === */
+  .sign-cell { padding: 2px !important; position: relative; }
+  .sign-canvas { width: 130px; height: 50px; border: 1.5px dashed #cbd5e1; border-radius: 6px; background: #fafbfc; cursor: crosshair; touch-action: none; }
+  .sign-canvas.signed { border-color: #205295; border-style: solid; background: #fff; }
+  .sign-clear { position: absolute; top: 2px; right: 4px; width: 18px; height: 18px; border-radius: 50%; background: #ef4444; color: #fff; border: none; font-size: 10px; line-height: 18px; text-align: center; cursor: pointer; display: none; z-index: 2; }
+  .sign-canvas.signed ~ .sign-clear { display: block; }
+
+  /* === NUMPAD MODAL === */
+  .numpad-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; align-items: flex-end; justify-content: center; }
+  .numpad-overlay.show { display: flex; }
+  .numpad { background: #fff; border-radius: 16px 16px 0 0; padding: 12px; width: 100%; max-width: 400px; box-shadow: 0 -4px 20px rgba(0,0,0,.15); }
+  .numpad-display { background: #f0f4f8; border-radius: 10px; padding: 12px; text-align: right; font-size: 32px; font-weight: 800; color: #0a2647; margin-bottom: 10px; min-height: 52px; }
+  .numpad-label { font-size: 12px; color: #64748b; text-align: left; margin-bottom: 4px; }
+  .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .numpad-key { padding: 14px; border-radius: 10px; border: 1px solid #e2e8f0; background: #fff; font-size: 22px; font-weight: 700; cursor: pointer; transition: all .1s; color: #1e293b; }
+  .numpad-key:active { background: #e2e8f0; transform: scale(.95); }
+  .numpad-key.del { background: #fef2f2; color: #dc2626; font-size: 16px; }
+  .numpad-key.enter { background: #0a2647; color: #fff; }
+  .numpad-key.zero { }
+
+  /* === PDF print === */
+  @media print {
+    .nav, .numpad-overlay, .sign-clear { display: none !important; }
+    body { background: #fff; }
+    .page { display: block !important; page-break-after: always; padding: 20px; }
+    .page:last-child { page-break-after: avoid; }
+    .score-table { box-shadow: none; }
+    .name-input, .score-input { border: none; background: transparent; }
+    .sign-canvas { border: 1px solid #ccc; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <h1>2026 대한장애인사격연맹<br>리그 챔피언십 어울림대회 점수 확인 서명</h1>
+  <div class="nav-pills" id="navPills"></div>
+  <div class="nav-actions">
+    <button class="btn btn-pdf" onclick="savePDF()">PDF 저장</button>
+    <button class="btn btn-xlsx" onclick="saveXLSX()">엑셀 저장</button>
+    <button class="btn btn-reset" onclick="resetAll()">초기화</button>
+  </div>
+</nav>
+
+<div id="pages"></div>
+
+<!-- Numpad -->
+<div class="numpad-overlay" id="numpadOverlay" onclick="if(event.target===this)closeNumpad()">
+  <div class="numpad">
+    <div class="numpad-label" id="numpadLabel"></div>
+    <div class="numpad-display" id="numpadDisplay">0</div>
+    <div class="numpad-grid">
+      <button class="numpad-key" onclick="numKey('1')">1</button>
+      <button class="numpad-key" onclick="numKey('2')">2</button>
+      <button class="numpad-key" onclick="numKey('3')">3</button>
+      <button class="numpad-key" onclick="numKey('4')">4</button>
+      <button class="numpad-key" onclick="numKey('5')">5</button>
+      <button class="numpad-key" onclick="numKey('6')">6</button>
+      <button class="numpad-key" onclick="numKey('7')">7</button>
+      <button class="numpad-key" onclick="numKey('8')">8</button>
+      <button class="numpad-key" onclick="numKey('9')">9</button>
+      <button class="numpad-key del" onclick="numKey('del')">⌫</button>
+      <button class="numpad-key zero" onclick="numKey('0')">0</button>
+      <button class="numpad-key enter" onclick="numKey('enter')">확인</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const GROUPS = 12, PLAYERS = 4, SHOTS = 10;
+let currentPage = 0, numpadTarget = null, numpadValue = '';
+
+// === Build pages ===
+const pagesEl = document.getElementById('pages');
+const pillsEl = document.getElementById('navPills');
+
+for (let g = 0; g < GROUPS; g++) {
+  // Nav pill
+  const pill = document.createElement('button');
+  pill.className = 'nav-pill' + (g === 0 ? ' active' : '');
+  pill.textContent = `${g + 1}조`;
+  pill.onclick = () => showPage(g);
+  pillsEl.appendChild(pill);
+
+  // Page
+  const page = document.createElement('div');
+  page.className = 'page' + (g === 0 ? ' active' : '');
+  page.id = `page-${g}`;
+  page.innerHTML = `
+    <div class="page-header">
+      <h2>${g + 1}조 점수 확인 서명</h2>
+      <div class="sub">2026 대한장애인사격연맹 리그 챔피언십 어울림대회</div>
+    </div>
+    <table class="score-table">
+      <thead>
+        <tr>
+          <th class="col-name">이름</th>
+          ${Array.from({length: SHOTS}, (_, i) => `<th class="col-score">${i + 1}</th>`).join('')}
+          <th class="col-total">합계</th>
+          <th class="col-sign">서명</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${Array.from({length: PLAYERS}, (_, p) => `
+        <tr>
+          <td><input class="name-input" type="text" placeholder="선수명" data-g="${g}" data-p="${p}"></td>
+          ${Array.from({length: SHOTS}, (_, s) => `
+          <td><input class="score-input" type="text" inputmode="none" readonly
+            data-g="${g}" data-p="${p}" data-s="${s}"
+            onfocus="openNumpad(this)" placeholder="·"></td>`).join('')}
+          <td class="total-cell" id="total-${g}-${p}">0</td>
+          <td class="sign-cell">
+            <canvas class="sign-canvas" id="sign-${g}-${p}" width="260" height="100"></canvas>
+            <button class="sign-clear" onclick="clearSign(${g},${p})">✕</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+  pagesEl.appendChild(page);
+}
+
+// === Page navigation ===
+function showPage(idx) {
+  document.querySelectorAll('.page').forEach((p, i) => p.classList.toggle('active', i === idx));
+  document.querySelectorAll('.nav-pill').forEach((p, i) => p.classList.toggle('active', i === idx));
+  currentPage = idx;
+}
+
+// === Numpad ===
+function openNumpad(el) {
+  numpadTarget = el;
+  numpadValue = el.value || '';
+  document.getElementById('numpadDisplay').textContent = numpadValue || '0';
+  const g = el.dataset.g, p = el.dataset.p, s = parseInt(el.dataset.s) + 1;
+  const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
+  const name = nameEl && nameEl.value ? nameEl.value : `선수${parseInt(p)+1}`;
+  document.getElementById('numpadLabel').textContent = `${name} — ${s}발`;
+  document.getElementById('numpadOverlay').classList.add('show');
+}
+
+function closeNumpad() {
+  document.getElementById('numpadOverlay').classList.remove('show');
+  numpadTarget = null;
+}
+
+function numKey(k) {
+  if (k === 'del') {
+    numpadValue = numpadValue.slice(0, -1);
+  } else if (k === 'enter') {
+    if (numpadTarget) {
+      numpadTarget.value = numpadValue;
+      updateTotal(numpadTarget.dataset.g, numpadTarget.dataset.p);
+      // Auto-advance to next empty input
+      const g = parseInt(numpadTarget.dataset.g);
+      const p = parseInt(numpadTarget.dataset.p);
+      const s = parseInt(numpadTarget.dataset.s);
+      closeNumpad();
+      // Find next score input
+      let nextS = s + 1, nextP = p, found = false;
+      while (nextP < PLAYERS) {
+        while (nextS < SHOTS) {
+          const nx = document.querySelector(`input.score-input[data-g="${g}"][data-p="${nextP}"][data-s="${nextS}"]`);
+          if (nx && !nx.value) { setTimeout(() => nx.focus(), 100); found = true; break; }
+          nextS++;
+        }
+        if (found) break;
+        nextP++; nextS = 0;
+      }
+    }
+    return;
+  } else {
+    if (numpadValue.length < 3) numpadValue += k;
+  }
+  document.getElementById('numpadDisplay').textContent = numpadValue || '0';
+}
+
+function updateTotal(g, p) {
+  let sum = 0;
+  for (let s = 0; s < SHOTS; s++) {
+    const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
+    const v = parseInt(el.value);
+    if (!isNaN(v)) sum += v;
+  }
+  document.getElementById(`total-${g}-${p}`).textContent = sum;
+}
+
+// === Signature canvases ===
+function initSignature(canvas) {
+  const ctx = canvas.getContext('2d');
+  let drawing = false, hasStroke = false;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#1e293b';
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: (t.clientX - rect.left) * (canvas.width / rect.width), y: (t.clientY - rect.top) * (canvas.height / rect.height) };
+  }
+
+  function start(e) { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(e) { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasStroke = true; }
+  function end(e) { drawing = false; if (hasStroke) canvas.classList.add('signed'); }
+
+  canvas.addEventListener('pointerdown', start);
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointerleave', end);
+}
+
+document.querySelectorAll('.sign-canvas').forEach(c => initSignature(c));
+
+function clearSign(g, p) {
+  const canvas = document.getElementById(`sign-${g}-${p}`);
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.classList.remove('signed');
+}
+
+// === PDF Save (1조 = 1페이지, 꽉 채움) ===
+async function savePDF() {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pdfW = pdf.internal.pageSize.getWidth();   // 297
+  const pdfH = pdf.internal.pageSize.getHeight();   // 210
+  const margin = 8;
+  const pages = document.querySelectorAll('.page');
+
+  // Show all pages temporarily & hide nav elements inside
+  pages.forEach(p => { p.dataset.origDisplay = p.style.display; p.style.display = 'block'; });
+  document.querySelectorAll('.sign-clear').forEach(b => b.style.display = 'none');
+
+  for (let i = 0; i < pages.length; i++) {
+    if (i > 0) pdf.addPage();
+    const canvas = await html2canvas(pages[i], {
+      scale: 3, useCORS: true, backgroundColor: '#ffffff',
+      logging: false, windowWidth: 1100
+    });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const availW = pdfW - margin * 2;
+    const availH = pdfH - margin * 2;
+    const ratio = Math.min(availW / canvas.width, availH / canvas.height);
+    const w = canvas.width * ratio;
+    const h = canvas.height * ratio;
+    pdf.addImage(imgData, 'JPEG', (pdfW - w) / 2, margin, w, h);
+  }
+
+  // Restore
+  pages.forEach(p => { p.style.display = p.dataset.origDisplay || ''; delete p.dataset.origDisplay; });
+  document.querySelectorAll('.sign-clear').forEach(b => b.style.display = '');
+
+  pdf.save('2026_리그챔피언십_점수확인서명.pdf');
+}
+
+// === Excel Save (조별 시트) ===
+function saveXLSX() {
+  const wb = XLSX.utils.book_new();
+
+  for (let g = 0; g < GROUPS; g++) {
+    const header = ['이름', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '합계', '서명'];
+    const rows = [header];
+
+    for (let p = 0; p < PLAYERS; p++) {
+      const nameEl = document.querySelector(`input.name-input[data-g="${g}"][data-p="${p}"]`);
+      const name = nameEl ? nameEl.value || '' : '';
+      const scores = [];
+      let sum = 0;
+      for (let s = 0; s < SHOTS; s++) {
+        const el = document.querySelector(`input.score-input[data-g="${g}"][data-p="${p}"][data-s="${s}"]`);
+        const v = parseInt(el.value);
+        if (!isNaN(v)) { scores.push(v); sum += v; }
+        else scores.push('');
+      }
+      const signCanvas = document.getElementById(`sign-${g}-${p}`);
+      const signed = signCanvas.classList.contains('signed') ? '서명완료' : '';
+      rows.push([name, ...scores, sum, signed]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 10 },  // 이름
+      ...Array(SHOTS).fill({ wch: 6 }),  // 1~10
+      { wch: 8 },   // 합계
+      { wch: 10 },  // 서명
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, `${g + 1}조`);
+  }
+
+  XLSX.writeFile(wb, '2026_리그챔피언십_점수확인서명.xlsx');
+}
+
+// === Reset ===
+function resetAll() {
+  if (!confirm('모든 입력과 서명을 초기화하시겠습니까?')) return;
+  document.querySelectorAll('.name-input, .score-input').forEach(el => el.value = '');
+  for (let g = 0; g < GROUPS; g++)
+    for (let p = 0; p < PLAYERS; p++) {
+      document.getElementById(`total-${g}-${p}`).textContent = '0';
+      clearSign(g, p);
+    }
+}
+</script>
+</body>
+</html>
