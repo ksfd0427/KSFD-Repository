@@ -190,6 +190,25 @@ const SUPABASE_URL = "https://iwasaoroejigbngekjnp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_3Dc08ofqVs-XFGPpSC_Cug_WArWTPX1";
 const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
+// Excel 날짜 시리얼 넘버 또는 비표준 형식 → "YYYY-MM-DD" 변환
+function parseDob(v) {
+  if (!v) return "";
+  if (v instanceof Date) {
+    const yy=v.getFullYear(), mm=String(v.getMonth()+1).padStart(2,"0"), dd=String(v.getDate()).padStart(2,"0");
+    return yy+"-"+mm+"-"+dd;
+  }
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const n = Number(s);
+  if (!isNaN(n) && n > 1000 && n < 100000) {
+    const d = new Date((n - 25569) * 86400000);
+    const yy=d.getUTCFullYear(), mm=String(d.getUTCMonth()+1).padStart(2,"0"), dd=String(d.getUTCDate()).padStart(2,"0");
+    return yy+"-"+mm+"-"+dd;
+  }
+  if (/^\d{8}$/.test(s)) return s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8);
+  return s;
+}
+
 function TournamentRegistration() {
   const [step, setStep] = useState(0);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
@@ -433,22 +452,16 @@ function TournamentRegistration() {
       reader.onload = (evt) => {
         try {
           const wb = XLSX.read(evt.target.result, { type: "array" });
-          // Excel 날짜 시리얼 넘버 → "YYYY-MM-DD" 변환
-          const parseDob = (v) => {
-            if (!v) return "";
-            const s = String(v).trim();
-            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // 이미 올바른 형식
-            const n = Number(s);
-            if (!isNaN(n) && n > 10000 && n < 100000) {
-              // Excel 시리얼 넘버 (1900 기준)
-              const d = new Date((n - 25569) * 86400000);
-              const yy = d.getUTCFullYear(), mm = String(d.getUTCMonth()+1).padStart(2,"0"), dd = String(d.getUTCDate()).padStart(2,"0");
-              return yy+"-"+mm+"-"+dd;
-            }
-            // "YYYYMMDD" 형식 시도
-            if (/^\d{8}$/.test(s)) return s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8);
-            return s;
-          };
+          // ── 업로드 정규화: 코드 별칭(alias) + 현재 DB 종목 기준 메타 역조회 + 미매핑 리포트 ──
+          const CODE_ALIAS = {}; // 구→신 코드 변경 시 추가 (예: "OLD":"NEW")
+          const _liveMeta = {};  // code → {cat}
+          (activeIndividualEvents || []).forEach(e => { _liveMeta[e.code] = { cat: e.cat }; });
+          (activePairEvents || []).forEach(e => { if (!_liveMeta[e.code]) _liveMeta[e.code] = { cat: e.cat }; });
+          [...INDIVIDUAL_EVENTS, ...PAIR_EVENTS].forEach(e => { if (!_liveMeta[e.code]) _liveMeta[e.code] = { cat: e.cat }; }); // 하드코딩 폴백
+          const _unmapped = new Set();
+          const normCode = (c) => { const k = String(c || "").trim(); return CODE_ALIAS[k] || k; };
+          const codeCat = (c) => { const k = normCode(c); const meta = _liveMeta[k]; if (!meta) { _unmapped.add(String(c || "").trim()); return null; } return meta.cat; };
+          const reportUnmapped = () => { if (_unmapped.size > 0) alert("⚠️ 현재 종목 목록에 없는 코드가 있어 분류 확인이 필요합니다:\n" + [..._unmapped].join(", ") + "\n\n(엔트리 자체는 보존되었습니다. 해당 종목이 이 대회에 배정되어 있는지 확인하세요.)"); };
           const isAdminFormat = !!wb.Sheets["신청요약"] && !wb.Sheets["기본정보"];
 
           if (isAdminFormat) {
@@ -504,17 +517,15 @@ function TournamentRegistration() {
             const eSheet = wb.Sheets["개인전종목"];
             if (eSheet) {
               XLSX.utils.sheet_to_json(eSheet).forEach(r => {
-                const code = String(r["종목코드"] || "").trim();
+                const code = normCode(r["종목코드"]);
                 const pName = String(r["선수명"] || "").trim();
                 if (!code || !pName) return;
                 const mId = nameToId[pName];
                 if (!mId) return;
                 if (!evObj[code]) evObj[code] = [];
                 if (!evObj[code].includes(mId)) evObj[code].push(mId);
-                // events 카테고리 태깅 (종목코드 → 카테고리)
-                const allEvDefs = [...INDIVIDUAL_EVENTS, ...PAIR_EVENTS];
-                const evDef = allEvDefs.find(e => e.code === code);
-                const cat = evDef ? evDef.cat : null;
+                // 카테고리 태깅: 현재 DB 종목 기준 역조회(청각 포함), 미매핑은 리포트
+                const cat = codeCat(code);
                 const mem = newMembers.find(m => m.id === mId);
                 if (mem && cat && !mem.events.includes(cat)) mem.events.push(cat);
               });
@@ -525,7 +536,7 @@ function TournamentRegistration() {
             const tSheet = wb.Sheets["단체전_혼성팀"];
             if (tSheet) {
               XLSX.utils.sheet_to_json(tSheet).forEach(r => {
-                const code = String(r["종목코드"] || "").trim();
+                const code = normCode(r["종목코드"]);
                 const type = String(r["유형"] || "").trim();
                 const teamNum = Number(r["팀번호"] || 1);
                 const pName = String(r["선수명"] || "").trim();
@@ -548,10 +559,8 @@ function TournamentRegistration() {
                 while (target[key].length <= slotOrder) target[key].push(null);
                 target[key][slotOrder] = mId;
                 unionTarget[key] = { checked: isUnion, memo: unionMemo };
-                // 팀 종목도 카테고리 태깅
-                const allEvDefs2 = [...INDIVIDUAL_EVENTS, ...PAIR_EVENTS];
-                const evDef2 = allEvDefs2.find(e => e.code === code);
-                const cat2 = evDef2 ? evDef2.cat : null;
+                // 팀 종목 카테고리 태깅: 현재 DB 종목 기준 역조회
+                const cat2 = codeCat(code);
                 const mem2 = newMembers.find(m => m.id === mId);
                 if (mem2 && cat2 && !mem2.events.includes(cat2)) mem2.events.push(cat2);
               });
@@ -581,6 +590,7 @@ function TournamentRegistration() {
             setShowEntryChoice(false);
             setTimeout(() => setStep(2), 200);
             alert("Admin 엑셀 불러오기 완료!\n선수단 " + newMembers.length + "명 · 개인종목 " + Object.keys(evObj).length + "개 · 총기 " + Object.values(fObj).reduce((s, a) => s + a.length, 0) + "정\n\n선수단 확인 단계(2단계)로 이동합니다.");
+            reportUnmapped();
 
           } else {
             // ── 기존 중간저장 엑셀 파싱 ──
@@ -617,7 +627,8 @@ function TournamentRegistration() {
               const evObj = {};
               eRows.forEach(r => {
                 if (r["종목코드"] && r["선수IDs"]) {
-                  evObj[r["종목코드"]] = String(r["선수IDs"]).split(",").filter(Boolean).map(Number);
+                  const code = normCode(r["종목코드"]); codeCat(code); // 미매핑 감지(리포트용)
+                  evObj[code] = String(r["선수IDs"]).split(",").filter(Boolean).map(Number);
                 }
               });
               setIndividualEvents(evObj);
@@ -666,6 +677,7 @@ function TournamentRegistration() {
               setFirearms(fObj);
             }
             setShowEntryChoice(false);
+            reportUnmapped();
             alert("불러오기 완료! 저장된 단계로 이동합니다.");
           }
         } catch (err) {
@@ -697,7 +709,7 @@ function TournamentRegistration() {
 
       // 2. 선수단 인원 등록
       const memberRows = members.map(m => ({
-        application_id: appId, name: m.name, gender: m.gender, dob: m.dob,
+        application_id: appId, name: (m.name||"").trim(), gender: m.gender==="녀"?"여":m.gender, dob: parseDob(m.dob) || null,
         role: m.role, sub_org: m.subOrg, class_type: m.role === "선수" ? (m.events?.[0] || null) : null
       }));
       const { data: memberData, error: memErr } = await supabase
@@ -706,15 +718,10 @@ function TournamentRegistration() {
       const memberIdMap = {}; // frontId → dbId
       members.forEach((m, i) => { memberIdMap[m.id] = memberData[i].id; });
 
-      // 3. 개인전 종목 등록 (유효한 종목만 필터)
-      const players = members.filter(m => m.role === "선수");
-      const validEvCodes = new Set(activeIndividualEvents.filter(ev =>
-        players.some(p => p.events.includes(ev.cat) && (ev.gender === "혼" || ev.gender === p.gender))
-      ).map(ev => ev.code));
+      // 3. 개인전 종목 등록 — UI에서 자격 종목만 선택 가능하므로 선택분을 그대로 저장(조용한 제외 없음)
       const entryRows = [];
       Object.entries(individualEvents).forEach(([evCode, mIds]) => {
-        if (!validEvCodes.has(evCode)) return; // 유효하지 않은 종목 스킵
-        mIds.forEach(mid => {
+        (mIds || []).forEach(mid => {
           if (memberIdMap[mid]) entryRows.push({ application_id: appId, member_id: memberIdMap[mid], event_code: evCode });
         });
       });

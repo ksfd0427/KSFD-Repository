@@ -309,6 +309,9 @@ const DB_REC_EVENTS = [
   { code:"DB-P6",    name:"DB-P6 공기권총 혼성팀 청각",         category:"청각", type:"mixed",      gender:"혼", team_size:2, sort_order:112, result_format:"mixedPistol", final_format:"medal_match" },
 ];
 
+// 종목 "기본값" = 일반 20종 + 청각 12종. 대회운영 '종목 설정'의 기본 종목 시드/프리셋 기준값.
+const ALL_DEFAULT_EVENTS = [...DEFAULT_EVENTS, ...DB_REC_EVENTS];
+
 const DROP_SQL = `DROP FUNCTION IF EXISTS submit_application(JSONB) CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
 DROP TABLE IF EXISTS best_records CASCADE;
@@ -548,8 +551,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     }catch(e){console.warn("종목 마스터 저장 실패",e);}
   };
   const seedFromDefault=async()=>{
-    if(masterEvents.length>0&&!confirm("기존 종목 마스터를 DEFAULT 종목("+DEFAULT_EVENTS.length+"개)으로 덮어씁니다. 계속하시겠습니까?")) return;
-    const list=DEFAULT_EVENTS.map((e,i)=>({...e,distance:e.name.includes("50m")?"50M":e.name.includes("25m")?"25M":e.category==="산탄총"?"산탄총":"10M",force_mixed:e.type==="mixed"}));
+    if(masterEvents.length>0&&!confirm("기존 종목 마스터를 기본 종목("+ALL_DEFAULT_EVENTS.length+"개: 일반"+DEFAULT_EVENTS.length+"+청각"+DB_REC_EVENTS.length+")으로 덮어씁니다. 계속하시겠습니까?")) return;
+    const list=ALL_DEFAULT_EVENTS.map((e,i)=>({...e,distance:e.name.includes("50m")?"50M":e.name.includes("25m")?"25M":e.category==="산탄총"?"산탄총":"10M",force_mixed:e.type==="mixed"}));
     setMasterEvents(list);
     await saveMasterEvents(list);
     flash("기본 종목 "+list.length+"개 불러오기 완료");
@@ -1681,8 +1684,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     setEvPresetMenu(false);
   };
   const saveDefaultAsPreset=async()=>{
-    const evData=DEFAULT_EVENTS.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format,final_format:e.final_format,distance:e.distance||"10M",league_eligible:!!e.league_eligible}));
-    const key="기본 종목 ("+DEFAULT_EVENTS.length+"개)";
+    const evData=ALL_DEFAULT_EVENTS.map(e=>({code:e.code,name:e.name,category:e.category,type:e.type,gender:e.gender,team_size:e.team_size,sort_order:e.sort_order,result_format:e.result_format,final_format:e.final_format,distance:e.distance||(e.name.includes("50m")?"50M":e.name.includes("25m")?"25M":e.category==="산탄총"?"산탄총":"10M"),league_eligible:!!e.league_eligible}));
+    const key="기본 종목 ("+ALL_DEFAULT_EVENTS.length+"개)";
     const updated={...evPresets,[key]:{events:evData,savedAt:new Date().toISOString()}};
     await saveEvPresetsToDB(updated);
     setEvPresets(updated);
@@ -1897,34 +1900,60 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
 
   const saveEditApp=async()=>{
     if(!detailApp)return;
+    // ── 0. 저장 전 전수 검증: 통과 못하면 DB에 아무것도 쓰지 않는다 ──
+    const _normDob=(v)=>{ if(v==null) return null; const s=String(v).trim(); const m=s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/); if(m){ const mo=String(m[2]).padStart(2,"0"), d=String(m[3]).padStart(2,"0"); return m[1]+"-"+mo+"-"+d; } const m2=s.match(/^(\d{4})(\d{2})(\d{2})$/); if(m2) return m2[1]+"-"+m2[2]+"-"+m2[3]; return null; };
+    const _errs=[];
+    editMembers.forEach((m,i)=>{
+      const nm=(m.name||"").trim();
+      const g=m.gender==="녀"?"여":m.gender;
+      const dob=_normDob(m.dob);
+      if(!nm) _errs.push((i+1)+"번째 인원: 이름 누락");
+      if(!["남","여","혼"].includes(g)) _errs.push((nm||(i+1)+"번째")+": 성별 누락/오류");
+      if(!dob) _errs.push((nm||(i+1)+"번째")+": 생년월일 누락/형식오류");
+      if(!(m.role||"").trim()) _errs.push((nm||(i+1)+"번째")+": 역할 누락");
+    });
+    if(_errs.length>0){ flash("저장 취소 — 입력값 확인 필요:\n· "+_errs.join("\n· "),"error"); return; }
     setEditSaving(true);
     try{
       const appId=detailApp.id;
-      // 1. 기존 데이터 삭제 (cascade가 아니므로 순서대로)
-      await sb.from("individual_entries").delete().eq("application_id",appId);
-      await sb.from("team_entries").delete().eq("application_id",appId);
-      const oldMids=appMembers.map(m=>m.id);
-      if(oldMids.length>0) await sb.from("firearms").delete().in("member_id",oldMids);
-      await sb.from("members").delete().eq("application_id",appId);
-
-      // 2. 멤버 재삽입
-      const memberIdMap={}; // tempIdx → newId
-      for(let i=0;i<editMembers.length;i++){
-        const m=editMembers[i];
+      const origIds=new Set(appMembers.map(m=>m.id));
+      const memberIdMap={};   // editMember.id → 실제 DB id (기존 멤버는 동일 id 유지)
+      const keptIds=new Set();
+      // ── 1. 멤버: 기존은 UPDATE(제자리, id 고정) · 신규만 INSERT. 기존 행을 삭제하지 않는다 ──
+      for(const m of editMembers){
         const dbGender=m.gender==="녀"?"여":m.gender;
-        const ins={application_id:appId, name:m.name, gender:dbGender, dob:m.dob, role:m.role, sub_org:m.sub_org||null, class_type:m.role==="선수"?(m._events?.[0]||null):null, phone:m.phone||null};
-        const{data,error}=await sb.from("members").insert(ins).select("id").single();
-        if(error) throw new Error("멤버 저장 실패: "+error.message);
-        memberIdMap[m.id]=data.id;
+        const payload={ name:(m.name||"").trim(), gender:dbGender, dob:_normDob(m.dob), role:m.role, sub_org:m.sub_org||null, class_type:(m.role==="선수")?(m._events?.[0]||null):null, phone:m.phone||null };
+        if(origIds.has(m.id)){
+          const{error}=await sb.from("members").update(payload).eq("id",m.id);
+          if(error) throw new Error("멤버 수정 실패: "+error.message);
+          memberIdMap[m.id]=m.id; keptIds.add(m.id);
+        }else{
+          const{data,error}=await sb.from("members").insert({application_id:appId, ...payload}).select("id").single();
+          if(error) throw new Error("멤버 추가 실패: "+error.message);
+          memberIdMap[m.id]=data.id;
+        }
+      }
+      // ── 2. 제거된 기존 멤버만 삭제 (entries는 member_id FK ON DELETE CASCADE로 자동 정리) ──
+      const removedMids=[...origIds].filter(id=>!keptIds.has(id));
+      if(removedMids.length>0){
+        await sb.from("firearms").delete().in("member_id",removedMids);
+        const{error:rmErr}=await sb.from("members").delete().in("id",removedMids);
+        if(rmErr) throw new Error("인원 삭제 실패: "+rmErr.message);
       }
 
-      // 3. 개인전 종목 재삽입
-      const ieRows=[];
+      // ── 3. 개인전 종목 diff (UNIQUE(member_id,event_code)): 변경분만 추가/삭제 ──
+      const desiredIE=new Set();
       Object.entries(editIndEntries).forEach(([mid,codes])=>{
-        const newMid=memberIdMap[parseInt(mid)];
-        if(newMid) codes.forEach(c=>ieRows.push({application_id:appId, member_id:newMid, event_code:c}));
+        const dbMid=memberIdMap[parseInt(mid)];
+        if(dbMid&&Array.isArray(codes)) codes.forEach(c=>desiredIE.add(dbMid+"|"+c));
       });
-      if(ieRows.length>0){const{error}=await sb.from("individual_entries").insert(ieRows); if(error) throw new Error("종목 저장 실패: "+error.message);}
+      const{data:_curIE,error:_ieSel}=await sb.from("individual_entries").select("id,member_id,event_code").eq("application_id",appId);
+      if(_ieSel) throw new Error("종목 조회 실패: "+_ieSel.message);
+      const _curIEKey=new Set((_curIE||[]).map(r=>r.member_id+"|"+r.event_code));
+      const _ieDel=(_curIE||[]).filter(r=>!desiredIE.has(r.member_id+"|"+r.event_code)).map(r=>r.id);
+      if(_ieDel.length>0){const{error}=await sb.from("individual_entries").delete().in("id",_ieDel); if(error) throw new Error("종목 정리 실패: "+error.message);}
+      const _ieIns=[...desiredIE].filter(k=>!_curIEKey.has(k)).map(k=>{const p=k.split("|");return{application_id:appId, member_id:parseInt(p[0]), event_code:p[1]};});
+      if(_ieIns.length>0){const{error}=await sb.from("individual_entries").insert(_ieIns); if(error) throw new Error("종목 저장 실패: "+error.message);}
 
       // 4. 단체전/혼성팀 재삽입
       const teRows=[];
@@ -1965,7 +1994,16 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
           if(newMid) teRows.push({application_id:appId, event_code:evCode, team_type:teamType, team_number:teamNum||1, member_id:newMid, slot_order:slot, is_union:comp.isUnion||false, union_memo:saveMemo});
         });
       });
-      if(teRows.length>0){const{error}=await sb.from("team_entries").insert(teRows); if(error) throw new Error("팀 저장 실패: "+error.message);}
+      // 4-1. 단체전 diff (team_entries는 UNIQUE 없음 → 내용 키로 비교, 변경분만 반영)
+      const _teKey=(r)=>[r.event_code,r.team_type,r.team_number,r.member_id,r.slot_order,(r.is_union?1:0),(r.union_memo||"")].join("¶");
+      const _desiredTE=new Map(); teRows.forEach(r=>{ const k=_teKey(r); if(!_desiredTE.has(k)) _desiredTE.set(k,r); });
+      const{data:_curTE,error:_teSel}=await sb.from("team_entries").select("*").eq("application_id",appId);
+      if(_teSel) throw new Error("단체전 조회 실패: "+_teSel.message);
+      const _curTEKey=new Set((_curTE||[]).map(_teKey));
+      const _teDel=(_curTE||[]).filter(r=>!_desiredTE.has(_teKey(r))).map(r=>r.id);
+      if(_teDel.length>0){const{error}=await sb.from("team_entries").delete().in("id",_teDel); if(error) throw new Error("단체전 정리 실패: "+error.message);}
+      const _teIns=[..._desiredTE].filter(([k])=>!_curTEKey.has(k)).map(([,r])=>r);
+      if(_teIns.length>0){const{error}=await sb.from("team_entries").insert(_teIns); if(error) throw new Error("단체전 저장 실패: "+error.message);}
 
       // 5. 총기 재삽입
       const fRows=[];
@@ -1973,6 +2011,9 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
         const newMid=memberIdMap[parseInt(mid)];
         if(newMid) guns.forEach(g=>fRows.push({member_id:newMid, gun_type:g.gun_type, manufacturer:g.manufacturer, model:g.model, serial_number:g.serial_number, permit_number:g.permit_number}));
       });
+      // 5-1. 총기: 현재 멤버들의 총기를 교체 (member_id 안정, 소량이라 안전)
+      const _faMids=Object.values(memberIdMap);
+      if(_faMids.length>0){const{error}=await sb.from("firearms").delete().in("member_id",_faMids); if(error) throw new Error("총기 정리 실패: "+error.message);}
       if(fRows.length>0){const{error}=await sb.from("firearms").insert(fRows); if(error) throw new Error("총기 저장 실패: "+error.message);}
 
       flash("신청 수정 완료!");
@@ -4701,7 +4742,7 @@ td{border:1px solid #333;padding:4px 6px}
           <div style={{fontSize:14,fontWeight:700,color:C.gold}}>🎯 종목 설정</div>
           <div style={{fontSize:11,color:C.dim}}>범대회 공통 종목 마스터 · 대회별 종목 배정의 기반</div>
           <div style={{flex:1}}/>
-          <button style={{...S.btn("#334155","#e8dcc8"),fontSize:11}} onClick={seedFromDefault}>📥 기본 종목 ({DEFAULT_EVENTS.length}개)</button>
+          <button style={{...S.btn("#334155","#e8dcc8"),fontSize:11}} onClick={seedFromDefault}>📥 기본 종목 ({ALL_DEFAULT_EVENTS.length}개)</button>
           <label style={{...S.btn("#334155","#e8dcc8"),fontSize:11,cursor:"pointer"}}>
             📂 백업 불러오기<input type="file" accept=".json" style={{display:"none"}} onChange={async(e)=>{
               const file=e.target.files[0]; if(!file) return;
@@ -4736,7 +4777,7 @@ td{border:1px solid #333;padding:4px 6px}
               <div style={{fontSize:48,marginBottom:16}}>🎯</div>
               <div style={{fontSize:15,marginBottom:8}}>등록된 종목이 없습니다</div>
               <div style={{fontSize:12,color:C.dim,marginBottom:20}}>기본 종목을 불러오거나 직접 추가하세요</div>
-              <button style={{...S.btn(C.gold,C.bg),fontSize:13,padding:"10px 24px"}} onClick={seedFromDefault}>📥 기본 종목 불러오기 ({DEFAULT_EVENTS.length}개)</button>
+              <button style={{...S.btn(C.gold,C.bg),fontSize:13,padding:"10px 24px"}} onClick={seedFromDefault}>📥 기본 종목 불러오기 ({ALL_DEFAULT_EVENTS.length}개)</button>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:20,animation:"fadeIn .3s"}}>
@@ -5675,7 +5716,7 @@ td{border:1px solid #333;padding:4px 6px}
                   </button>}
                   <button onClick={saveDefaultAsPreset} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",background:"transparent",border:"none",color:"#e2e8f0",fontSize:11,cursor:"pointer",lineHeight:1.4}}
                     onMouseEnter={e=>e.target.style.background="#334155"} onMouseLeave={e=>e.target.style.background="transparent"}>
-                    📋 기본 종목({DEFAULT_EVENTS.length}개) 프리셋으로 저장
+                    📋 기본 종목({ALL_DEFAULT_EVENTS.length}개) 프리셋으로 저장
                   </button>
                   {events.length>0&&<button onClick={saveEvPreset} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",background:"transparent",border:"none",color:"#e2e8f0",fontSize:11,cursor:"pointer",lineHeight:1.4}}
                     onMouseEnter={e=>e.target.style.background="#334155"} onMouseLeave={e=>e.target.style.background="transparent"}>
