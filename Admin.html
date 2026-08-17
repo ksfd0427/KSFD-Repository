@@ -2273,8 +2273,47 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     });
     setResData(updated);
     setResDirty(true);
-    const cnt=updated.filter(r=>!r._deleted&&r.remarks&&/(한국신|대회신|세계신|타이)/.test(r.remarks)).length;
+    const cnt=updated.filter(r=>!r._deleted&&r.remarks&&/(한국신|대회신|세계신)/.test(r.remarks)).length;
     flash(cnt>0?("🏅 "+cnt+"건 신기록 감지! 비고란을 확인하세요."):"신기록 해당자가 없습니다.");
+  };
+  // ── 패럴림픽 기록 대조 (국내대회에서는 공식 수립 불가 → 참고 표기) ──
+  const RES_PARA_LABEL="패럴림픽기록";
+  const resParaClean=(t)=>String(t==null?"":t)
+    .replace(/패럴림픽기록\s*(상회\/종전\s*[\d.]+|타이)/g,"")
+    .replace(/\s*,\s*,/g,",").replace(/^[,\s]+|[,\s]+$/g,"");
+  const resCheckParaRecords=()=>{
+    const parseScore=(v)=>{if(!v)return 0;return parseFloat(String(v).replace(/[^\d.]/g,""))||0;};
+    const rec=(resBestRecs||[]).find(b=>b.record_category==="paralympic"&&b.record_value);
+    const recScore=rec?parseScore(rec.record_value):0;
+    if(!rec||!recScore){
+      // 기록이 없으면 이전에 붙은 표기만 정리
+      const cleaned=resData.map(r=>{
+        if(r._deleted) return r;
+        const base=resParaClean(r.remarks);
+        return base===(r.remarks||"")?r:{...r,remarks:base,_dirty:true};
+      });
+      if(cleaned.some((r,i)=>r!==resData[i])){setResData(cleaned);setResDirty(true);}
+      flash("이 종목·라운드에 등록된 패럴림픽 기록이 없습니다. (신기록 관리 → ♿ 패럴림픽 신기록)","error");
+      return;
+    }
+    let hit=0;
+    const updated=resData.map(r=>{
+      if(r._deleted) return r;
+      const base=resParaClean(r.remarks);
+      const score=parseScore(r.total);
+      let mark="";
+      if(score){
+        if(score>recScore) mark=RES_PARA_LABEL+" 상회/종전 "+rec.record_value;
+        else if(Math.abs(score-recScore)<0.0001) mark=RES_PARA_LABEL+" 타이";
+      }
+      if(!mark) return base===(r.remarks||"")?r:{...r,remarks:base,_dirty:true};
+      hit++;
+      return {...r,remarks:base?(mark+", "+base):mark,_dirty:true};
+    });
+    setResData(updated); setResDirty(true);
+    const info=rec.record_value+(rec.holder_name?" / "+rec.holder_name:"")+(rec.tournament_name?" · "+rec.tournament_name:"");
+    flash(hit>0?("\u267f 패럴림픽 기록 상회·타이 "+hit+"건 — 비고란을 확인하세요. (종전 "+info+")")
+               :("패럴림픽 기록 상회·타이 해당자가 없습니다. (등록 기록 "+info+")"));
   };
   const resAddRow=()=>{
     const nr=resData.filter(r=>!r._deleted).length+1;
@@ -8263,6 +8302,7 @@ td{border:1px solid #333;padding:4px 6px}
                 </label>}
                 {resType!=="bronze"&&resType!=="gold"&&<button onClick={resExportCSV} style={{...S.btn(C.green,"#fff"),fontSize:11,padding:"5px 12px"}}>📤 CSV 내보내기</button>}
                 {resType!=="bronze"&&resType!=="gold"&&<button onClick={resCheckRecords} style={{...S.btn("#d97706","#fff"),fontSize:11,padding:"5px 12px"}}>🏅 신기록 대조</button>}
+                {resType!=="bronze"&&resType!=="gold"&&<button onClick={resCheckParaRecords} title="등록된 패럴림픽 기록과 대조해 상회·타이 시 비고란에 표기합니다" style={{...S.btn("#7c3aed","#fff"),fontSize:11,padding:"5px 12px"}}>♿ 패럴림픽 기록 대조</button>}
                 <button onClick={()=>setResPrintMode(true)} style={{...S.btn("#334155","#e8dcc8"),fontSize:11,padding:"5px 12px"}}>🖨 인쇄</button>
                 {visible.length>0&&resType!=="team"&&<button onClick={resConfirmResults} style={{...S.btn("#0ea5e9","#fff"),fontSize:12,padding:"6px 16px",fontWeight:700}}>✅ 결과 확정</button>}
                 <button onClick={resSaveAll} style={{...S.btn(resDirty?"#ff6b35":C.gold,resDirty?"#fff":C.bg),fontSize:12,padding:"6px 16px",fontWeight:700}}>💾 저장{resDirty?" *":""}</button>
