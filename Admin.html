@@ -10568,7 +10568,7 @@ function RecordsPanel({ sb, flash, onBack, setDbBusy }) {
         </tr></thead>
         <tbody>
           {sorted.map((r,i)=>{
-            const ev=DEFAULT_EVENTS.find(e=>e.code===r.event_code);
+            const ev=ORDER_EVS.find(e=>e.code===r.event_code)||(events||[]).find(e=>e.code===r.event_code);
             const isTeam=r.result_type==="team";
             const bg=evColorMap[r.event_code]||"#fff";
             return <tr key={r.id||i} style={{background:bg}}>
