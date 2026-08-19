@@ -3339,7 +3339,7 @@ td{border:1px solid #333;padding:4px 6px}
     const cfg=getEventCfg(ec,getEvFmt(ec));
 
     // ── 단체번호: getResultTeamNum을 직접 사용하여 UI 표시와 100% 일치 ──
-    const getTeamNum=(r)=>getResultTeamNum(ec,r.name);
+    const getTeamNum=(r)=>getResultTeamNum(ec,r.name,"team",r.region||r._sub_org||r.sub_org||"");
 
     // 모든 본선 선수 (bib=team/sub 제외) → 단체번호로 그룹핑
     const allPlayers=prelim.filter(r=>r.bib!=="team"&&r.bib!=="sub");
@@ -3429,7 +3429,7 @@ td{border:1px solid #333;padding:4px 6px}
     if(!prelim||prelim.length===0){setLeagueData([]); return;}
     const cfg=getEventCfg(ec,getEvFmt(ec));
     // ── 리그번호: getResultTeamNum("league")을 직접 사용 ──
-    const getLeagueNum=(r)=>getResultTeamNum(ec,r.name,"league");
+    const getLeagueNum=(r)=>getResultTeamNum(ec,r.name,"league",r.region||r._sub_org||r.sub_org||"");
     // 본선 선수 → 리그 번호로 그룹핑
     const allPlayers=prelim.filter(r=>r.bib!=="team"&&r.bib!=="sub");
     // sub_org 보충
@@ -3517,26 +3517,37 @@ td{border:1px solid #333;padding:4px 6px}
   // ── 단체전 DB 저장 ──
   // ── 결과 행의 단체/리그 번호 조회 ──
   // 우선순위: ① orgNumOverrides(수동) → ② team_entries(등록 데이터) → ③ startlist _orgNum(폴백)
-  const getResultTeamNum=(ec,playerName,teamType)=>{
+  const getResultTeamNum=(ec,playerName,teamType,regionOpt)=>{
     if(!ec||!playerName) return null;
     const tt=teamType||"team";
+    const reg=String(regionOpt||"").trim();
+    const regHit=(r0)=>{r0=String(r0||"").trim();if(!r0||!reg)return false;return r0===reg||r0.indexOf(reg)>=0||reg.indexOf(r0)>=0;};
     const evOv=orgNumOverrides[ec]||{};
-    // memberId 탐색: 스타트리스트 + evPData
-    let matchMid=null;
-    let slOrgNum=null; // 스타트리스트 _orgNum (폴백용으로만 보관)
+    // 후보 수집: 스타트리스트 (동명이인은 시도(region)로 구분)
+    let cands=[];
     for(const sk of Object.keys(startLists)){
       const parts=sk.match(/^(.+?)_(\d+)$/);
       const evCode=parts?parts[1]:sk;
       if(evCode!==ec) continue;
-      const hit=(startLists[sk]||[]).find(p=>p.name===playerName);
-      if(hit){
-        if(tt==="team"&&hit._orgNum!=null&&hit._orgNum!==""&&slOrgNum===null) slOrgNum=hit._orgNum;
-        if(hit.memberId&&!matchMid) matchMid=hit.memberId;
-      }
+      (startLists[sk]||[]).forEach(p=>{
+        if(p.name!==playerName) return;
+        cands.push({memberId:p.memberId||null,orgNum:(tt==="team"&&p._orgNum!=null&&p._orgNum!=="")?p._orgNum:null,region:p.orgName||p.subOrg||""});
+      });
     }
+    let pool=cands;
+    if(reg&&cands.length){
+      const rm=cands.filter(c=>regHit(c.region));
+      if(rm.length) pool=rm;
+      else if(cands.length>1) pool=[]; // 동명이인인데 시도 불일치 → 오배정 방지 (미배정)
+    }
+    let matchMid=null;
+    let slOrgNum=null; // 스타트리스트 _orgNum (폴백용으로만 보관)
+    pool.forEach(c=>{if(c.memberId&&!matchMid)matchMid=c.memberId;if(c.orgNum!=null&&slOrgNum===null)slOrgNum=c.orgNum;});
     if(!matchMid&&evPData){
-      const m=evPData.allMembers.find(m=>m.name===playerName);
-      if(m) matchMid=m.id;
+      const mReg=(m)=>{const app=evPData.appMap&&evPData.appMap[m.application_id];return (app&&app.region_name)||m.sub_org||"";};
+      let ms=evPData.allMembers.filter(m=>m.name===playerName);
+      if(reg&&ms.length>1){const f=ms.filter(m=>regHit(mReg(m)));ms=f.length?f:[];}
+      if(ms.length) matchMid=ms[0].id;
     }
     if(!matchMid) return slOrgNum; // memberId 못 찾으면 _orgNum이라도 반환
     const mid=String(matchMid);
@@ -3561,13 +3572,22 @@ td{border:1px solid #333;padding:4px 6px}
         const mToTN={};tl.forEach((t,i)=>{t.members.forEach(mid2=>{mToTN[mid2]=i+1;});});
         // memberId 직접 매칭 시도
         if(mToTN[matchMid]) return mToTN[matchMid];
-        // memberId 불일치 시 이름 기반 폴백 (재등록으로 member_id가 바뀐 경우)
-        const nameToTN={};
+        // memberId 불일치 시 이름 기반 폴백 (재등록으로 member_id가 바뀐 경우) — 동명이인은 시도까지 일치해야 함
+        const nameToTN={},nameRegToTN={};
         evTE.forEach(te=>{
           const m=memberMap2[te.member_id];
-          if(m&&m.name&&mToTN[te.member_id]) nameToTN[m.name]=mToTN[te.member_id];
+          if(m&&m.name&&mToTN[te.member_id]){
+            nameToTN[m.name]=(nameToTN[m.name]===undefined)?mToTN[te.member_id]:null; /* 중복 이름 → null 마킹 */
+            const app=memberAppMap2[te.member_id];
+            if(app&&app.region_name) nameRegToTN[m.name+"||"+app.region_name]=mToTN[te.member_id];
+          }
         });
-        if(nameToTN[playerName]) return nameToTN[playerName];
+        if(reg){
+          for(const k in nameRegToTN){const kr=k.split("||");if(kr[0]===playerName&&regHit(kr[1]))return nameRegToTN[k];}
+          /* 같은 이름의 시도-지정 항목이 존재하는데 시도가 다르면 이름 폴백 금지 (동명이인 오배정 방지) */
+          const hasRegKey=Object.keys(nameRegToTN).some(k=>k.split("||")[0]===playerName);
+          if(!hasRegKey&&nameToTN[playerName]!=null) return nameToTN[playerName];
+        }else if(nameToTN[playerName]!=null) return nameToTN[playerName];
       }
     }
     // ③ 스타트리스트 _orgNum (폴백)
@@ -3735,7 +3755,7 @@ td{border:1px solid #333;padding:4px 6px}
     const fields=resGetFields(resEvCode,resType);
     let csv="\uFEFF"+fields.map(f=>f.l).join(",")+"\n";
     visible.forEach(r=>{csv+=fields.map(f=>{
-      if(f.t==="teamBadge"){ const gt=getResultTeamNum(resEvCode,r.name); return (gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:""))||""; }
+      if(f.t==="teamBadge"){ const gt=getResultTeamNum(resEvCode,r.name,"team",r.region||""); return (gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:""))||""; }
       if(f.t==="check") return r[f.k]?"O":"";
       if(f.t==="shot") return resShotRead(r,f._s,f._si);
       if(f.t==="computed") return r.total||"";
@@ -8366,7 +8386,7 @@ td{border:1px solid #333;padding:4px 6px}
                             <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="name" onKeyDown={resGridKeyDown} value={r.name??""} onChange={e=>resUpdateRow(origIdx,"name",e.target.value)} style={{...resInp,width:72}}/>:null}</td>
                             <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="region" onKeyDown={resGridKeyDown} value={r.region??""} onChange={e=>resUpdateRow(origIdx,"region",e.target.value)} style={{...resInp,width:57}}/>:null}</td>
                             <td style={tdS}>{isFirst?<input type="text" data-gr={i} data-gc="_sub_org" onKeyDown={resGridKeyDown} value={r._sub_org??""} onChange={e=>resUpdateRow(origIdx,"_sub_org",e.target.value)} style={{...resInp,width:77}}/>:null}</td>
-                            <td style={{...tdS,textAlign:"center"}}>{isFirst?(()=>{const gt=getResultTeamNum(resEvCode,r.name);const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})():null}</td>
+                            <td style={{...tdS,textAlign:"center"}}>{isFirst?(()=>{const gt=getResultTeamNum(resEvCode,r.name,"team",r.region||"");const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})():null}</td>
                             <td style={{...tdS,textAlign:"center"}}><span style={{fontSize:10,fontWeight:600,color:pi===0?"#6ee7b7":pi===1?"#7dd3fc":"#c4b5fd"}}>{p.name}</span></td>
                             <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc="pos_1" onKeyDown={resGridKeyDown} value={r[p.s1]??""} onChange={e=>resUpdateRow(origIdx,p.s1,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
                             <td style={tdS}><input type="text" data-gr={i*3+pi} data-gc="pos_2" onKeyDown={resGridKeyDown} value={r[p.s2]??""} onChange={e=>resUpdateRow(origIdx,p.s2,e.target.value)} style={{...resInp,width:47,textAlign:"center"}}/></td>
@@ -8393,7 +8413,7 @@ td{border:1px solid #333;padding:4px 6px}
                                 <span style={{display:"block",fontSize:11,color:"#94a3b8",paddingLeft:14}}>└ {r.name||""} <span style={{color:"#64748b",fontSize:10}}>{r._sub_org||r.sub_org?("("+( r._sub_org||r.sub_org)+")"):""}</span></span></td>;
                             return <td key={f.k} style={{padding:"2px 2px",borderBottom:"1px solid "+C.border+"44",textAlign:(f.t==="check"||f.t==="teamBadge")?"center":undefined,...(isSubRow&&f.k==="rank"?{color:"transparent"}:{})}}>
                             {f.t==="teamBadge"
-                              ?(()=>{const gt=getResultTeamNum(resEvCode,r.name);const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})()
+                              ?(()=>{const gt=getResultTeamNum(resEvCode,r.name,"team",r.region||"");const tn=gt||((r._teamNum!=null&&r._teamNum!=="")?r._teamNum:null);return tn?<span style={{display:"inline-block",padding:"1px 5px",borderRadius:4,background:getTeamColor(tn)+"33",color:getTeamColor(tn),fontWeight:700,fontSize:10,border:"1px solid "+getTeamColor(tn)+"66"}}>{tn}</span>:<span style={{color:"#555",fontSize:10}}>—</span>;})()
                               :f.t==="check"
                               ?<input type="checkbox" checked={!!r[f.k]} onChange={e=>resUpdateRow(origIdx,f.k,e.target.checked)} style={{accentColor:C.gold,cursor:"pointer"}}/>
                               :f.t==="shot"
