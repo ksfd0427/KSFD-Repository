@@ -11350,6 +11350,88 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`}</pre>
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
+<script>
+/* ── 인쇄 미리보기 표 열폭 드래그 조절 ──
+   .print-page 안의 모든 표: 셀 오른쪽 경계(6px)를 잡고 드래그하면 해당 열과 오른쪽 열의
+   폭이 서로 주고받는 방식으로 조절됨(표 전체 폭 유지 → 인쇄 시 페이지에 그대로 맞음).
+   React 재렌더 시 초기화되며, 더블클릭하면 해당 표의 조절 내용을 원래대로 되돌림. */
+(function(){
+  var DRAG=null, EDGE=6;
+  function colsOf(row){var n=0;for(var i=0;i<row.cells.length;i++)n+=row.cells[i].colSpan||1;return n;}
+  function ensureCols(tb){
+    if(tb._rzCg&&tb.contains(tb._rzCg))return tb._rzCg;
+    var row=(tb.tHead&&tb.tHead.rows[0])||tb.rows[0];if(!row)return null;
+    var n=colsOf(row);
+    var widths=[];
+    for(var i=0;i<row.cells.length;i++){var c=row.cells[i],sp=c.colSpan||1,w=c.getBoundingClientRect().width/sp;
+      for(var k=0;k<sp;k++)widths.push(w);}
+    var old=tb.querySelector(':scope>colgroup');if(old)old.remove();
+    var cg=document.createElement('colgroup');
+    widths.forEach(function(w){var col=document.createElement('col');col.style.width=Math.max(16,w)+'px';cg.appendChild(col);});
+    tb.insertBefore(cg,tb.firstChild);
+    if(!tb._rzOrig)tb._rzOrig={layout:tb.style.tableLayout||'',widths:widths.slice()};
+    tb.style.tableLayout='fixed';
+    tb._rzCg=cg;return cg;
+  }
+  function edgeIdx(cell,e){
+    var r=cell.getBoundingClientRect();
+    if(r.right-e.clientX<=EDGE)return 'r';
+    if(e.clientX-r.left<=EDGE)return 'l';
+    return null;
+  }
+  function colIndexOf(cell,side){
+    var row=cell.parentNode,idx=0;
+    for(var i=0;i<row.cells.length;i++){var c=row.cells[i];idx+=c.colSpan||1;if(c===cell)break;}
+    return side==='r'?idx-1:idx-1-(cell.colSpan||1);
+  }
+  function attach(tb){
+    if(tb._rz)return;tb._rz=1;
+    tb.addEventListener('mousemove',function(e){
+      if(DRAG)return;var t=e.target.closest('td,th');
+      tb.style.cursor=(t&&edgeIdx(t,e))?'col-resize':'';
+    });
+    tb.addEventListener('mousedown',function(e){
+      var t=e.target.closest('td,th');if(!t)return;
+      var side=edgeIdx(t,e);if(!side)return;
+      var cg=ensureCols(tb);if(!cg)return;
+      var i=colIndexOf(t,side);
+      if(i<0||i>=cg.children.length-1)return; /* 마지막 경계는 표 폭 유지 위해 제외 */
+      DRAG={cg:cg,i:i,x:e.clientX,
+        w1:parseFloat(cg.children[i].style.width),
+        w2:parseFloat(cg.children[i+1].style.width)};
+      e.preventDefault();
+    });
+    tb.addEventListener('dblclick',function(e){
+      var t=e.target.closest('td,th');if(!t||!edgeIdx(t,e))return;
+      if(tb._rzOrig&&tb._rzCg){var ws=tb._rzOrig.widths;
+        for(var i=0;i<tb._rzCg.children.length&&i<ws.length;i++)tb._rzCg.children[i].style.width=Math.max(16,ws[i])+'px';}
+    });
+  }
+  document.addEventListener('mousemove',function(e){
+    if(!DRAG)return;
+    var d=e.clientX-DRAG.x,w1=DRAG.w1+d,w2=DRAG.w2-d;
+    if(w1<20||w2<20)return;
+    DRAG.cg.children[DRAG.i].style.width=w1+'px';
+    DRAG.cg.children[DRAG.i+1].style.width=w2+'px';
+  },true);
+  document.addEventListener('mouseup',function(){DRAG=null;},true);
+  function tip(ov){
+    if(ov.querySelector('.rz-tip'))return;
+    var d=document.createElement('div');d.className='rz-tip';
+    d.textContent='\ud45c \uc5f4 \uacbd\uacc4\ub97c \ub4dc\ub798\uadf8\ud558\uba74 \ud3ed \uc870\uc808 \u00b7 \uacbd\uacc4 \ub354\ube14\ud074\ub9ad = \uc6d0\ub798\ub300\ub85c';
+    d.style.cssText='position:fixed;top:10px;right:14px;z-index:10001;background:#1e293bd9;color:#cbd5e1;font-size:11px;padding:5px 10px;border-radius:6px;font-family:Malgun Gothic,sans-serif;pointer-events:none';
+    ov.appendChild(d);
+    setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d);},6000);
+  }
+  var mo=new MutationObserver(function(){
+    document.querySelectorAll('.print-overlay').forEach(function(ov){
+      tip(ov);
+      ov.querySelectorAll('.print-page table').forEach(attach);
+    });
+  });
+  mo.observe(document.body,{childList:true,subtree:true});
+})();
+</script>
 
 </body>
 </html>
