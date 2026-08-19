@@ -598,6 +598,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   const [slSpreadView, setSlSpreadView]=useState(false); // 전체 스타트리스트 스프레드시트 뷰
   // ── 단체번호 수동 오버라이드 ──
   const [orgNumOverrides, setOrgNumOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
+  const [teamRemarks, setTeamRemarks]=useState({}); // {"EV|team|팀번호": "수동 비고"} (리그는 |league|)
   const [teamDropdown, setTeamDropdown]=useState(null); // {memberId, evCode, rect:{top,left}, currentNum}
   // ── 혼성팀 개인별 팀 배정 오버라이드 ──
   const [mixedTeamOverrides, setMixedTeamOverrides]=useState({}); // {evCode: {memberId: teamNumber}}
@@ -1415,6 +1416,7 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
     const ss=await dbLoad("session_status",tid);if(ss)setSessionStatuses(ss); else setSessionStatuses({});
     const ah=await dbLoad("absent_history",tid);if(ah)setAbsentHistory(ah); else setAbsentHistory([]);
     const ono=await dbLoad("orgnum_overrides",tid);if(ono)setOrgNumOverrides(ono); else setOrgNumOverrides({});
+    const trm=await dbLoad("team_remarks",tid);if(trm)setTeamRemarks(trm); else setTeamRemarks({});
     const mto=await dbLoad("mixed_team_overrides",tid);if(mto)setMixedTeamOverrides(mto); else setMixedTeamOverrides({});
     const ra=await dbLoad("relay_assignments",tid);if(ra)setRelayAssign(ra); else setRelayAssign({});
     // 후원사 로고 DB 로드
@@ -3593,6 +3595,12 @@ td{border:1px solid #333;padding:4px 6px}
     // ③ 스타트리스트 _orgNum (폴백)
     return slOrgNum;
   };
+  // ── 단체전/리그전 수동 비고 ──
+  const teamRemKey=(tt,tn)=>resEvCode+"|"+tt+"|"+tn;
+  const teamManual=(tt,tn)=>teamRemarks[teamRemKey(tt,tn)]||"";
+  const teamRemFull=(t,tt)=>{const man=teamManual(tt,t.teamNum);return [t._remarks,man].filter(Boolean).join(", ");};
+  const setTeamManual=(tt,tn,v)=>{setTeamRemarks(p=>{const n={...p};const k=teamRemKey(tt,tn);if(String(v||"").trim())n[k]=v;else delete n[k];return n;});};
+  const saveTeamManual=async()=>{try{await dbSave("team_remarks",teamRemarks);}catch(e){}};
   const teamSaveToDB=async()=>{
     if(!sb||!selectedT||!resEvCode||teamData.length===0) return;
     setDbBusy(v=>v+1);
@@ -3606,7 +3614,7 @@ td{border:1px solid #333;padding:4px 6px}
         const teamRow={tournament_id:selectedT.id,event_code:resEvCode,result_type:"team",
           rank:t.rank||0,bib:"team",name:teamDisplayName(t),region:t.region||"",sub_org:"",
           is_team:true,total:cfg.decimal?t.teamTotal.toFixed(1):String(t.teamTotal),
-          x_count:cfg.xcount?String(t.teamXCount):"",remarks:t._remarks||""};
+          x_count:cfg.xcount?String(t.teamXCount):"",remarks:teamRemFull(t,"team")||""};
         for(let s=1;s<=cfg.series;s++){
           const sSum=t.top3.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0);
           teamRow["s"+s]=cfg.decimal?sSum.toFixed(1):String(sSum);
@@ -3643,7 +3651,7 @@ td{border:1px solid #333;padding:4px 6px}
         const teamRow={tournament_id:selectedT.id,event_code:resEvCode,result_type:"league",
           rank:t.rank||0,bib:"team",name:teamDisplayName(t),region:t.region||"",sub_org:"",
           is_team:true,total:cfg.decimal?t.teamTotal.toFixed(1):String(t.teamTotal),
-          x_count:cfg.xcount?String(t.teamXCount):"",remarks:t._remarks||""};
+          x_count:cfg.xcount?String(t.teamXCount):"",remarks:teamRemFull(t,"league")||""};
         for(let s=1;s<=cfg.series;s++){
           const sSum=t.top2.reduce((sum,m)=>sum+(parseFloat(m["s"+s])||0),0);
           teamRow["s"+s]=cfg.decimal?sSum.toFixed(1):String(sSum);
@@ -4433,7 +4441,7 @@ td{border:1px solid #333;padding:4px 6px}
               <td style={{...tdS,fontWeight:700,padding:sPad,borderRight:dotBdr}}>{teamSeriesSum(t,p.s2)}</td>
               <td style={{...tdS,fontWeight:700}}>{teamSubTotal(t,p.s1)}</td>
               <td style={{...tdS,fontWeight:isLast?800:400,fontSize:isLast?"10pt":"8.5pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"}}>{isLast?fmtTeamTotal(t):""}</td>
-              <td style={{...tdS,borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px"}}>{isLast?(fmtRemarks(t._remarks)||""):""}</td>
+              <td style={{...tdS,borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px"}}>{isLast?(fmtRemarks(teamRemFull(t,"team"))||""):""}</td>
             </tr>);
           });
           // ── 개인 행 (top3 + extra) ──
@@ -4490,7 +4498,7 @@ td{border:1px solid #333;padding:4px 6px}
         tc.push(<td key="reg" style={teamCell({fontWeight:700,fontSize:"9pt",borderRight:dotBdr,whiteSpace:"nowrap"})}>{teamDisplayName(t)}</td>);
         sCols.forEach(s=>tc.push(<td key={"ts"+s} style={teamCell({fontWeight:700,whiteSpace:"nowrap",padding:sPad,...(isDotAfterS(s)?{borderRight:dotBdr}:{})})}>{teamSeriesSum(t,s)}</td>));
         tc.push(<td key="total" style={teamCell({fontWeight:800,fontSize:"10pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"})}>{fmtTeamTotal(t)}</td>);
-        tc.push(<td key="rem" style={teamCell({borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px",lineHeight:1.2})}>{fmtRemarks(t._remarks)}</td>);
+        tc.push(<td key="rem" style={teamCell({borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px",lineHeight:1.2})}>{fmtRemarks(teamRemFull(t,"team"))}</td>);
         rows.push(<tr key={(t.teamNum||t.region)+"_team"} style={{background:"#f0f0f0"}}>{tc}</tr>);
         // ── 개인 행 (top3 + extra) ──
         const allM=[...t.top3];
@@ -4572,7 +4580,7 @@ td{border:1px solid #333;padding:4px 6px}
               <td style={{...tdS,fontWeight:700,padding:sPad,borderRight:dotBdr}}>{leagueSeriesSum(t,p.s2)}</td>
               <td style={{...tdS,fontWeight:700}}>{leagueSubTotal(t,p.s1)}</td>
               <td style={{...tdS,fontWeight:isLast?800:400,fontSize:isLast?"10pt":"8.5pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"}}>{isLast?fmtLeagueTotal(t):""}</td>
-              <td style={{...tdS,borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px"}}>{isLast?(fmtRemarks(t._remarks)||""):""}</td>
+              <td style={{...tdS,borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px"}}>{isLast?(fmtRemarks(teamRemFull(t,"league"))||""):""}</td>
             </tr>);
           });
           // ── 개인 행 (top2) ──
@@ -4627,7 +4635,7 @@ td{border:1px solid #333;padding:4px 6px}
         tc.push(<td key="reg" style={teamCell({fontWeight:700,fontSize:"9pt",borderRight:dotBdr,whiteSpace:"nowrap"})}>{teamDisplayName(t)}</td>);
         sCols.forEach(s=>tc.push(<td key={"ts"+s} style={teamCell({fontWeight:700,whiteSpace:"nowrap",padding:sPad,...(isDotAfterS(s)?{borderRight:dotBdr}:{})})}>{leagueSeriesSum(t,s)}</td>));
         tc.push(<td key="total" style={teamCell({fontWeight:800,fontSize:"10pt",textAlign:"left",paddingLeft:"6px",whiteSpace:"nowrap"})}>{fmtLeagueTotal(t)}</td>);
-        tc.push(<td key="rem" style={teamCell({borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px",lineHeight:1.2})}>{fmtRemarks(t._remarks)}</td>);
+        tc.push(<td key="rem" style={teamCell({borderRight:"1px solid #333",fontSize:"7pt",textAlign:"left",padding:"2px 3px",lineHeight:1.2})}>{fmtRemarks(teamRemFull(t,"league"))}</td>);
         rows.push(<tr key={(t.teamNum||t.region)+"_league"} style={{background:"#f0f0f0"}}>{tc}</tr>);
         // ── 개인 행 (top2) ──
         const allM=[...t.top2];
@@ -8527,7 +8535,12 @@ td{border:1px solid #333;padding:4px 6px}
                           {cfg.decimal?t.teamTotal.toFixed(1):t.teamTotal}
                         </td>
                         {cfg.xcount&&<td style={{...S.td,textAlign:"center"}}>{t.teamXCount}</td>}
-                        <td style={{...S.td,fontSize:10,color:t._remarks?"#d97706":"#666",...(t._remarks?{fontWeight:600}:{})}}>{t._remarks||""}</td>
+                        <td style={{...S.td,fontSize:10,minWidth:150}}>
+                          {t._remarks&&<div style={{color:"#d97706",fontWeight:600,marginBottom:2}}>{t._remarks}</div>}
+                          <input value={teamManual("team",t.teamNum)} placeholder="비고 입력"
+                            onChange={e=>setTeamManual("team",t.teamNum,e.target.value)} onBlur={saveTeamManual}
+                            style={{width:"100%",minWidth:130,background:"#0d1520",border:"1px solid #2a3a5c",borderRadius:4,color:"#e8dcc8",fontSize:10.5,padding:"3px 6px"}}/>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -8570,7 +8583,12 @@ td{border:1px solid #333;padding:4px 6px}
                           {cfg.decimal?t.teamTotal.toFixed(1):t.teamTotal}
                         </td>
                         {cfg.xcount&&<td style={{...S.td,textAlign:"center"}}>{t.teamXCount}</td>}
-                        <td style={{...S.td,fontSize:10,color:t._remarks?"#d97706":"#666",...(t._remarks?{fontWeight:600}:{})}}>{t._remarks||""}</td>
+                        <td style={{...S.td,fontSize:10,minWidth:150}}>
+                          {t._remarks&&<div style={{color:"#d97706",fontWeight:600,marginBottom:2}}>{t._remarks}</div>}
+                          <input value={teamManual("league",t.teamNum)} placeholder="비고 입력"
+                            onChange={e=>setTeamManual("league",t.teamNum,e.target.value)} onBlur={saveTeamManual}
+                            style={{width:"100%",minWidth:130,background:"#0d1520",border:"1px solid #2a3a5c",borderRadius:4,color:"#e8dcc8",fontSize:10.5,padding:"3px 6px"}}/>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
