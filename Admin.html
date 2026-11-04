@@ -11633,8 +11633,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     var cg=document.createElement('colgroup');
     widths.forEach(function(w){var col=document.createElement('col');col.style.width=Math.max(16,w)+'px';cg.appendChild(col);});
     tb.insertBefore(cg,tb.firstChild);
-    if(!tb._rzOrig)tb._rzOrig={layout:tb.style.tableLayout||'',widths:widths.slice()};
+    if(!tb._rzOrig)tb._rzOrig={layout:tb.style.tableLayout||'',width:tb.style.width||'',widths:widths.slice()};
     tb.style.tableLayout='fixed';
+    tb.style.width=widths.reduce(function(a,b){return a+Math.max(16,b);},0)+'px';
     tb._rzCg=cg;return cg;
   }
   function edgeIdx(cell,e){
@@ -11659,21 +11660,30 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App />);
       var side=edgeIdx(t,e);if(!side)return;
       var cg=ensureCols(tb);if(!cg)return;
       var i=colIndexOf(t,side);
-      if(i<0||i>=cg.children.length-1)return; /* 마지막 경계는 표 폭 유지 위해 제외 */
-      DRAG={cg:cg,i:i,x:e.clientX,
+      if(i<0||i>cg.children.length-1)return;
+      var last=(i===cg.children.length-1); /* 마지막 경계: 해당 열과 표 전체 폭을 함께 조절 */
+      DRAG={cg:cg,tb:tb,i:i,x:e.clientX,last:last,
         w1:parseFloat(cg.children[i].style.width),
-        w2:parseFloat(cg.children[i+1].style.width)};
+        w2:last?0:parseFloat(cg.children[i+1].style.width),
+        tw:parseFloat(tb.style.width)||tb.getBoundingClientRect().width};
       e.preventDefault();
     });
     tb.addEventListener('dblclick',function(e){
       var t=e.target.closest('td,th');if(!t||!edgeIdx(t,e))return;
       if(tb._rzOrig&&tb._rzCg){var ws=tb._rzOrig.widths;
-        for(var i=0;i<tb._rzCg.children.length&&i<ws.length;i++)tb._rzCg.children[i].style.width=Math.max(16,ws[i])+'px';}
+        for(var i=0;i<tb._rzCg.children.length&&i<ws.length;i++)tb._rzCg.children[i].style.width=Math.max(16,ws[i])+'px';
+        tb.style.width=ws.reduce(function(a,b){return a+Math.max(16,b);},0)+'px';}
     });
   }
   document.addEventListener('mousemove',function(e){
     if(!DRAG)return;
     var d=e.clientX-DRAG.x,w1=DRAG.w1+d,w2=DRAG.w2-d;
+    if(DRAG.last){
+      if(w1<20)return;
+      DRAG.cg.children[DRAG.i].style.width=w1+'px';
+      DRAG.tb.style.width=(DRAG.tw+d)+'px';
+      return;
+    }
     if(w1<20||w2<20)return;
     DRAG.cg.children[DRAG.i].style.width=w1+'px';
     DRAG.cg.children[DRAG.i+1].style.width=w2+'px';
