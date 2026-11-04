@@ -4440,7 +4440,7 @@ td{border:1px solid #333;padding:4px 6px}
       const F="'Arial Narrow','Malgun Gothic','맑은 고딕',sans-serif";
       const SZ="7.5pt";
       const bdr="1px solid #333";
-      const SLBL=["S1 (5발)","S2 (5발)","S3 (5발)","16~18발","19~21발","22~24발"];
+      const SLBL=["S1","S2","S3","S4","S5","S6"];
       const cell={padding:"1px 2px",textAlign:"center",fontSize:SZ,fontFamily:F,lineHeight:1.15,borderTop:"none",borderBottom:"1px dashed #aaa",borderLeft:"none",borderRight:"none",verticalAlign:"middle"};
       const teamCell={...cell,fontWeight:700,background:"#f2f2f2",borderTop:bdr,borderBottom:"1px solid #777"};
       const colW=["24px","70px","58px",...Array(MF_SERIES).fill(null),"40px","52px"];
@@ -4469,8 +4469,8 @@ td{border:1px solid #333;padding:4px 6px}
             rows.push(<tr key={gi+"_m"+mi}>
               <td style={{...st,textAlign:"left",paddingLeft:"6px"}}>{m.name}</td>
               <td style={{...st,textAlign:"left",fontSize:"6.5pt",borderRight:dotBdr}}>{isNatGames()?m.region:(m._sub_org||m.sub_org||m.region)}</td>
-              {Array.from({length:MF_SERIES},(_,i)=>{const sh=mfShots(m["s"+(i+1)]);const sub=sh.reduce((a,v)=>a+Math.round(v*10),0)/10;
-                return <td key={i} style={{...st,fontSize:"6pt",...(i===2?{borderRight:dotBdr}:{})}}>{sh.length?<><div style={{whiteSpace:"normal",wordBreak:"keep-all"}}>{sh.map(v=>v.toFixed(1)).join(" ")}</div><div style={{fontWeight:700,fontSize:SZ}}>{sub.toFixed(1)}</div></>:""}</td>;})}
+              {Array.from({length:MF_SERIES},(_,i)=>{const sh=mfShots(m["s"+(i+1)]);
+                return <td key={i} style={{...st,...(i===2?{borderRight:dotBdr}:{})}}>{sh.length?<div style={{whiteSpace:"normal",wordBreak:"keep-all"}}>{sh.map(v=>v.toFixed(1)).join(" ")}</div>:""}</td>;})}
               <td style={{...st,fontWeight:700}}>{m.total}</td>
             </tr>);
           });
