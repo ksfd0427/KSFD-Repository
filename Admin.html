@@ -873,6 +873,8 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
   },[resPrintMode,resEvCode,resType,sb]);
   const [resBestRecs, setResBestRecs]=useState([]); // 현재 종목 신기록
   const [mfTie, setMfTie]=useState(null); // 혼성팀 결선 동점 경고 {k, teams}
+  const [mfSortMembers, setMfSortMembers]=useState(()=>{try{return localStorage.getItem("ksfd_mf_sort_members")!=="0";}catch(e){return true;}}); // 결과 확정 시 팀 내 고득점 팀원을 위로
+  const toggleMfSortMembers=()=>{setMfSortMembers(v=>{const n=!v;try{localStorage.setItem("ksfd_mf_sort_members",n?"1":"0");}catch(e){}return n;});};
   const [resFinalSL, setResFinalSL]=useState(null); // 결선 스타트리스트 [{bib, name, region, sub_org, prelimRank, prelimTotal}]
   const getEvFmt=(code)=>{
     // DEFAULT_EVENTS 우선 참조 (코드에서 변경된 사항 즉시 반영)
@@ -2473,7 +2475,12 @@ function OpsPanel({ sb, flash, onBack, dbBusy, setDbBusy, setDbProg, setMigratio
       const groups=mfGroups(mf.rows).map(g=>({team:mf.rows[g.ti],subs:g.subs.map(i=>mf.rows[i])}));
       groups.sort((a,b)=>(a.team.rank||99)-(b.team.rank||99));
       const nr=[];
-      groups.forEach(g=>{nr.push({...g.team,_dirty:true});g.subs.forEach(x=>nr.push({...x,_dirty:true}));});
+      const subTot=(x)=>{const v=parseFloat(x.total);return isNaN(v)?-Infinity:v;};
+      groups.forEach(g=>{
+        nr.push({...g.team,_dirty:true});
+        const subs=mfSortMembers?[...g.subs].sort((a,b)=>subTot(b)-subTot(a)):g.subs;
+        subs.forEach(x=>nr.push({...x,_dirty:true}));
+      });
       nr.push(...mf.rows.filter(r=>r._deleted));
       setResData(nr); setResDirty(true); setMfTie(mf.tie);
       if(mf.tie) flash("⚠️ 동점: "+mf.tie.teams.join(", ")+" — 슛오프 칸에 점수를 입력한 뒤 다시 확정하세요","error");
@@ -8580,6 +8587,8 @@ td{border:1px solid #333;padding:4px 6px}
                 {resType!=="bronze"&&resType!=="gold"&&<button onClick={resCheckRecords} style={{...S.btn("#d97706","#fff"),fontSize:11,padding:"5px 12px"}}>🏅 신기록 대조</button>}
                 {resType!=="bronze"&&resType!=="gold"&&<button onClick={resCheckParaRecords} title="등록된 패럴림픽 기록과 대조해 상회·타이 시 비고란에 표기합니다" style={{...S.btn("#7c3aed","#fff"),fontSize:11,padding:"5px 12px"}}>♿ 패럴림픽 기록 대조</button>}
                 <button onClick={()=>setResPrintMode(true)} style={{...S.btn("#334155","#e8dcc8"),fontSize:11,padding:"5px 12px"}}>🖨 인쇄</button>
+                {mfTab&&<button onClick={toggleMfSortMembers} title="결과 확정 시 각 팀 안에서 점수가 높은 팀원을 위로 정렬" style={{padding:"5px 10px",borderRadius:5,fontSize:11,fontWeight:700,cursor:"pointer",
+                  background:mfSortMembers?"#0ea5e922":"transparent",color:mfSortMembers?"#7dd3fc":C.dim,border:"1px solid "+(mfSortMembers?"#0ea5e988":C.border)}}>{mfSortMembers?"🔽 팀원 고득점순 ON":"↕ 팀원 고득점순 OFF"}</button>}
                 {visible.length>0&&resType!=="team"&&<button onClick={resConfirmResults} style={{...S.btn("#0ea5e9","#fff"),fontSize:12,padding:"6px 16px",fontWeight:700}}>✅ 결과 확정</button>}
                 <button onClick={resSaveAll} style={{...S.btn(resDirty?"#ff6b35":C.gold,resDirty?"#fff":C.bg),fontSize:12,padding:"6px 16px",fontWeight:700}}>💾 저장{resDirty?" *":""}</button>
                 {isPrelim&&visible.length>0&&!hasNoFinal(resEvCode)&&!isMedalMatch(resEvCode)&&<button onClick={promoteToFinal} style={{...S.btn("#a855f7","#fff"),fontSize:11,padding:"5px 12px"}}>{isMixedFinal(resEvCode)?"🏆 결선 진출팀 생성 (상위 4팀)":"🏆 결선 진출자 생성 (상위 8인)"}</button>}
